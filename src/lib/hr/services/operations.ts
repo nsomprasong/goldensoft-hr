@@ -129,16 +129,35 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
 }
 export async function createAttendanceAdjustment(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, [HR_PERMISSIONS.attendanceSelf, HR_PERMISSIONS.attendanceManage]);
-  const pending = await master("leaveRequestStatus", "PENDING");
-  return db.attendanceAdjustment.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), requestedClockInAt: input.requestedClockInAt ? date(input.requestedClockInAt) : null, requestedClockOutAt: input.requestedClockOutAt ? date(input.requestedClockOutAt) : null, statusId: pending.id, requestedByAuthUserId: actor(ctx)! } });
+  const submitted = await master("leaveRequestStatus", "SUBMITTED");
+  return db.attendanceAdjustment.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), requestedClockInAt: input.requestedClockInAt ? date(input.requestedClockInAt) : null, requestedClockOutAt: input.requestedClockOutAt ? date(input.requestedClockOutAt) : null, statusId: submitted.id, requestedByAuthUserId: actor(ctx)! } });
 }
 
 export async function submitLeave(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
-  const pending = await master("leaveRequestStatus", "PENDING");
-  const overlap = await db.leaveRequest.findFirst({ where: { employeeId: input.employeeId, status: { code: { in: ["PENDING", "APPROVED"] } }, startDate: { lte: date(input.endDate) }, endDate: { gte: date(input.startDate) } } });
+  const submitted = await master("leaveRequestStatus", "SUBMITTED");
+  const overlap = await db.leaveRequest.findFirst({ where: { employeeId: input.employeeId, status: { code: { in: ["SUBMITTED", "APPROVED"] } }, startDate: { lte: date(input.endDate) }, endDate: { gte: date(input.startDate) } } });
   if (overlap) throw new HrError("VALIDATION_ERROR", { message: "วันลาซ้อนทับกับคำขอเดิม" });
-  return db.leaveRequest.create({ data: { ...input, organizationId: ctx.organizationId, startDate: date(input.startDate), endDate: date(input.endDate), statusId: pending.id, submittedAt: new Date() } });
+  return db.leaveRequest.create({ data: { ...input, organizationId: ctx.organizationId, startDate: date(input.startDate), endDate: date(input.endDate), statusId: submitted.id, submittedAt: new Date() } });
+}
+export async function listLeaveTypes(ctx: HrServiceContext) {
+  assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
+  return db.leaveType.findMany({
+    where: { organizationId: ctx.organizationId, isActive: true },
+    include: { unit: true },
+    orderBy: { code: "asc" },
+  });
+}
+export async function listLeaveBalances(ctx: HrServiceContext, employeeId?: string) {
+  assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
+  if (employeeId) await owned("employee", ctx, employeeId);
+  return db.employeeLeaveBalance.findMany({
+    where: {
+      ...(employeeId ? { employeeId } : { employee: { organizationId: ctx.organizationId } }),
+    },
+    include: { leaveType: true },
+    orderBy: [{ balanceYear: "desc" }, { createdAt: "desc" }],
+  });
 }
 export async function reviewLeave(ctx: HrServiceContext, id: string, approve: boolean, note?: string) {
   assertHrPermission(ctx, HR_PERMISSIONS.leaveApprove); const row = await owned("leaveRequest", ctx, id); assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
@@ -147,8 +166,8 @@ export async function reviewLeave(ctx: HrServiceContext, id: string, approve: bo
 }
 export async function submitOvertime(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, [HR_PERMISSIONS.overtimeSelf, HR_PERMISSIONS.overtimeManage]);
-  const pending = await master("overtimeRequestStatus", "PENDING");
-  return db.overtimeRequest.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), startAt: date(input.startAt), endAt: date(input.endAt), requestedMinutes: Math.max(0, Math.round((date(input.endAt).getTime() - date(input.startAt).getTime()) / 60000)), statusId: pending.id, submittedAt: new Date() } });
+  const submitted = await master("overtimeRequestStatus", "SUBMITTED");
+  return db.overtimeRequest.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), startAt: date(input.startAt), endAt: date(input.endAt), requestedMinutes: Math.max(0, Math.round((date(input.endAt).getTime() - date(input.startAt).getTime()) / 60000)), statusId: submitted.id, submittedAt: new Date() } });
 }
 export async function reviewOvertime(ctx: HrServiceContext, id: string, approve: boolean, note?: string) {
   assertHrPermission(ctx, HR_PERMISSIONS.overtimeApprove); const status = await master("overtimeRequestStatus", approve ? "APPROVED" : "REJECTED");
@@ -223,9 +242,9 @@ export async function saveRecurringPayItem(ctx: HrServiceContext, input: any, id
 export async function approvalInbox(ctx: HrServiceContext) {
   assertHrPermission(ctx, HR_PERMISSIONS.approvalRead);
   const [leave, overtime, adjustments] = await Promise.all([
-    db.leaveRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "PENDING" } } }),
-    db.overtimeRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "PENDING" } } }),
-    db.attendanceAdjustment.findMany({ where: { organizationId: ctx.organizationId, status: { code: "PENDING" } } }),
+    db.leaveRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
+    db.overtimeRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
+    db.attendanceAdjustment.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
   ]);
   return { leave, overtime, attendanceAdjustments: adjustments };
 }

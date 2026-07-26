@@ -3,7 +3,7 @@ import { hrOperationSchema } from "@/lib/hr/schemas";
 import {
   approvalInbox, assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, issuePayslips,
-  listAttendanceDays, listCalendars, listNotifications, listPayItems, listWorkLocations,
+  listAttendanceDays, listCalendars, listLeaveBalances, listLeaveTypes, listNotifications, listPayItems, listWorkLocations,
   markNotificationRead, payrollAction, report, reviewLeave, reviewOvertime, saveCalendar,
   saveHoliday, saveRecurringPayItem, scheduleAction, selfService, submitLeave, submitOvertime,
   toCsv, updateWorkLocation,
@@ -37,8 +37,8 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     if (body.action === "approve" || body.action === "reject") return jsonResponse(await reviewLeave(service, body.id, body.action === "approve", body.reason));
     return jsonResponse(await submitLeave(service, body), 201);
   }
-  if (path === "leave/balances") return jsonResponse([]);
-  if (path === "leave/types") return jsonResponse([]);
+  if (path === "leave/balances") return jsonResponse(await listLeaveBalances(service, new URL(request.url).searchParams.get("employeeId") ?? undefined));
+  if (path === "leave/types") return jsonResponse(await listLeaveTypes(service));
   if (path === "overtime/requests") {
     if (body.action === "approve" || body.action === "reject") return jsonResponse(await reviewOvertime(service, body.id, body.action === "approve", body.reason));
     return jsonResponse(await submitOvertime(service, body), 201);

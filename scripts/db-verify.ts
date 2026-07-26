@@ -7,6 +7,7 @@ import {
 // Env is loaded by the db-preflight import (project files win over ambient stubs).
 
 export const HR_SCHEMA = "hr";
+export const HR_OPERATIONS_MIGRATION_NAME = "0002_hr_operations_suite";
 
 /** Master / lookup tables created and seeded by 0001_hr_core. */
 export const MASTER_TABLES = [
@@ -35,7 +36,58 @@ export const OPERATIONAL_TABLES = [
   "demo_seed_markers",
 ] as const;
 
-export const HR_TABLES = [...MASTER_TABLES, ...OPERATIONAL_TABLES] as const;
+/** Master / lookup tables created and seeded by 0002_hr_operations_suite. */
+export const OPERATION_SUITE_MASTER_TABLES = [
+  "attendance_statuses",
+  "attendance_event_types",
+  "leave_request_statuses",
+  "overtime_request_statuses",
+  "schedule_period_statuses",
+  "holiday_types",
+  "leave_units",
+  "approval_entity_types",
+  "notification_types",
+  "notification_statuses",
+  "leave_balance_tx_types",
+  "earning_types",
+  "deduction_types",
+] as const;
+
+export const OPERATION_SUITE_TABLES = [
+  "work_calendars",
+  "holidays",
+  "employee_work_calendars",
+  "employee_work_locations",
+  "employee_assignment_history",
+  "schedule_periods",
+  "shift_assignments",
+  "shift_assignment_segments",
+  "attendance_events",
+  "attendance_days",
+  "attendance_adjustments",
+  "leave_types",
+  "leave_policies",
+  "employee_leave_balances",
+  "leave_balance_transactions",
+  "leave_requests",
+  "overtime_requests",
+  "employee_recurring_pay_items",
+  "payroll_adjustments",
+  "payroll_runs",
+  "payroll_run_employees",
+  "payroll_run_items",
+  "payslips",
+  "approval_actions",
+  "notifications",
+  "notification_outbox",
+] as const;
+
+export const HR_TABLES = [
+  ...MASTER_TABLES,
+  ...OPERATIONAL_TABLES,
+  ...OPERATION_SUITE_MASTER_TABLES,
+  ...OPERATION_SUITE_TABLES,
+] as const;
 
 export const EXPECTED_HR_TABLE_COUNT = HR_TABLES.length;
 
@@ -103,18 +155,21 @@ async function countHrTables(
   return Number(result.rows[0]?.count ?? 0);
 }
 
-async function countMasterTablesWithData(query: SqlQuery): Promise<{
+async function countMasterTablesWithData(
+  query: SqlQuery,
+  tables: readonly string[] = [...MASTER_TABLES, ...OPERATION_SUITE_MASTER_TABLES],
+): Promise<{
   withData: number;
   total: number;
 }> {
   let withData = 0;
-  for (const table of MASTER_TABLES) {
+  for (const table of tables) {
     const result = await query(
       `SELECT COUNT(*)::int AS count FROM "hr".${quoteIdent(table)}`,
     );
     if (Number(result.rows[0]?.count ?? 0) >= 1) withData += 1;
   }
-  return { withData, total: MASTER_TABLES.length };
+  return { withData, total: tables.length };
 }
 
 async function countExpectedCodes(
@@ -181,11 +236,32 @@ export async function verifyHrDatabase(query: SqlQuery): Promise<VerifyResult> {
     return { ok: true, skipped: true, checks };
   }
 
+  const operationsMigration = await checkHrMigrationApplied(
+    query,
+    HR_OPERATIONS_MIGRATION_NAME,
+  );
+  checks.push({
+    name: `migration_${HR_OPERATIONS_MIGRATION_NAME}`,
+    ok: operationsMigration.applied,
+    count: operationsMigration.appliedCount,
+    detail: operationsMigration.applied
+      ? `successful=${operationsMigration.appliedCount};rolled_back=${operationsMigration.rolledBackCount};unresolved=${operationsMigration.unresolvedCount}`
+      : operationsMigration.reason,
+  });
+
   checks.push({
     name: "schema_hr_exists",
     ok: schemaExists,
     count: schemaExists ? 1 : 0,
   });
+
+  if (!operationsMigration.applied) {
+    return {
+      ok: false,
+      skipped: false,
+      checks,
+    };
+  }
 
   const tableCount = await countHrTables(query, HR_TABLES);
   checks.push({

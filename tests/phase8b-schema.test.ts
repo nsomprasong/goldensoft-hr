@@ -9,9 +9,14 @@ const MIGRATION_PATH = path.join(
   ROOT,
   "prisma/migrations/0001_hr_core/migration.sql",
 );
+const OPERATIONS_MIGRATION_PATH = path.join(
+  ROOT,
+  "prisma/migrations/0002_hr_operations_suite/migration.sql",
+);
 
 const schema = fs.readFileSync(SCHEMA_PATH, "utf8");
 const migration = fs.readFileSync(MIGRATION_PATH, "utf8");
+const operationsMigration = fs.readFileSync(OPERATIONS_MIGRATION_PATH, "utf8");
 /** Comments describe the safety rules, so scan executable SQL only. */
 const migrationSql = migration.replace(/--[^\n]*/g, " ");
 
@@ -179,6 +184,22 @@ describe("Phase 8B migration preview", () => {
   });
 });
 
+describe("HR operations migration", () => {
+  it("defines all operation-suite Prisma tables and idempotent master seeds", () => {
+    const tables = [
+      ...[...operationsMigration.matchAll(/CREATE TABLE "hr"\."([a-z_]+)"/g)].map(
+        (match) => match[1],
+      ),
+    ];
+    assert.equal(tables.length, 39);
+    for (const table of tables) {
+      assert.match(schema, new RegExp(`@@map\\("${table}"\\)`));
+    }
+    assert.match(operationsMigration, /INSERT INTO "hr"\."attendance_statuses"/);
+    assert.match(operationsMigration, /INSERT INTO "hr"\."deduction_types"/);
+  });
+});
+
 describe("Phase 8B project wiring", () => {
   it("commits the public Supabase CA bundle", () => {
     const certPath = path.join(ROOT, "certs/prod-ca-2021.crt");
@@ -212,6 +233,7 @@ describe("Phase 8B project wiring", () => {
     for (const script of [
       "db:preflight",
       "db:verify",
+      "hr:reconcile",
       "db:migration:check",
       "db:generate",
       "db:validate",

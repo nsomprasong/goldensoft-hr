@@ -60,12 +60,52 @@ function parseTargets(): DemoTarget[] {
 
   const organizationId = process.env.SEED_ORGANIZATION_ID;
   const branchId = process.env.SEED_BRANCH_ID;
-  if (!organizationId || !branchId) {
+  if (organizationId || branchId) {
+    if (!organizationId || !branchId) {
+      throw new Error(
+        "Provide both SEED_ORGANIZATION_ID and SEED_BRANCH_ID, or omit both to resolve Platform demo organizations",
+      );
+    }
+    return [{ organizationId, branchId }];
+  }
+  return [];
+}
+
+async function resolvePlatformDemoTargets(
+  prisma: { $queryRaw<T = unknown>(query: TemplateStringsArray): Promise<T> },
+): Promise<DemoTarget[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{ organizationId: string; branchId: string }>
+  >`
+    SELECT o.id::text AS "organizationId", b.id::text AS "branchId"
+    FROM platform.organizations o
+    CROSS JOIN LATERAL (
+      SELECT id
+      FROM platform.branches
+      WHERE organization_id = o.id AND deleted_at IS NULL
+      ORDER BY code ASC
+      LIMIT 1
+    ) b
+    WHERE o.customer_code IN ('RESORT-DEMO', 'COMPANY-DEMO', 'STATION-DEMO')
+      AND o.deleted_at IS NULL
+    ORDER BY o.customer_code ASC
+  `;
+  return rows;
+}
+
+function missingTargetsError(): Error {
+  return new Error(
+    "No HR demo targets supplied and no active Platform demo organizations with branches were found. Set SEED_DEMO_TARGETS or SEED_ORGANIZATION_ID and SEED_BRANCH_ID.",
+  );
+}
+
+function assertTargets(targets: DemoTarget[]): DemoTarget[] {
+  if (targets.length === 0) {
     throw new Error(
-      "Provide SEED_DEMO_TARGETS, or SEED_ORGANIZATION_ID and SEED_BRANCH_ID",
+      missingTargetsError().message,
     );
   }
-  return [{ organizationId, branchId }];
+  return targets;
 }
 
 async function main() {
@@ -134,6 +174,10 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
   try {
+    if (targets.length === 0) {
+      targets = await resolvePlatformDemoTargets(prisma);
+    }
+    targets = assertTargets(targets);
     console.log(
       `Seeding HR demo dataset (mode=${mode}, organizations=${targets.length})`,
     );

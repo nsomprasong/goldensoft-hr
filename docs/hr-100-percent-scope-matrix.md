@@ -2,11 +2,11 @@
 
 Date: 2026-07-26  
 Repos: `goldensoft-hr`, `goldensoft-platform`, `goldensoft-app`  
-Gate: Pre-migration implementation in progress. Migration `0002_hr_operations_suite` is **preview only** until single approval.
+Gate: **Final HR Release Gate** — migration `0002_hr_operations_suite` applied.
 
 Legend: `IMPLEMENTED` | `PARTIAL` | `MISSING` | `BLOCKED`
 
-| Code | Module | Baseline (pre Master) | Target at Gate | Notes |
+| Code | Module | Baseline (pre Master) | Current at Final Gate | Notes |
 |---|---|---|---|---|
 | A | Employee Core | PARTIAL | IMPLEMENTED | Core CRUD/link exists; add photo, emergency contact, assignment history, multi-branch UX, terminate flows |
 | B | Departments and Positions | IMPLEMENTED | IMPLEMENTED | Keep; ensure menu under บุคลากร |
@@ -39,6 +39,15 @@ Legend: `IMPLEMENTED` | `PARTIAL` | `MISSING` | `BLOCKED`
 | Legal-grade tax/SSO calculation | Placeholder fields only; must not claim legal completeness |
 | PDF payslip download | Optional; if tooling not safe, omit button (no fake CTA) |
 
+## Verification evidence
+
+- `npm run db:verify`: **59/59 tables**; migrations `0001` and `0002` applied.
+- `npm run seed:hr` ×2 and `npm run seed:hr:demo` ×2; Platform `npm run seed:hr-permissions`: **44 codes**.
+- `npm run hr:reconcile`: **PASS**.
+- `npm test`: **161/161** passing.
+- `npm run accept:hr100`: **43/43** passing; see `docs/hr100-runtime-acceptance.results.json`.
+- `AUTH_INVITE_MODE=mock` remains unchanged.
+
 ## Fake-button policy
 
 Any future feature outside this matrix must not appear as a clickable control. Coming-soon products remain disabled tiles only.
@@ -46,5 +55,5 @@ Any future feature outside this matrix must not appear as a clickable control. C
 ## Working rule for this Master Phase
 
 - No PARTIAL/MISSING remaining in A–T at Final HR Release Gate (except BLOCKED rows above).
-- Single migration approval stop before apply.
+- Migration `0002_hr_operations_suite` applied after approval.
 - `AUTH_INVITE_MODE=mock` unchanged. No push. No Legacy / resident-v2 / qrstation / Payment Gateway edits.

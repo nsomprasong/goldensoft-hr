@@ -220,6 +220,22 @@ export const AUDIT_ACTION_TYPES: MasterRow[] = [
     nameEn: "Deactivate overtime rule",
     sortOrder: 22,
   },
+  { code: "work_location.create", nameTh: "สร้างสถานที่ทำงาน", nameEn: "Create work location", sortOrder: 23 },
+  { code: "work_location.update", nameTh: "แก้ไขสถานที่ทำงาน", nameEn: "Update work location", sortOrder: 24 },
+  { code: "work_calendar.save", nameTh: "บันทึกปฏิทินการทำงาน", nameEn: "Save work calendar", sortOrder: 25 },
+  { code: "holiday.save", nameTh: "บันทึกวันหยุด", nameEn: "Save holiday", sortOrder: 26 },
+  { code: "schedule_period.create", nameTh: "สร้างรอบตารางงาน", nameEn: "Create schedule period", sortOrder: 27 },
+  { code: "schedule.publish", nameTh: "เผยแพร่ตารางงาน", nameEn: "Publish schedule", sortOrder: 28 },
+  { code: "attendance.clock", nameTh: "ลงเวลาทำงาน", nameEn: "Clock attendance", sortOrder: 29 },
+  { code: "attendance.adjustment.create", nameTh: "ขอแก้ไขเวลา", nameEn: "Create attendance adjustment", sortOrder: 30 },
+  { code: "leave.submit", nameTh: "ส่งคำขอลา", nameEn: "Submit leave request", sortOrder: 31 },
+  { code: "leave.review", nameTh: "พิจารณาคำขอลา", nameEn: "Review leave request", sortOrder: 32 },
+  { code: "overtime.submit", nameTh: "ส่งคำขอทำงานล่วงเวลา", nameEn: "Submit overtime request", sortOrder: 33 },
+  { code: "overtime.review", nameTh: "พิจารณาคำขอทำงานล่วงเวลา", nameEn: "Review overtime request", sortOrder: 34 },
+  { code: "payroll_run.create", nameTh: "สร้างการคำนวณเงินเดือน", nameEn: "Create payroll run", sortOrder: 35 },
+  { code: "payroll_run.calculate", nameTh: "คำนวณเงินเดือน", nameEn: "Calculate payroll run", sortOrder: 36 },
+  { code: "payroll_run.approve", nameTh: "อนุมัติเงินเดือน", nameEn: "Approve payroll run", sortOrder: 37 },
+  { code: "payslip.issue", nameTh: "ออกสลิปเงินเดือน", nameEn: "Issue payslip", sortOrder: 38 },
 ];
 
 export const HR_MASTER_CATALOG = {
@@ -233,7 +249,127 @@ export const HR_MASTER_CATALOG = {
   auditActionType: AUDIT_ACTION_TYPES,
 } as const;
 
-export type MasterSeedCounts = Record<keyof typeof HR_MASTER_CATALOG, number>;
+export type OperationMasterRow = {
+  code: string;
+  name: string;
+  sortOrder?: number;
+  isTaxable?: boolean;
+  isTaxableReduction?: boolean;
+  isRecurringAllowed?: boolean;
+};
+
+export const ATTENDANCE_STATUSES: OperationMasterRow[] = [
+  { code: "PRESENT", name: "มาทำงาน", sortOrder: 1 },
+  { code: "LATE", name: "มาสาย", sortOrder: 2 },
+  { code: "EARLY_LEAVE", name: "กลับก่อนเวลา", sortOrder: 3 },
+  { code: "ABSENT", name: "ขาดงาน", sortOrder: 4 },
+  { code: "LEAVE", name: "ลา", sortOrder: 5 },
+  { code: "HOLIDAY", name: "วันหยุด", sortOrder: 6 },
+  { code: "REST_DAY", name: "วันหยุดประจำสัปดาห์", sortOrder: 7 },
+  { code: "INCOMPLETE", name: "ลงเวลาไม่ครบ", sortOrder: 8 },
+  { code: "MISSING_CLOCK_IN", name: "ไม่มีเวลาเข้างาน", sortOrder: 9 },
+  { code: "MISSING_CLOCK_OUT", name: "ไม่มีเวลาออกงาน", sortOrder: 10 },
+];
+export const ATTENDANCE_EVENT_TYPES: OperationMasterRow[] = [
+  { code: "CLOCK_IN", name: "ลงเวลาเข้า", sortOrder: 1 },
+  { code: "CLOCK_OUT", name: "ลงเวลาออก", sortOrder: 2 },
+  { code: "BREAK_START", name: "เริ่มพัก", sortOrder: 3 },
+  { code: "BREAK_END", name: "สิ้นสุดพัก", sortOrder: 4 },
+  { code: "OT_START", name: "เริ่มทำงานล่วงเวลา", sortOrder: 5 },
+  { code: "OT_END", name: "สิ้นสุดทำงานล่วงเวลา", sortOrder: 6 },
+];
+const REQUEST_STATUSES: OperationMasterRow[] = [
+  { code: "DRAFT", name: "ร่าง", sortOrder: 1 },
+  { code: "SUBMITTED", name: "ส่งคำขอแล้ว", sortOrder: 2 },
+  { code: "APPROVED", name: "อนุมัติแล้ว", sortOrder: 3 },
+  { code: "REJECTED", name: "ไม่อนุมัติ", sortOrder: 4 },
+  { code: "CANCELLED", name: "ยกเลิก", sortOrder: 5 },
+];
+export const LEAVE_REQUEST_STATUSES = REQUEST_STATUSES;
+export const OVERTIME_REQUEST_STATUSES = REQUEST_STATUSES;
+export const SCHEDULE_PERIOD_STATUSES: OperationMasterRow[] = [
+  { code: "DRAFT", name: "ร่าง", sortOrder: 1 },
+  { code: "PUBLISHED", name: "เผยแพร่แล้ว", sortOrder: 2 },
+  { code: "LOCKED", name: "ล็อกแล้ว", sortOrder: 3 },
+];
+export const HOLIDAY_TYPES: OperationMasterRow[] = [
+  { code: "PUBLIC", name: "วันหยุดราชการ", sortOrder: 1 },
+  { code: "COMPANY", name: "วันหยุดบริษัท", sortOrder: 2 },
+  { code: "BRANCH", name: "วันหยุดสาขา", sortOrder: 3 },
+  { code: "SPECIAL", name: "วันหยุดพิเศษ", sortOrder: 4 },
+];
+export const LEAVE_UNITS: OperationMasterRow[] = [
+  { code: "DAY", name: "วัน", sortOrder: 1 },
+  { code: "HALF_DAY", name: "ครึ่งวัน", sortOrder: 2 },
+  { code: "HOUR", name: "ชั่วโมง", sortOrder: 3 },
+];
+export const APPROVAL_ENTITY_TYPES: OperationMasterRow[] = [
+  { code: "LEAVE", name: "การลา", sortOrder: 1 },
+  { code: "OVERTIME", name: "การทำงานล่วงเวลา", sortOrder: 2 },
+  { code: "ATTENDANCE_ADJUSTMENT", name: "คำขอแก้ไขเวลา", sortOrder: 3 },
+  { code: "PAYROLL", name: "เงินเดือน", sortOrder: 4 },
+];
+export const NOTIFICATION_TYPES: OperationMasterRow[] = [
+  { code: "LEAVE_SUBMITTED", name: "ส่งคำขอลา", sortOrder: 1 },
+  { code: "LEAVE_APPROVED", name: "อนุมัติการลา", sortOrder: 2 },
+  { code: "LEAVE_REJECTED", name: "ไม่อนุมัติการลา", sortOrder: 3 },
+  { code: "OT_SUBMITTED", name: "ส่งคำขอทำงานล่วงเวลา", sortOrder: 4 },
+  { code: "OT_APPROVED", name: "อนุมัติการทำงานล่วงเวลา", sortOrder: 5 },
+  { code: "OT_REJECTED", name: "ไม่อนุมัติการทำงานล่วงเวลา", sortOrder: 6 },
+  { code: "SCHEDULE_PUBLISHED", name: "เผยแพร่ตารางงาน", sortOrder: 7 },
+  { code: "SCHEDULE_CHANGED", name: "เปลี่ยนตารางงาน", sortOrder: 8 },
+  { code: "ATTENDANCE_MISSING", name: "ลงเวลาไม่ครบ", sortOrder: 9 },
+  { code: "PAYROLL_APPROVED", name: "อนุมัติเงินเดือน", sortOrder: 10 },
+  { code: "PAYSLIP_ISSUED", name: "ออกสลิปเงินเดือน", sortOrder: 11 },
+];
+export const NOTIFICATION_STATUSES: OperationMasterRow[] = [
+  { code: "PENDING", name: "รอดำเนินการ", sortOrder: 1 },
+  { code: "DELIVERED", name: "ส่งแล้ว", sortOrder: 2 },
+  { code: "FAILED", name: "ส่งไม่สำเร็จ", sortOrder: 3 },
+  { code: "CANCELLED", name: "ยกเลิก", sortOrder: 4 },
+];
+export const LEAVE_BALANCE_TX_TYPES: OperationMasterRow[] = [
+  { code: "OPENING", name: "ยอดยกมา", sortOrder: 1 },
+  { code: "ACCRUAL", name: "สะสมสิทธิ", sortOrder: 2 },
+  { code: "USED", name: "ใช้สิทธิ", sortOrder: 3 },
+  { code: "ADJUSTMENT", name: "ปรับปรุง", sortOrder: 4 },
+  { code: "CARRY_FORWARD", name: "ยกยอด", sortOrder: 5 },
+];
+export const EARNING_TYPES: OperationMasterRow[] = [
+  { code: "BASE_SALARY", name: "เงินเดือนพื้นฐาน" },
+  { code: "OVERTIME", name: "ค่าล่วงเวลา" },
+  { code: "ALLOWANCE", name: "เงินเพิ่ม", isTaxable: true },
+  { code: "BONUS", name: "โบนัส" },
+  { code: "COMMISSION", name: "คอมมิชชัน" },
+];
+export const DEDUCTION_TYPES: OperationMasterRow[] = [
+  { code: "TAX", name: "ภาษี" },
+  { code: "SOCIAL_SECURITY", name: "ประกันสังคม" },
+  { code: "LOAN", name: "หักชำระเงินกู้" },
+  { code: "ABSENCE", name: "หักขาดงาน" },
+  { code: "OTHER", name: "รายการหักอื่น" },
+];
+
+export const HR_OPERATIONS_MASTER_CATALOG = {
+  attendanceStatus: ATTENDANCE_STATUSES,
+  attendanceEventType: ATTENDANCE_EVENT_TYPES,
+  leaveRequestStatus: LEAVE_REQUEST_STATUSES,
+  overtimeRequestStatus: OVERTIME_REQUEST_STATUSES,
+  schedulePeriodStatus: SCHEDULE_PERIOD_STATUSES,
+  holidayType: HOLIDAY_TYPES,
+  leaveUnit: LEAVE_UNITS,
+  approvalEntityType: APPROVAL_ENTITY_TYPES,
+  notificationType: NOTIFICATION_TYPES,
+  notificationStatus: NOTIFICATION_STATUSES,
+  leaveBalanceTxType: LEAVE_BALANCE_TX_TYPES,
+  earningType: EARNING_TYPES,
+  deductionType: DEDUCTION_TYPES,
+} as const;
+
+export type MasterSeedCounts = Record<
+  keyof typeof HR_MASTER_CATALOG | keyof typeof HR_OPERATIONS_MASTER_CATALOG,
+  number
+>;
 
 /** Idempotent upsert by `code`. Never deletes and never rewrites a code. */
 export async function seedHrMasters(
@@ -263,6 +399,44 @@ export async function seedHrMasters(
           sortOrder: row.sortOrder,
         },
         create: { ...row, isActive: true, isSystem: true },
+      });
+    }
+    counts[key] = rows.length;
+  }
+
+  for (const key of Object.keys(HR_OPERATIONS_MASTER_CATALOG) as Array<
+    keyof typeof HR_OPERATIONS_MASTER_CATALOG
+  >) {
+    const rows = HR_OPERATIONS_MASTER_CATALOG[key];
+    const delegate = prisma[key] as unknown as {
+      upsert(args: {
+        where: { code: string };
+        update: Record<string, unknown>;
+        create: Record<string, unknown>;
+      }): Promise<unknown>;
+    };
+    for (const row of rows) {
+      const shared = {
+        name: row.name,
+        ...(row.sortOrder === undefined ? {} : { sortOrder: row.sortOrder }),
+        ...(row.isTaxable === undefined ? {} : { isTaxable: row.isTaxable }),
+        ...(row.isTaxableReduction === undefined
+          ? {}
+          : { isTaxableReduction: row.isTaxableReduction }),
+        ...(row.isRecurringAllowed === undefined
+          ? {}
+          : { isRecurringAllowed: row.isRecurringAllowed }),
+      };
+      await delegate.upsert({
+        where: { code: row.code },
+        update: shared,
+        create: {
+          code: row.code,
+          ...shared,
+          ...(key === "earningType" || key === "deductionType"
+            ? { isActive: true }
+            : { isActive: true, isSystem: true }),
+        },
       });
     }
     counts[key] = rows.length;

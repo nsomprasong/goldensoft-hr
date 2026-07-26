@@ -1,0 +1,237 @@
+{
+  "generatedAt": "2026-07-26T08:32:54.864Z",
+  "platform": "http://127.0.0.1:3000",
+  "hr": "http://127.0.0.1:3001",
+  "app": "http://127.0.0.1:3002",
+  "demoOrganizationId": "54acc3c9-c043-428c-857a-465095658d72",
+  "prefix": "ACCEPTANCE-HR100-2026-07-26T08-31",
+  "warmLimitMs": 3500,
+  "steps": [
+    {
+      "name": "Security: unauthenticated employees denied",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "Security: forged organization header cannot leak data",
+      "ok": true,
+      "detail": "baseline=17 forged=17"
+    },
+    {
+      "name": "API: masters",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 2170
+    },
+    {
+      "name": "API: acceptance employee create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: work location create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: work location list",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1510
+    },
+    {
+      "name": "API: calendar create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: holiday create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: shift create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: schedule period create",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "API: schedule shift assignment confirmed",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "API: schedule publish confirmed",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "API: attendance days list",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1533
+    },
+    {
+      "name": "API: leave types list",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1636
+    },
+    {
+      "name": "API: leave request submit",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: leave balances list",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1638
+    },
+    {
+      "name": "API: overtime request submit",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: payroll schedule create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: payroll period create",
+      "ok": true,
+      "detail": "status=201"
+    },
+    {
+      "name": "API: payroll run create",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "API: approvals inbox",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 2141
+    },
+    {
+      "name": "API: notifications list",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1477
+    },
+    {
+      "name": "API: attendance report",
+      "ok": true,
+      "detail": "status=200",
+      "ms": 1511
+    },
+    {
+      "name": "API: self-service profile",
+      "ok": true,
+      "detail": "status=404 (no linked employee)"
+    },
+    {
+      "name": "Security: Customer App redirects anonymous user to Platform login",
+      "ok": true,
+      "detail": "http://127.0.0.1:3000/login?next=http%3A%2F%2F127.0.0.1%3A3002%2Fauth%2Fcallback"
+    },
+    {
+      "name": "Browser: demo HR context bootstrap",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "Browser: RESORT-DEMO is HR-entitled from bootstrap",
+      "ok": true,
+      "detail": "status=200 organization=54acc3c9-c043-428c-857a-465095658d72"
+    },
+    {
+      "name": "Browser: /hr",
+      "ok": true,
+      "detail": "status=200 2960ms"
+    },
+    {
+      "name": "Browser: /hr/employees",
+      "ok": true,
+      "detail": "status=200 1479ms"
+    },
+    {
+      "name": "Browser: /hr/schedules",
+      "ok": true,
+      "detail": "status=200 665ms"
+    },
+    {
+      "name": "Browser: /hr/attendance",
+      "ok": true,
+      "detail": "status=200 632ms"
+    },
+    {
+      "name": "Browser: /hr/leave",
+      "ok": true,
+      "detail": "status=200 769ms"
+    },
+    {
+      "name": "Browser: /hr/overtime",
+      "ok": true,
+      "detail": "status=200 645ms"
+    },
+    {
+      "name": "Browser: /hr/approvals",
+      "ok": true,
+      "detail": "status=200 643ms"
+    },
+    {
+      "name": "Browser: /hr/payroll/runs",
+      "ok": true,
+      "detail": "status=200 664ms"
+    },
+    {
+      "name": "Browser: /hr/payslips",
+      "ok": true,
+      "detail": "status=200 623ms"
+    },
+    {
+      "name": "Browser: /hr/reports",
+      "ok": true,
+      "detail": "status=200 680ms"
+    },
+    {
+      "name": "Browser: /hr/me",
+      "ok": true,
+      "detail": "status=200 628ms"
+    },
+    {
+      "name": "Browser: /hr/me/attendance",
+      "ok": true,
+      "detail": "status=200 2402ms"
+    },
+    {
+      "name": "Performance: warm /hr <= 3500ms",
+      "ok": true,
+      "detail": "1013ms",
+      "ms": 1013
+    },
+    {
+      "name": "Performance: warm /hr/employees <= 3500ms",
+      "ok": true,
+      "detail": "948ms",
+      "ms": 948
+    },
+    {
+      "name": "Responsive: /hr has no horizontal overflow",
+      "ok": true,
+      "detail": "{\"375\":true,\"768\":true,\"1024\":true,\"1440\":true}"
+    },
+    {
+      "name": "Responsive: /hr/me has no horizontal overflow",
+      "ok": true,
+      "detail": "{\"375\":true,\"768\":true,\"1024\":true,\"1440\":true}"
+    }
+  ],
+  "passed": true
+}

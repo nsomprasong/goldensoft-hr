@@ -12,13 +12,15 @@
     "git:diff-check": "git diff --check",
     "db:preflight": "tsx scripts/db-preflight.ts",
     "db:verify": "tsx scripts/db-verify.ts",
+    "hr:reconcile": "tsx scripts/hr-reconcile.ts",
     "db:migration:check": "tsx scripts/migration-check.ts",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "seed:hr": "tsx scripts/seed-hr.ts",
     "seed:hr:demo": "tsx scripts/seed-hr-demo.ts",
     "seed:hr:demo:cleanup": "tsx scripts/seed-hr-demo-cleanup.ts",
-    "accept:phase8b": "tsx scripts/phase8b-runtime-acceptance.ts"
+    "accept:phase8b": "tsx scripts/phase8b-runtime-acceptance.ts",
+    "accept:hr100": "tsx scripts/hr100-runtime-acceptance.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^6.19.3",
