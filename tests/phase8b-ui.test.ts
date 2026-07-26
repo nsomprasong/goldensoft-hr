@@ -358,18 +358,22 @@ describe("Phase 8B layout and styling", () => {
   });
 
   it("uses a Thai-first font stack instead of the Next.js default", () => {
+    const layout = read("src/app/layout.tsx");
+    const tokens = read("src/app/design-tokens.css");
     const css = read("src/app/globals.css");
-    assert.match(css, /IBM Plex Sans Thai/);
-    assert.match(css, /Noto Sans Thai/);
-    assert.match(css, /system-ui/);
-    assert.doesNotMatch(css, /Inter|Roboto|Geist/);
+    assert.match(layout, /from "next\/font\/google"/);
+    assert.match(layout, /Anuphan/);
+    assert.match(layout, /Prompt/);
+    assert.match(tokens, /"Leelawadee UI"/);
+    assert.match(css, /--hr-font:\s*var\(--font-family-sans\)/);
+    assert.doesNotMatch(layout, /fonts\.googleapis\.com/);
   });
 
   it("is responsive between 375px and 1440px", () => {
     const css = read("src/app/globals.css");
     const queries = css.match(/@media \(max-width: \d+px\)/g) ?? [];
     assert.ok(queries.length >= 3, "expected mobile/tablet breakpoints");
-    assert.match(css, /--hr-content-max:\s*\d+px/);
+    assert.match(css, /--hr-content-max:\s*var\(--content-max\)/);
     assert.match(css, /max-width: var\(--hr-content-max\)/);
     assert.match(css, /overflow-x: auto/);
     assert.match(css, /minmax\(/);
@@ -391,6 +395,48 @@ describe("Phase 8B layout and styling", () => {
     assert.match(shell, /Debug Shell/);
     assert.match(shell, /standalone_debug/);
     assert.doesNotMatch(css, /position: fixed/);
+  });
+});
+
+describe("Phase 8B.3 product UI contract", () => {
+  it("defines Thai-safe typography, density, and sRGB tokens", () => {
+    const tokens = read("src/app/design-tokens.css");
+    for (const token of [
+      "--font-family-sans",
+      "--font-size-page-title",
+      "--font-size-body",
+      "--font-size-label",
+      "--line-height-normal",
+      "--control-height",
+      "--page-gutter",
+      "--radius-lg",
+      "--shadow-sm",
+    ]) {
+      assert.match(tokens, new RegExp(`${token}:`), `missing ${token}`);
+    }
+    const normal = Number(
+      tokens.match(/--line-height-normal:\s*([\d.]+)/)?.[1],
+    );
+    assert.ok(normal >= 1.5);
+    assert.doesNotMatch(tokens, /color-mix|oklch/);
+  });
+
+  it("scopes product element styles away from Customer Shell markup", () => {
+    const css = read("src/app/globals.css");
+    assert.match(css, /\.hr-root h1/);
+    assert.match(css, /\.hr-root a/);
+    assert.match(css, /\.hr-root table/);
+    assert.match(css, /\.hr-root input/);
+    assert.doesNotMatch(css, /\n(?:h1|a|table|label|input),?\s*\{/);
+    const frame = read("src/components/hr/product-frame.tsx");
+    assert.match(frame, /className="hr-root hr-product-frame"/);
+    assert.match(css, /\.hr-product-body \{[^}]*max-width:[^}]*padding:/s);
+  });
+
+  it("keeps product pages free of hard-coded font families", () => {
+    const pages = PAGES.map(read).join("\n");
+    assert.doesNotMatch(pages, /fontFamily|font-family/);
+    assert.doesNotMatch(pages, /bg-\$\{|text-\$\{|border-\$\{/);
   });
 });
 

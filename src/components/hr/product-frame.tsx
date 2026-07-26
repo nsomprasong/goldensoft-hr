@@ -72,7 +72,7 @@ export default function HrProductFrame({
   const items = visibleHrProductNav(ctx);
 
   return (
-    <div className="hr-product-frame" data-hr-shell="product">
+    <div className="hr-root hr-product-frame" data-hr-shell="product">
       <div className="hr-product-nav-bar">
         <div className="hr-product-nav-desktop">
           <ProductNav items={items} active={active} />

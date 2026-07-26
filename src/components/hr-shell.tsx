@@ -48,7 +48,10 @@ export default async function HrShell({
   }
 
   return (
-    <div className="hr-shell hr-debug-shell" data-hr-shell="standalone_debug">
+    <div
+      className="hr-root hr-shell hr-debug-shell"
+      data-hr-shell="standalone_debug"
+    >
       <div className="hr-debug-banner" role="status">
         <strong>Debug Shell เท่านั้น</strong>
         {" — "}
