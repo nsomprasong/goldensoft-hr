@@ -8,6 +8,7 @@ import type {
   EntitlementCheckRequest,
   EntitlementCheckResponse,
   PlatformClient,
+  PlatformForwardHeaders,
   PlatformMeResponse,
 } from "@/lib/platform/types";
 
@@ -38,12 +39,37 @@ function codeFromBody(body: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+function isTestAuthEnabled(): boolean {
+  return (
+    process.env.ALLOW_TEST_AUTH === "true" &&
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+function buildPlatformHeaders(
+  cookieHeader: string,
+  forwardHeaders?: PlatformForwardHeaders,
+  extra?: Record<string, string>,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    cookie: cookieHeader,
+    ...extra,
+  };
+  if (isTestAuthEnabled() && forwardHeaders?.["x-test-auth-user-id"]) {
+    headers["x-test-auth-user-id"] = forwardHeaders["x-test-auth-user-id"];
+    if (forwardHeaders["x-test-auth-email"]) {
+      headers["x-test-auth-email"] = forwardHeaders["x-test-auth-email"];
+    }
+  }
+  return headers;
+}
+
 export function createHttpPlatformClient(): PlatformClient {
   return {
-    async getMe(cookieHeader) {
+    async getMe(cookieHeader, forwardHeaders) {
       const res = await fetch(`${platformBaseUrl()}/api/auth/me`, {
         method: "GET",
-        headers: { cookie: cookieHeader },
+        headers: buildPlatformHeaders(cookieHeader, forwardHeaders),
         cache: "no-store",
       });
       const body = await readJson(res);
@@ -60,15 +86,14 @@ export function createHttpPlatformClient(): PlatformClient {
       return body as PlatformMeResponse;
     },
 
-    async checkEntitlement(cookieHeader, input) {
+    async checkEntitlement(cookieHeader, input, forwardHeaders) {
       const res = await fetch(
         `${platformBaseUrl()}/api/platform/entitlements/check`,
         {
           method: "POST",
-          headers: {
-            cookie: cookieHeader,
+          headers: buildPlatformHeaders(cookieHeader, forwardHeaders, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify(input),
           cache: "no-store",
         },

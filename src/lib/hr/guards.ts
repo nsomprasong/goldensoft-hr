@@ -40,6 +40,17 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
   const cookieHeader = buildCookieHeader(jar);
   const clientOrganizationId = headerList.get("x-organization-id");
   const platformClient = options?.platformClient ?? createHttpPlatformClient();
+  const testAuthUserId = headerList.get("x-test-auth-user-id");
+  const forwardHeaders =
+    process.env.ALLOW_TEST_AUTH === "true" &&
+    process.env.NODE_ENV !== "production" &&
+    testAuthUserId
+      ? {
+          "x-test-auth-user-id": testAuthUserId,
+          "x-test-auth-email":
+            headerList.get("x-test-auth-email") ?? undefined,
+        }
+      : undefined;
 
   try {
     const ctx = await resolveHrRequestContext({
@@ -48,6 +59,7 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
       requiredBranchId: options?.branchId,
       platformClient,
       allowedBranchIds: options?.allowedBranchIds,
+      forwardHeaders,
     });
 
     if (options?.permission && !hrCan(ctx, options.permission)) {

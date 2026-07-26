@@ -1,5 +1,5 @@
--- GoldenSoft HR — Phase 8B core schema (PREVIEW ONLY).
--- Do NOT apply without explicit approval. No prisma migrate deploy / db push / migrate reset.
+-- GoldenSoft HR - Phase 8B core schema.
+-- Approved for apply (Phase 8B Apply). Additive only - no reset / db push.
 --
 -- Scope guarantees reviewed in docs/phase8b-schema-review.md:
 --   * Every object is created inside schema hr and nowhere else.
@@ -7,7 +7,6 @@
 --   * organization_id / branch_id / platform_user_id / auth_user_id are soft UUID references
 --     with no cross-schema foreign keys.
 --   * Additive only: no DROP, no TRUNCATE, no destructive ALTER.
-
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "hr";
 
@@ -564,93 +563,93 @@ ALTER TABLE "hr"."work_locations" ADD CONSTRAINT "work_locations_geofence_radius
 -- SeedMaster employment_types
 INSERT INTO "hr"."employment_types" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'DAILY', 'รายวัน', 'Daily', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'MONTHLY', 'รายเดือน', 'Monthly', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'CONTRACT', 'สัญญาจ้าง', 'Contract', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'TEMPORARY', 'ชั่วคราว', 'Temporary', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'DAILY', 'เธฃเธฒเธขเธงเธฑเธ', 'Daily', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'MONTHLY', 'เธฃเธฒเธขเน€เธ”เธทเธญเธ', 'Monthly', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'CONTRACT', 'เธชเธฑเธเธเธฒเธเนเธฒเธ', 'Contract', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'TEMPORARY', 'เธเธฑเนเธงเธเธฃเธฒเธง', 'Temporary', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster employee_statuses
 INSERT INTO "hr"."employee_statuses" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'ACTIVE', 'ปฏิบัติงาน', 'Active', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'INACTIVE', 'ไม่ปฏิบัติงาน', 'Inactive', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'RESIGNED', 'ลาออก', 'Resigned', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'TERMINATED', 'เลิกจ้าง', 'Terminated', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'SUSPENDED', 'พักงาน', 'Suspended', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'ACTIVE', 'เธเธเธดเธเธฑเธ•เธดเธเธฒเธ', 'Active', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'INACTIVE', 'เนเธกเนเธเธเธดเธเธฑเธ•เธดเธเธฒเธ', 'Inactive', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'RESIGNED', 'เธฅเธฒเธญเธญเธ', 'Resigned', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'TERMINATED', 'เน€เธฅเธดเธเธเนเธฒเธ', 'Terminated', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'SUSPENDED', 'เธเธฑเธเธเธฒเธ', 'Suspended', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster shift_types
 INSERT INTO "hr"."shift_types" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'REGULAR', 'กะปกติ', 'Regular', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'NIGHT', 'กะกลางคืน', 'Night', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'SPLIT', 'กะแบ่งช่วง', 'Split', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'OFF', 'วันหยุด', 'Day off', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'LEAVE', 'วันลา', 'Leave', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'REGULAR', 'เธเธฐเธเธเธ•เธด', 'Regular', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'NIGHT', 'เธเธฐเธเธฅเธฒเธเธเธทเธ', 'Night', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'SPLIT', 'เธเธฐเนเธเนเธเธเนเธงเธ', 'Split', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'OFF', 'เธงเธฑเธเธซเธขเธธเธ”', 'Day off', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'LEAVE', 'เธงเธฑเธเธฅเธฒ', 'Leave', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster pay_frequencies
 INSERT INTO "hr"."pay_frequencies" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'SEMIMONTHLY', 'รายครึ่งเดือน', 'Semi-monthly', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'MONTHLY', 'รายเดือน', 'Monthly', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'WEEKLY', 'รายสัปดาห์', 'Weekly', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'DAILY', 'รายวัน', 'Daily', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'SEMIMONTHLY', 'เธฃเธฒเธขเธเธฃเธถเนเธเน€เธ”เธทเธญเธ', 'Semi-monthly', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'MONTHLY', 'เธฃเธฒเธขเน€เธ”เธทเธญเธ', 'Monthly', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'WEEKLY', 'เธฃเธฒเธขเธชเธฑเธเธ”เธฒเธซเน', 'Weekly', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'DAILY', 'เธฃเธฒเธขเธงเธฑเธ', 'Daily', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster wage_types
 INSERT INTO "hr"."wage_types" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'DAILY', 'ค่าจ้างรายวัน', 'Daily wage', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'MONTHLY', 'เงินเดือน', 'Monthly salary', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'HOURLY', 'ค่าจ้างรายชั่วโมง', 'Hourly wage', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'DAILY', 'เธเนเธฒเธเนเธฒเธเธฃเธฒเธขเธงเธฑเธ', 'Daily wage', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'MONTHLY', 'เน€เธเธดเธเน€เธ”เธทเธญเธ', 'Monthly salary', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'HOURLY', 'เธเนเธฒเธเนเธฒเธเธฃเธฒเธขเธเธฑเนเธงเนเธกเธ', 'Hourly wage', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster overtime_rate_types
 INSERT INTO "hr"."overtime_rate_types" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'NORMAL_DAY', 'วันทำงานปกติ', 'Normal working day', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'HOLIDAY', 'วันหยุดนักขัตฤกษ์', 'Holiday', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'REST_DAY', 'วันหยุดประจำสัปดาห์', 'Weekly rest day', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'SPECIAL', 'อัตราพิเศษ', 'Special rate', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'NORMAL_DAY', 'เธงเธฑเธเธ—เธณเธเธฒเธเธเธเธ•เธด', 'Normal working day', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'HOLIDAY', 'เธงเธฑเธเธซเธขเธธเธ”เธเธฑเธเธเธฑเธ•เธคเธเธฉเน', 'Holiday', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'REST_DAY', 'เธงเธฑเธเธซเธขเธธเธ”เธเธฃเธฐเธเธณเธชเธฑเธเธ”เธฒเธซเน', 'Weekly rest day', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'SPECIAL', 'เธญเธฑเธ•เธฃเธฒเธเธดเน€เธจเธฉ', 'Special rate', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster payroll_period_statuses
 INSERT INTO "hr"."payroll_period_statuses" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'DRAFT', 'ร่าง', 'Draft', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'OPEN', 'เปิดงวด', 'Open', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'CALCULATING', 'กำลังคำนวณ', 'Calculating', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'REVIEW', 'รอตรวจสอบ', 'Review', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'APPROVED', 'อนุมัติแล้ว', 'Approved', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'PAID', 'จ่ายแล้ว', 'Paid', 6, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'LOCKED', 'ล็อกงวด', 'Locked', 7, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'DRAFT', 'เธฃเนเธฒเธ', 'Draft', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'OPEN', 'เน€เธเธดเธ”เธเธงเธ”', 'Open', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'CALCULATING', 'เธเธณเธฅเธฑเธเธเธณเธเธงเธ“', 'Calculating', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'REVIEW', 'เธฃเธญเธ•เธฃเธงเธเธชเธญเธ', 'Review', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'APPROVED', 'เธญเธเธธเธกเธฑเธ•เธดเนเธฅเนเธง', 'Approved', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'PAID', 'เธเนเธฒเธขเนเธฅเนเธง', 'Paid', 6, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'LOCKED', 'เธฅเนเธญเธเธเธงเธ”', 'Locked', 7, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;
 
 -- SeedMaster audit_action_types
 INSERT INTO "hr"."audit_action_types" ("id", "code", "name_th", "name_en", "sort_order", "is_active", "is_system", "created_at", "updated_at")
 VALUES
-    (gen_random_uuid(), 'employee.create', 'สร้างพนักงาน', 'Create employee', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'employee.update', 'แก้ไขข้อมูลพนักงาน', 'Update employee', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'employee.deactivate', 'ปิดการใช้งานพนักงาน', 'Deactivate employee', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'employee.link_user', 'เชื่อมบัญชีผู้ใช้กับพนักงาน', 'Link user account to employee', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'employee.unlink_user', 'ยกเลิกการเชื่อมบัญชีผู้ใช้', 'Unlink user account from employee', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'compensation.add', 'เพิ่มข้อมูลค่าจ้าง', 'Add compensation record', 6, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'department.create', 'สร้างแผนก', 'Create department', 7, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'department.update', 'แก้ไขแผนก', 'Update department', 8, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'department.deactivate', 'ปิดการใช้งานแผนก', 'Deactivate department', 9, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'position.create', 'สร้างตำแหน่ง', 'Create position', 10, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'position.update', 'แก้ไขตำแหน่ง', 'Update position', 11, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'position.deactivate', 'ปิดการใช้งานตำแหน่ง', 'Deactivate position', 12, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'shift.create', 'สร้างกะการทำงาน', 'Create shift', 13, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'shift.update', 'แก้ไขกะการทำงาน', 'Update shift', 14, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'shift.deactivate', 'ปิดการใช้งานกะการทำงาน', 'Deactivate shift', 15, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'payroll_schedule.create', 'สร้างรอบการจ่ายเงินเดือน', 'Create payroll schedule', 16, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'payroll_schedule.update', 'แก้ไขรอบการจ่ายเงินเดือน', 'Update payroll schedule', 17, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'payroll_period.create', 'สร้างงวดจ่ายเงินเดือน', 'Create payroll period', 18, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'payroll_period.status_change', 'เปลี่ยนสถานะงวดจ่ายเงินเดือน', 'Change payroll period status', 19, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'overtime_rule.create', 'สร้างกฎค่าล่วงเวลา', 'Create overtime rule', 20, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'overtime_rule.update', 'แก้ไขกฎค่าล่วงเวลา', 'Update overtime rule', 21, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), 'overtime_rule.deactivate', 'ปิดการใช้งานกฎค่าล่วงเวลา', 'Deactivate overtime rule', 22, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    (gen_random_uuid(), 'employee.create', 'เธชเธฃเนเธฒเธเธเธเธฑเธเธเธฒเธ', 'Create employee', 1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'employee.update', 'เนเธเนเนเธเธเนเธญเธกเธนเธฅเธเธเธฑเธเธเธฒเธ', 'Update employee', 2, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'employee.deactivate', 'เธเธดเธ”เธเธฒเธฃเนเธเนเธเธฒเธเธเธเธฑเธเธเธฒเธ', 'Deactivate employee', 3, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'employee.link_user', 'เน€เธเธทเนเธญเธกเธเธฑเธเธเธตเธเธนเนเนเธเนเธเธฑเธเธเธเธฑเธเธเธฒเธ', 'Link user account to employee', 4, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'employee.unlink_user', 'เธขเธเน€เธฅเธดเธเธเธฒเธฃเน€เธเธทเนเธญเธกเธเธฑเธเธเธตเธเธนเนเนเธเน', 'Unlink user account from employee', 5, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'compensation.add', 'เน€เธเธดเนเธกเธเนเธญเธกเธนเธฅเธเนเธฒเธเนเธฒเธ', 'Add compensation record', 6, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'department.create', 'เธชเธฃเนเธฒเธเนเธเธเธ', 'Create department', 7, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'department.update', 'เนเธเนเนเธเนเธเธเธ', 'Update department', 8, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'department.deactivate', 'เธเธดเธ”เธเธฒเธฃเนเธเนเธเธฒเธเนเธเธเธ', 'Deactivate department', 9, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'position.create', 'เธชเธฃเนเธฒเธเธ•เธณเนเธซเธเนเธ', 'Create position', 10, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'position.update', 'เนเธเนเนเธเธ•เธณเนเธซเธเนเธ', 'Update position', 11, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'position.deactivate', 'เธเธดเธ”เธเธฒเธฃเนเธเนเธเธฒเธเธ•เธณเนเธซเธเนเธ', 'Deactivate position', 12, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'shift.create', 'เธชเธฃเนเธฒเธเธเธฐเธเธฒเธฃเธ—เธณเธเธฒเธ', 'Create shift', 13, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'shift.update', 'เนเธเนเนเธเธเธฐเธเธฒเธฃเธ—เธณเธเธฒเธ', 'Update shift', 14, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'shift.deactivate', 'เธเธดเธ”เธเธฒเธฃเนเธเนเธเธฒเธเธเธฐเธเธฒเธฃเธ—เธณเธเธฒเธ', 'Deactivate shift', 15, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'payroll_schedule.create', 'เธชเธฃเนเธฒเธเธฃเธญเธเธเธฒเธฃเธเนเธฒเธขเน€เธเธดเธเน€เธ”เธทเธญเธ', 'Create payroll schedule', 16, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'payroll_schedule.update', 'เนเธเนเนเธเธฃเธญเธเธเธฒเธฃเธเนเธฒเธขเน€เธเธดเธเน€เธ”เธทเธญเธ', 'Update payroll schedule', 17, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'payroll_period.create', 'เธชเธฃเนเธฒเธเธเธงเธ”เธเนเธฒเธขเน€เธเธดเธเน€เธ”เธทเธญเธ', 'Create payroll period', 18, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'payroll_period.status_change', 'เน€เธเธฅเธตเนเธขเธเธชเธ–เธฒเธเธฐเธเธงเธ”เธเนเธฒเธขเน€เธเธดเธเน€เธ”เธทเธญเธ', 'Change payroll period status', 19, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'overtime_rule.create', 'เธชเธฃเนเธฒเธเธเธเธเนเธฒเธฅเนเธงเธเน€เธงเธฅเธฒ', 'Create overtime rule', 20, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'overtime_rule.update', 'เนเธเนเนเธเธเธเธเนเธฒเธฅเนเธงเธเน€เธงเธฅเธฒ', 'Update overtime rule', 21, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'overtime_rule.deactivate', 'เธเธดเธ”เธเธฒเธฃเนเธเนเธเธฒเธเธเธเธเนเธฒเธฅเนเธงเธเน€เธงเธฅเธฒ', 'Deactivate overtime rule', 22, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT ("code") DO NOTHING;

@@ -60,11 +60,21 @@ export type PlatformContextCookie = {
   mode?: PlatformContextMode;
 };
 
+/** Optional headers forwarded to Platform (e.g. local ALLOW_TEST_AUTH). */
+export type PlatformForwardHeaders = {
+  "x-test-auth-user-id"?: string;
+  "x-test-auth-email"?: string;
+};
+
 export type PlatformClient = {
-  getMe(cookieHeader: string): Promise<PlatformMeResponse>;
+  getMe(
+    cookieHeader: string,
+    forwardHeaders?: PlatformForwardHeaders,
+  ): Promise<PlatformMeResponse>;
   checkEntitlement(
     cookieHeader: string,
     input: EntitlementCheckRequest,
+    forwardHeaders?: PlatformForwardHeaders,
   ): Promise<EntitlementCheckResponse>;
 };
 

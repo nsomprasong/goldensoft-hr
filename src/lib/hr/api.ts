@@ -133,9 +133,22 @@ export async function requireHrApi(
     options.platformClient ?? (await resolvePlatformClient());
 
   // x-organization-id and any body-supplied tenant id are deliberately unread.
+  const testAuthUserId = request.headers.get("x-test-auth-user-id");
+  const forwardHeaders =
+    process.env.ALLOW_TEST_AUTH === "true" &&
+    process.env.NODE_ENV !== "production" &&
+    testAuthUserId
+      ? {
+          "x-test-auth-user-id": testAuthUserId,
+          "x-test-auth-email":
+            request.headers.get("x-test-auth-email") ?? undefined,
+        }
+      : undefined;
+
   const ctx = await resolveHrRequestContext({
     cookieHeader: request.headers.get("cookie") ?? "",
     platformClient,
+    forwardHeaders,
   });
 
   const allowedBranchIds = resolveAllowedBranchIds(ctx);

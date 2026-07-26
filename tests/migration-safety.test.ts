@@ -23,10 +23,11 @@ describe("HR migration safety", () => {
     assert.deepEqual(result.schemasTouched, ["hr"]);
   });
 
-  it("marks the initial migration as preview only", () => {
+  it("marks the initial migration as approved additive apply", () => {
     const sql = fs.readFileSync(INITIAL_MIGRATION, "utf8");
-    assert.match(sql, /PREVIEW ONLY/i);
-    assert.match(sql, /Do NOT apply without explicit approval/i);
+    assert.match(sql, /Approved for apply/i);
+    assert.match(sql, /Additive only/i);
+    assert.doesNotMatch(sql, /\bDROP\s+TABLE\b/i);
   });
 
   it("rejects PostgreSQL enums", () => {

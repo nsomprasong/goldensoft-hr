@@ -11,7 +11,11 @@ import {
   isInactiveSubscriptionStatus,
   PlatformIntegrationError,
 } from "@/lib/platform/errors";
-import type { HrRequestContext, PlatformClient } from "@/lib/platform/types";
+import type {
+  HrRequestContext,
+  PlatformClient,
+  PlatformForwardHeaders,
+} from "@/lib/platform/types";
 
 export type ResolveHrContextInput = {
   cookieHeader: string;
@@ -20,6 +24,8 @@ export type ResolveHrContextInput = {
   platformClient: PlatformClient;
   /** Explicit allow-list for branch scope checks (tests / enriched loaders). */
   allowedBranchIds?: string[] | null;
+  /** Local ALLOW_TEST_AUTH headers forwarded to Platform (never trusted alone). */
+  forwardHeaders?: PlatformForwardHeaders;
 };
 
 export function parseCookieValue(
@@ -44,7 +50,10 @@ export function parseCookieValue(
 export async function resolveHrRequestContext(
   input: ResolveHrContextInput,
 ): Promise<HrRequestContext> {
-  const me = await input.platformClient.getMe(input.cookieHeader);
+  const me = await input.platformClient.getMe(
+    input.cookieHeader,
+    input.forwardHeaders,
+  );
 
   if (!me.profile) {
     throw new PlatformIntegrationError("PROFILE_NOT_FOUND");
@@ -98,15 +107,28 @@ export async function resolveHrRequestContext(
   }
 
   const productCode = resolveHrProductCode();
-  const access = await input.platformClient.checkEntitlement(
-    input.cookieHeader,
-    {
-      organizationId,
-      productCode,
-      entitlementCode: HR_ENTITLEMENTS.access,
-      branchId,
-    },
-  );
+  const [access, employeeLimit] = await Promise.all([
+    input.platformClient.checkEntitlement(
+      input.cookieHeader,
+      {
+        organizationId,
+        productCode,
+        entitlementCode: HR_ENTITLEMENTS.access,
+        branchId,
+      },
+      input.forwardHeaders,
+    ),
+    input.platformClient.checkEntitlement(
+      input.cookieHeader,
+      {
+        organizationId,
+        productCode,
+        entitlementCode: HR_ENTITLEMENTS.employeeLimit,
+        branchId,
+      },
+      input.forwardHeaders,
+    ),
+  ]);
 
   if (!access.allowed) {
     if (
@@ -117,16 +139,6 @@ export async function resolveHrRequestContext(
     }
     throw new PlatformIntegrationError("PRODUCT_NOT_ENTITLED");
   }
-
-  const employeeLimit = await input.platformClient.checkEntitlement(
-    input.cookieHeader,
-    {
-      organizationId,
-      productCode,
-      entitlementCode: HR_ENTITLEMENTS.employeeLimit,
-      branchId,
-    },
-  );
 
   const membershipRoles = membership?.roles ?? [];
   const hrPermissions = hrPermissionsForOrganizationRoles(
