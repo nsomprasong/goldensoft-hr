@@ -4,6 +4,7 @@ import {
   isInactiveSubscriptionStatus,
   PlatformIntegrationError,
 } from "@/lib/platform/errors";
+import { platformClientFromBridge } from "@/lib/platform/bootstrap-bridge";
 import type {
   EntitlementCheckRequest,
   EntitlementCheckResponse,
@@ -67,6 +68,12 @@ function buildPlatformHeaders(
 export function createHttpPlatformClient(): PlatformClient {
   return {
     async getMe(cookieHeader, forwardHeaders) {
+      const bridge = forwardHeaders?.["x-gs-platform-bootstrap"]
+        ? platformClientFromBridge(
+            forwardHeaders["x-gs-platform-bootstrap"],
+          )
+        : null;
+      if (bridge) return bridge.getMe(cookieHeader);
       const res = await fetch(`${platformBaseUrl()}/api/auth/me`, {
         method: "GET",
         headers: buildPlatformHeaders(cookieHeader, forwardHeaders),
@@ -87,6 +94,12 @@ export function createHttpPlatformClient(): PlatformClient {
     },
 
     async checkEntitlement(cookieHeader, input, forwardHeaders) {
+      const bridge = forwardHeaders?.["x-gs-platform-bootstrap"]
+        ? platformClientFromBridge(
+            forwardHeaders["x-gs-platform-bootstrap"],
+          )
+        : null;
+      if (bridge) return bridge.checkEntitlement(cookieHeader, input);
       const res = await fetch(
         `${platformBaseUrl()}/api/platform/entitlements/check`,
         {

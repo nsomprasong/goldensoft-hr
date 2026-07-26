@@ -456,7 +456,7 @@ async function main() {
         timeout: 90_000,
       });
       const warmStart = Date.now();
-      const navLink = page.locator(`a[href="${route}"]`).first();
+      const navLink = page.locator(`a[href="${route}"]:visible`).first();
       if (route !== "/hr" && (await navLink.count()) > 0) {
         await Promise.all([
           page.waitForURL(`**${route}`, { timeout: 60_000 }),
@@ -493,11 +493,13 @@ async function main() {
 
     // Interactive clicks on employees
     await page.goto(`${HR}/hr/employees`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    const hasNew = await page.locator('a[href="/hr/employees/new"]').count();
+    const hasNew = await page
+      .locator('a[href="/hr/employees/new"]:visible')
+      .count();
     record("UI employees has new link", hasNew > 0);
 
     if (hasNew > 0) {
-      await page.click('a[href="/hr/employees/new"]');
+      await page.locator('a[href="/hr/employees/new"]:visible').first().click();
       await page.waitForURL("**/hr/employees/new", { timeout: 30_000 });
       record("UI navigate new employee", page.url().includes("/hr/employees/new"));
       // Fill and submit
@@ -506,12 +508,33 @@ async function main() {
       await page.fill('input[name="firstNameTh"]', "ยูไอ").catch(() => undefined);
       await page.fill('input[name="lastNameTh"]', "ทดสอบ").catch(() => undefined);
       await page.fill('input[name="phone"]', "0890000099").catch(() => undefined);
+      await page
+        .locator('select[name="employmentTypeId"]')
+        .selectOption({ index: 1 })
+        .catch(() => undefined);
+      await page
+        .locator('select[name="employeeStatusId"]')
+        .selectOption({ index: 1 })
+        .catch(() => undefined);
+      await page
+        .fill('input[name="hireDate"]', new Date().toISOString().slice(0, 10))
+        .catch(() => undefined);
       // Prefer any submit button
-      const submit = page.locator('button[type="submit"]').first();
+      const submit = page
+        .locator('button[type="submit"]', { hasText: "สร้างพนักงาน" })
+        .first();
       if (await submit.count()) {
         await submit.click();
-        await page.waitForTimeout(1500);
-        record("UI create employee submit", true, `url=${page.url()}`);
+        await page
+          .waitForURL(/\/hr\/employees\/[0-9a-f-]{36}$/, {
+            timeout: 15_000,
+          })
+          .catch(() => undefined);
+        record(
+          "UI create employee submit",
+          /\/hr\/employees\/[0-9a-f-]{36}$/.test(new URL(page.url()).pathname),
+          `url=${page.url()}`,
+        );
       } else {
         record("UI create employee submit", false, "no submit button");
       }

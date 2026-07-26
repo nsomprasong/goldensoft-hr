@@ -9,7 +9,11 @@ import type { HrPermission } from "@/lib/hr/permissions";
 import { resolveHrRequestContext } from "@/lib/hr/resolve-context";
 import { createHttpPlatformClient } from "@/lib/platform/client";
 import { PlatformIntegrationError } from "@/lib/platform/errors";
-import type { HrRequestContext, PlatformClient } from "@/lib/platform/types";
+import type {
+  HrRequestContext,
+  PlatformClient,
+  PlatformForwardHeaders,
+} from "@/lib/platform/types";
 
 export {
   assertBranchInScope,
@@ -41,16 +45,18 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
   const clientOrganizationId = headerList.get("x-organization-id");
   const platformClient = options?.platformClient ?? createHttpPlatformClient();
   const testAuthUserId = headerList.get("x-test-auth-user-id");
-  const forwardHeaders =
+  const forwardHeaders: PlatformForwardHeaders = {};
+  const bridge = headerList.get("x-gs-platform-bootstrap");
+  if (bridge) forwardHeaders["x-gs-platform-bootstrap"] = bridge;
+  if (
     process.env.ALLOW_TEST_AUTH === "true" &&
     process.env.NODE_ENV !== "production" &&
     testAuthUserId
-      ? {
-          "x-test-auth-user-id": testAuthUserId,
-          "x-test-auth-email":
-            headerList.get("x-test-auth-email") ?? undefined,
-        }
-      : undefined;
+  ) {
+    forwardHeaders["x-test-auth-user-id"] = testAuthUserId;
+    forwardHeaders["x-test-auth-email"] =
+      headerList.get("x-test-auth-email") ?? undefined;
+  }
 
   try {
     const ctx = await resolveHrRequestContext({
@@ -59,7 +65,8 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
       requiredBranchId: options?.branchId,
       platformClient,
       allowedBranchIds: options?.allowedBranchIds,
-      forwardHeaders,
+      forwardHeaders:
+        Object.keys(forwardHeaders).length > 0 ? forwardHeaders : undefined,
     });
 
     if (options?.permission && !hrCan(ctx, options.permission)) {

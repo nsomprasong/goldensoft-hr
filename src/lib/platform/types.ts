@@ -64,6 +64,8 @@ export type PlatformContextCookie = {
 export type PlatformForwardHeaders = {
   "x-test-auth-user-id"?: string;
   "x-test-auth-email"?: string;
+  /** Short-lived HMAC bridge issued only by Customer App's server proxy. */
+  "x-gs-platform-bootstrap"?: string;
 };
 
 export type PlatformClient = {

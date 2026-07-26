@@ -27,6 +27,7 @@ import type {
   HrRequestContext,
   PlatformClient,
   PlatformErrorCode,
+  PlatformForwardHeaders,
 } from "@/lib/platform/types";
 
 type HrApiGlobal = { __hrPlatformClientOverride?: PlatformClient | null };
@@ -134,21 +135,24 @@ export async function requireHrApi(
 
   // x-organization-id and any body-supplied tenant id are deliberately unread.
   const testAuthUserId = request.headers.get("x-test-auth-user-id");
-  const forwardHeaders =
+  const forwardHeaders: PlatformForwardHeaders = {};
+  const bridge = request.headers.get("x-gs-platform-bootstrap");
+  if (bridge) forwardHeaders["x-gs-platform-bootstrap"] = bridge;
+  if (
     process.env.ALLOW_TEST_AUTH === "true" &&
     process.env.NODE_ENV !== "production" &&
     testAuthUserId
-      ? {
-          "x-test-auth-user-id": testAuthUserId,
-          "x-test-auth-email":
-            request.headers.get("x-test-auth-email") ?? undefined,
-        }
-      : undefined;
+  ) {
+    forwardHeaders["x-test-auth-user-id"] = testAuthUserId;
+    forwardHeaders["x-test-auth-email"] =
+      request.headers.get("x-test-auth-email") ?? undefined;
+  }
 
   const ctx = await resolveHrRequestContext({
     cookieHeader: request.headers.get("cookie") ?? "",
     platformClient,
-    forwardHeaders,
+    forwardHeaders:
+      Object.keys(forwardHeaders).length > 0 ? forwardHeaders : undefined,
   });
 
   const allowedBranchIds = resolveAllowedBranchIds(ctx);

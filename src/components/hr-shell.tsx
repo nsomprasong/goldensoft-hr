@@ -7,6 +7,7 @@ import HrProductFrame, {
 } from "@/components/hr/product-frame";
 import { hrPath, type HrNavKey } from "@/lib/hr/routes";
 import { isHrStandaloneDebugShell } from "@/lib/hr/shell-mode";
+import { decodeCustomerShellMarkup } from "@/lib/platform/bootstrap-bridge";
 import type { HrRequestContext } from "@/lib/platform/types";
 
 export type { HrNavKey };
@@ -27,10 +28,22 @@ export default async function HrShell({
 }) {
   const headerList = await headers();
   if (!isHrStandaloneDebugShell(process.env, headerList)) {
+    const customerShell = decodeCustomerShellMarkup(
+      headerList.get("x-gs-customer-shell-markup"),
+    );
     return (
-      <HrProductFrame ctx={ctx} active={active}>
-        {children}
-      </HrProductFrame>
+      <>
+        {customerShell ? (
+          <div
+            className="gs-customer-shell-slot"
+            suppressHydrationWarning
+            dangerouslySetInnerHTML={{ __html: customerShell }}
+          />
+        ) : null}
+        <HrProductFrame ctx={ctx} active={active}>
+          {children}
+        </HrProductFrame>
+      </>
     );
   }
 
