@@ -188,7 +188,7 @@ export default function PositionForm({
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/settings/positions")}
+            onClick={() => router.push("/hr/settings/positions")}
             disabled={saving}
           >
             ยกเลิก

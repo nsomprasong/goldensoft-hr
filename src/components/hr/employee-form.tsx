@@ -209,9 +209,9 @@ export default function EmployeeForm({
 
     router.refresh();
     if (mode === "create") {
-      router.push(createdId ? `/employees/${createdId}` : "/employees");
+      router.push(createdId ? `/hr/employees/${createdId}` : "/hr/employees");
     } else if (employeeId) {
-      router.push(`/employees/${employeeId}`);
+      router.push(`/hr/employees/${employeeId}`);
     }
   }
 

@@ -238,7 +238,7 @@ export default function PayrollScheduleForm({
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/settings/payroll-schedules")}
+            onClick={() => router.push("/hr/settings/payroll-schedules")}
             disabled={saving}
           >
             ยกเลิก

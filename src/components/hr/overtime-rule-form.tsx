@@ -257,7 +257,7 @@ export default function OvertimeRuleForm({
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/settings/overtime-rules")}
+            onClick={() => router.push("/hr/settings/overtime-rules")}
             disabled={saving}
           >
             ยกเลิก

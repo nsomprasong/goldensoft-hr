@@ -429,14 +429,14 @@ async function main() {
     const page = await context.newPage();
 
     const routes = [
-      "/",
-      "/employees",
-      "/settings/departments",
-      "/settings/positions",
-      "/settings/shifts",
-      "/settings/payroll-schedules",
-      "/settings/overtime-rules",
-      "/payroll/periods",
+      "/hr",
+      "/hr/employees",
+      "/hr/settings/departments",
+      "/hr/settings/positions",
+      "/hr/settings/shifts",
+      "/hr/settings/payroll-schedules",
+      "/hr/settings/overtime-rules",
+      "/hr/payroll/periods",
     ];
 
     // Cold (full document) + warm (client navigation) at 1280
@@ -451,13 +451,13 @@ async function main() {
       const coldMs = Date.now() - coldStart;
 
       // Warm: navigate away then soft-navigate back via in-app link when possible.
-      await page.goto(`${HR}/`, {
+      await page.goto(`${HR}/hr`, {
         waitUntil: "domcontentloaded",
         timeout: 90_000,
       });
       const warmStart = Date.now();
       const navLink = page.locator(`a[href="${route}"]`).first();
-      if (route !== "/" && (await navLink.count()) > 0) {
+      if (route !== "/hr" && (await navLink.count()) > 0) {
         await Promise.all([
           page.waitForURL(`**${route}`, { timeout: 60_000 }),
           navLink.click(),
@@ -492,14 +492,14 @@ async function main() {
     }
 
     // Interactive clicks on employees
-    await page.goto(`${HR}/employees`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-    const hasNew = await page.locator('a[href="/employees/new"]').count();
+    await page.goto(`${HR}/hr/employees`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    const hasNew = await page.locator('a[href="/hr/employees/new"]').count();
     record("UI employees has new link", hasNew > 0);
 
     if (hasNew > 0) {
-      await page.click('a[href="/employees/new"]');
-      await page.waitForURL("**/employees/new", { timeout: 30_000 });
-      record("UI navigate new employee", page.url().includes("/employees/new"));
+      await page.click('a[href="/hr/employees/new"]');
+      await page.waitForURL("**/hr/employees/new", { timeout: 30_000 });
+      record("UI navigate new employee", page.url().includes("/hr/employees/new"));
       // Fill and submit
       const code = `${PREFIX}-UI1`.slice(0, 32);
       await page.fill('input[name="employeeCode"]', code).catch(() => undefined);
@@ -519,11 +519,11 @@ async function main() {
 
     // Compensation tab: SUPER_ADMIN bypasses hr.compensation.* in canHr (see permissions.ts).
     if (employeeId) {
-      await page.goto(`${HR}/employees/${employeeId}`, {
+      await page.goto(`${HR}/hr/employees/${employeeId}`, {
         waitUntil: "domcontentloaded",
         timeout: 90_000,
       });
-      await page.waitForSelector("nav.tabs", { timeout: 30_000 }).catch(() => undefined);
+      await page.waitForSelector("nav.hr-product-nav, nav.tabs", { timeout: 30_000 }).catch(() => undefined);
       const bodyText = await page.locator("body").innerText();
       record(
         "UI employee detail Thai",
@@ -544,7 +544,7 @@ async function main() {
     // Forbidden check without auth headers
     const anon = await browser.newContext();
     const anonPage = await anon.newPage();
-    const anonRes = await anonPage.goto(`${HR}/employees`, {
+    const anonRes = await anonPage.goto(`${HR}/hr/employees`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
@@ -557,10 +557,10 @@ async function main() {
 
     // Header overlap structural check at iPad width
     await page.setViewportSize({ width: 820, height: 1180 });
-    await page.goto(`${HR}/employees`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.goto(`${HR}/hr/employees`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     const overlap = await page.evaluate(() => {
-      const header = document.querySelector("header, .hr-shell-header, .hr-header");
-      const main = document.querySelector("main");
+      const header = document.querySelector("header, .hr-shell-header, .hr-header, .hr-debug-header");
+      const main = document.querySelector("main, .hr-product-body");
       if (!header || !main) return { ok: true, reason: "missing-nodes-skipped" };
       const h = header.getBoundingClientRect();
       const m = main.getBoundingClientRect();
@@ -569,7 +569,7 @@ async function main() {
     record("UI iPad header not overlapping", Boolean((overlap as { ok: boolean }).ok), JSON.stringify(overlap));
 
     // Fake button scan on key pages
-    for (const route of ["/employees", "/settings/departments", "/payroll/periods"]) {
+    for (const route of ["/hr/employees", "/hr/settings/departments", "/hr/payroll/periods"]) {
       await page.goto(`${HR}${route}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
       const fake = await page.evaluate(() => {
         const buttons = [...document.querySelectorAll("button, a")];

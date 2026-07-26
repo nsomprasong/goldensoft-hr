@@ -21,18 +21,18 @@ function exists(relativePath: string): boolean {
 }
 
 const PAGES = [
-  "src/app/page.tsx",
-  "src/app/employees/page.tsx",
-  "src/app/employees/new/page.tsx",
-  "src/app/employees/[id]/page.tsx",
-  "src/app/employees/[id]/edit/page.tsx",
-  "src/app/settings/departments/page.tsx",
-  "src/app/settings/positions/page.tsx",
-  "src/app/settings/shifts/page.tsx",
-  "src/app/settings/overtime-rules/page.tsx",
-  "src/app/settings/payroll-schedules/page.tsx",
-  "src/app/payroll/periods/page.tsx",
-  "src/app/payroll/periods/[id]/page.tsx",
+  "src/app/hr/page.tsx",
+  "src/app/hr/employees/page.tsx",
+  "src/app/hr/employees/new/page.tsx",
+  "src/app/hr/employees/[id]/page.tsx",
+  "src/app/hr/employees/[id]/edit/page.tsx",
+  "src/app/hr/settings/departments/page.tsx",
+  "src/app/hr/settings/positions/page.tsx",
+  "src/app/hr/settings/shifts/page.tsx",
+  "src/app/hr/settings/overtime-rules/page.tsx",
+  "src/app/hr/settings/payroll-schedules/page.tsx",
+  "src/app/hr/payroll/periods/page.tsx",
+  "src/app/hr/payroll/periods/[id]/page.tsx",
 ];
 
 const FORMS = [
@@ -71,7 +71,7 @@ describe("Phase 8B routes", () => {
   it("requires an explicit HR permission outside the dashboard", () => {
     // A page may accept any one of several codes, so the value is either a
     // single code or an array literal of them.
-    for (const page of PAGES.filter((p) => p !== "src/app/page.tsx")) {
+    for (const page of PAGES.filter((p) => p !== "src/app/hr/page.tsx")) {
       assert.match(
         read(page),
         /permission:\s*(HR_PERMISSIONS\.|\[\s*HR_PERMISSIONS\.)/,
@@ -196,9 +196,9 @@ describe("Phase 8B actions are real", () => {
   });
 
   it("navigates search and pagination through real GET links", () => {
-    const employees = read("src/app/employees/page.tsx");
+    const employees = read("src/app/hr/employees/page.tsx");
     assert.match(employees, /method="get"/);
-    assert.match(employees, /action="\/employees"/);
+    assert.match(employees, /action="\/hr\/employees"/);
     assert.match(employees, /name="employeeStatusId"/);
     assert.match(employees, /name="employmentTypeId"/);
     assert.match(employees, /pageHref\(params, result\.page - 1\)/);
@@ -208,7 +208,7 @@ describe("Phase 8B actions are real", () => {
 
 describe("Phase 8B permission gating", () => {
   it("gates the compensation tab behind hr.compensation.read", () => {
-    const detail = read("src/app/employees/[id]/page.tsx");
+    const detail = read("src/app/hr/employees/[id]/page.tsx");
     assert.match(detail, /HR_PERMISSIONS\.compensationRead/);
     assert.match(detail, /canReadCompensation\s*\?\s*\[\.\.\.TABS, COMPENSATION_TAB\]/);
     assert.match(
@@ -249,8 +249,10 @@ describe("Phase 8B permission gating", () => {
   });
 
   it("hides navigation links the user cannot open", () => {
-    const shell = read("src/components/hr-shell.tsx");
-    assert.match(shell, /item\.permission === null \|\| canHr\(ctx, item\.permission\)/);
+    const frame = read("src/components/hr/product-frame.tsx");
+    assert.match(frame, /canHr\(ctx, route\.requiredPermissions\)/);
+    assert.match(frame, /hrNavRegistry/);
+    const routes = read("src/lib/hr/routes.ts");
     for (const label of [
       "แดชบอร์ด",
       "พนักงาน",
@@ -261,17 +263,17 @@ describe("Phase 8B permission gating", () => {
       "รอบจ่าย",
       "งวดเงินเดือน",
     ]) {
-      assert.ok(shell.includes(label), `expected nav label ${label}`);
+      assert.ok(routes.includes(label), `expected nav label ${label}`);
     }
   });
 
   it("only renders management controls for permitted roles", () => {
     for (const page of [
-      "src/app/settings/departments/page.tsx",
-      "src/app/settings/positions/page.tsx",
-      "src/app/settings/shifts/page.tsx",
-      "src/app/settings/overtime-rules/page.tsx",
-      "src/app/settings/payroll-schedules/page.tsx",
+      "src/app/hr/settings/departments/page.tsx",
+      "src/app/hr/settings/positions/page.tsx",
+      "src/app/hr/settings/shifts/page.tsx",
+      "src/app/hr/settings/overtime-rules/page.tsx",
+      "src/app/hr/settings/payroll-schedules/page.tsx",
     ]) {
       const source = read(page);
       assert.match(source, /canHr\(ctx, HR_PERMISSIONS\.\w+Manage\)/, page);
@@ -378,10 +380,16 @@ describe("Phase 8B layout and styling", () => {
     assert.match(css, /\.hr-header \{[^}]*position: sticky/s);
     assert.match(css, /scroll-padding-top/);
     // The mobile menu expands in flow (details/summary), so it cannot overlay.
-    assert.match(css, /\.hr-nav-mobile \.hr-nav \{[^}]*flex-direction: column/s);
+    assert.match(
+      css,
+      /\.hr-product-nav-mobile \.hr-product-nav \{[^}]*flex-direction: column/s,
+    );
+    const frame = read("src/components/hr/product-frame.tsx");
+    assert.match(frame, /<details className="hr-product-nav-mobile">/);
+    assert.match(frame, /<summary>เมนู HR<\/summary>/);
     const shell = read("src/components/hr-shell.tsx");
-    assert.match(shell, /<details className="hr-nav-mobile">/);
-    assert.match(shell, /<summary>เมนู<\/summary>/);
+    assert.match(shell, /Debug Shell/);
+    assert.match(shell, /standalone_debug/);
     assert.doesNotMatch(css, /position: fixed/);
   });
 });
@@ -390,9 +398,10 @@ describe("Phase 8B project wiring", () => {
   it("keeps HR pages behind the middleware auth default", () => {
     const middleware = read("middleware.ts");
     const publicPrefixes = middleware.match(/PUBLIC_PREFIXES = \[(.*?)\]/s)?.[1] ?? "";
-    for (const guarded of ["/employees", "/settings", "/payroll"]) {
+    for (const guarded of ["/hr", "/employees", "/settings", "/payroll"]) {
       assert.ok(
-        !publicPrefixes.includes(guarded),
+        !publicPrefixes.includes(`"${guarded}"`) &&
+          !publicPrefixes.includes(`'${guarded}'`),
         `${guarded} must not be public`,
       );
     }
@@ -420,11 +429,24 @@ describe("Phase 8B project wiring", () => {
 
     const allowed = new Set([
       ...PAGES,
+      "src/app/page.tsx",
       "src/app/login/page.tsx",
       "src/app/access/page.tsx",
       "src/app/forbidden/page.tsx",
       "src/app/select-organization/page.tsx",
+      "src/app/employees/page.tsx",
+      "src/app/employees/new/page.tsx",
+      "src/app/employees/[id]/page.tsx",
+      "src/app/employees/[id]/edit/page.tsx",
+      "src/app/settings/departments/page.tsx",
+      "src/app/settings/positions/page.tsx",
+      "src/app/settings/shifts/page.tsx",
+      "src/app/settings/overtime-rules/page.tsx",
+      "src/app/settings/payroll-schedules/page.tsx",
+      "src/app/payroll/periods/page.tsx",
+      "src/app/payroll/periods/[id]/page.tsx",
       "src/app/branches/[branchId]/page.tsx",
+      "src/app/hr/branches/[branchId]/page.tsx",
     ]);
     for (const page of found) {
       assert.ok(allowed.has(page), `unexpected page ${page}`);
@@ -440,5 +462,8 @@ describe("Phase 8B project wiring", () => {
       assert.match(read(form), /^"use client";/);
     }
     assert.ok(fs.existsSync(path.join(COMPONENTS, "hr-shell.tsx")));
+    assert.ok(fs.existsSync(path.join(COMPONENTS, "hr", "product-frame.tsx")));
+    assert.ok(exists("src/lib/hr/routes.ts"));
+    assert.ok(exists("docs/adr-unified-customer-shell.md"));
   });
 });

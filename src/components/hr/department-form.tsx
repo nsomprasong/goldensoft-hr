@@ -169,7 +169,7 @@ export default function DepartmentForm({
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/settings/departments")}
+            onClick={() => router.push("/hr/settings/departments")}
             disabled={saving}
           >
             ยกเลิก

@@ -30,6 +30,10 @@ export default async function AccessPage({
         <h1>ไม่สามารถเข้าถึง HR</h1>
         <p>{thaiMessageForCode(code)}</p>
         <p className="muted">รหัส: {code}</p>
+        <p className="muted">
+          ใน production ให้เลือกองค์กรและผลิตภัณฑ์จาก Customer App แล้วเปิดเส้นทาง{" "}
+          <code>/hr</code>
+        </p>
       </div>
     </main>
   );

@@ -2,6 +2,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { PlatformContextCookie } from "@/lib/platform/types";
 
+/**
+ * Shared Platform / Customer App context cookie contract.
+ *
+ * MUST stay identical to Platform `COOKIE_NAME` / encode-decode format
+ * (`gs_platform_ctx`). HR must never invent a second cookie name or payload
+ * shape — Unified Shell and Platform own issuance; HR only verifies.
+ */
 export const PLATFORM_CONTEXT_COOKIE_NAME = "gs_platform_ctx";
 
 function getSecret(): string {

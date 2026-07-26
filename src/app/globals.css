@@ -166,6 +166,99 @@ a {
   padding-top: 0.5rem;
 }
 
+/* Product-local nav (Unified Shell embeds this; Debug Shell wraps it). */
+.hr-product-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hr-product-nav-bar {
+  max-width: var(--hr-content-max);
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+.hr-product-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.hr-product-nav a {
+  display: block;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--hr-radius);
+  color: var(--hr-text-muted);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+
+.hr-product-nav a:hover {
+  background: var(--hr-surface-muted);
+  color: var(--hr-text);
+}
+
+.hr-product-nav a[aria-current="page"] {
+  background: #e7f0fe;
+  color: var(--hr-accent-dark);
+  font-weight: 600;
+}
+
+.hr-product-nav-mobile {
+  display: none;
+}
+
+.hr-product-nav-mobile > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius);
+  font-size: 0.9375rem;
+  user-select: none;
+}
+
+.hr-product-nav-mobile > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hr-product-nav-mobile[open] > summary {
+  background: var(--hr-surface-muted);
+}
+
+.hr-product-nav-mobile .hr-product-nav {
+  flex-direction: column;
+  padding-top: 0.5rem;
+}
+
+.hr-product-body {
+  width: 100%;
+}
+
+.hr-debug-banner {
+  background: #fff3cd;
+  color: #664d03;
+  border-bottom: 1px solid #ffecb5;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.hr-debug-banner code {
+  font-size: 0.8125rem;
+}
+
+.hr-debug-context-note {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.hr-debug-header {
+  border-top: none;
+}
+
 .hr-main {
   max-width: var(--hr-content-max);
   margin: 0 auto;
@@ -574,6 +667,14 @@ textarea {
   }
 
   .hr-nav-mobile {
+    display: block;
+  }
+
+  .hr-product-nav-desktop {
+    display: none;
+  }
+
+  .hr-product-nav-mobile {
     display: block;
   }
 

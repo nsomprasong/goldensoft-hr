@@ -338,7 +338,7 @@ export default function ShiftForm({
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/settings/shifts")}
+            onClick={() => router.push("/hr/settings/shifts")}
             disabled={saving}
           >
             ยกเลิก

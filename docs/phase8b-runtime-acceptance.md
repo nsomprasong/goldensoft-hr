@@ -23,10 +23,13 @@ Machine-readable output: [phase8b-runtime-acceptance.results.json](./phase8b-run
 
 ## Scope
 
+- **Routes**: canonical `/hr/*` (legacy paths redirect)
 - **API**: CRUD employees, compensations, masters, shifts, payroll schedules/periods, dashboard; security (401, forged org header ignored)
-- **Browser**: Thai UI routes, create employee form, employee detail + compensation tab (SUPER_ADMIN + test auth), unauthenticated redirect, iPad header overlap, no placeholder actions
+- **Browser**: Thai UI under Debug Shell (standalone) or Product Frame; create employee; compensation tab for SUPER_ADMIN; unauthenticated redirect; no placeholder actions
 - **Responsive**: horizontal overflow check at 375–1440px widths
 - **Performance**: cold/warm navigation timings on Next.js **dev + turbopack** (not production build)
+
+See also [adr-unified-customer-shell.md](./adr-unified-customer-shell.md).
 
 ## Compensation UI vs org admin roles
 

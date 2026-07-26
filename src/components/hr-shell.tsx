@@ -1,104 +1,22 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
-import { canHr, HR_PERMISSIONS, type HrPermission } from "@/lib/hr/permissions";
+import HrProductFrame, {
+  visibleHrProductNav,
+} from "@/components/hr/product-frame";
+import { hrPath, type HrNavKey } from "@/lib/hr/routes";
+import { isHrStandaloneDebugShell } from "@/lib/hr/shell-mode";
 import type { HrRequestContext } from "@/lib/platform/types";
 
-export type HrNavKey =
-  | "dashboard"
-  | "employees"
-  | "departments"
-  | "positions"
-  | "shifts"
-  | "overtime-rules"
-  | "payroll-schedules"
-  | "payroll-periods";
+export type { HrNavKey };
+export { visibleHrProductNav as visibleHrNavItems };
 
-type NavItem = {
-  key: HrNavKey;
-  label: string;
-  href: string;
-  permission: HrPermission | null;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { key: "dashboard", label: "แดชบอร์ด", href: "/", permission: null },
-  {
-    key: "employees",
-    label: "พนักงาน",
-    href: "/employees",
-    permission: HR_PERMISSIONS.employeeRead,
-  },
-  {
-    key: "departments",
-    label: "แผนก",
-    href: "/settings/departments",
-    permission: HR_PERMISSIONS.departmentRead,
-  },
-  {
-    key: "positions",
-    label: "ตำแหน่ง",
-    href: "/settings/positions",
-    permission: HR_PERMISSIONS.positionRead,
-  },
-  {
-    key: "shifts",
-    label: "กะงาน",
-    href: "/settings/shifts",
-    permission: HR_PERMISSIONS.shiftRead,
-  },
-  {
-    key: "overtime-rules",
-    label: "กฎ OT",
-    href: "/settings/overtime-rules",
-    permission: HR_PERMISSIONS.settingsManage,
-  },
-  {
-    key: "payroll-schedules",
-    label: "รอบจ่าย",
-    href: "/settings/payroll-schedules",
-    permission: HR_PERMISSIONS.payrollScheduleRead,
-  },
-  {
-    key: "payroll-periods",
-    label: "งวดเงินเดือน",
-    href: "/payroll/periods",
-    permission: HR_PERMISSIONS.payrollPeriodRead,
-  },
-];
-
-export function visibleHrNavItems(ctx: {
-  permissions: readonly string[];
-  platformRoles: readonly string[];
-}): NavItem[] {
-  return NAV_ITEMS.filter(
-    (item) => item.permission === null || canHr(ctx, item.permission),
-  );
-}
-
-function NavLinks({
-  items,
-  active,
-}: {
-  items: NavItem[];
-  active?: HrNavKey;
-}) {
-  return (
-    <nav className="hr-nav" aria-label="เมนูหลัก">
-      {items.map((item) => (
-        <Link
-          key={item.key}
-          href={item.href}
-          aria-current={item.key === active ? "page" : undefined}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
-export default function HrShell({
+/**
+ * Page entry that chooses Debug Standalone Shell vs product-only frame.
+ * Under Customer App (`x-gs-customer-shell` / embedded env) only ProductFrame.
+ */
+export default async function HrShell({
   ctx,
   active,
   children,
@@ -107,15 +25,29 @@ export default function HrShell({
   active?: HrNavKey;
   children: ReactNode;
 }) {
-  const items = visibleHrNavItems(ctx);
+  const headerList = await headers();
+  if (!isHrStandaloneDebugShell(process.env, headerList)) {
+    return (
+      <HrProductFrame ctx={ctx} active={active}>
+        {children}
+      </HrProductFrame>
+    );
+  }
 
   return (
-    <div className="hr-shell">
-      <header className="hr-header">
+    <div className="hr-shell hr-debug-shell" data-hr-shell="standalone_debug">
+      <div className="hr-debug-banner" role="status">
+        <strong>Debug Shell เท่านั้น</strong>
+        {" — "}
+        ไม่ใช่ GoldenSoft Customer App · Global Login / Sidebar / Header /
+        Organization selector จะอยู่ใน <code>goldensoft-app</code> · ใช้ได้เฉพาะ
+        development/debug
+      </div>
+      <header className="hr-header hr-debug-header">
         <div className="hr-header-inner">
           <div className="hr-header-top">
-            <Link href="/" className="hr-brand">
-              GoldenSoft HR
+            <Link href={hrPath("dashboard")} className="hr-brand">
+              GoldenSoft HR (Debug)
             </Link>
             <div className="hr-context">
               <div>
@@ -123,21 +55,20 @@ export default function HrShell({
                 {ctx.branch ? ` · สาขา ${ctx.branch.name}` : " · ทุกสาขา"}
               </div>
               <div>{ctx.profile?.displayName ?? ctx.email ?? "ผู้ใช้งาน"}</div>
+              <div className="hr-debug-context-note">
+                แสดง context จาก cookie <code>gs_platform_ctx</code> เท่านั้น ·
+                ไม่มีตัวเลือกองค์กรในโมดูลนี้
+              </div>
             </div>
           </div>
-
-          <div className="hr-nav-desktop">
-            <NavLinks items={items} active={active} />
-          </div>
-
-          <details className="hr-nav-mobile">
-            <summary>เมนู</summary>
-            <NavLinks items={items} active={active} />
-          </details>
         </div>
       </header>
 
-      <main className="hr-main">{children}</main>
+      <main className="hr-main">
+        <HrProductFrame ctx={ctx} active={active}>
+          {children}
+        </HrProductFrame>
+      </main>
     </div>
   );
 }
