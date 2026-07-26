@@ -4,36 +4,82 @@
  */
 export const HR_PERMISSIONS = {
   employeeRead: "hr.employee.read",
+  employeeCreate: "hr.employee.create",
+  employeeUpdate: "hr.employee.update",
+  employeeDeactivate: "hr.employee.deactivate",
+  /** Coarse code kept for callers that only ask "may this user edit people?". */
   employeeManage: "hr.employee.manage",
+  /** Linking an employee row to a Platform user account. */
+  employeeLinkUser: "hr.employee.link_user",
+  /** Wage amounts are sensitive: read is separate from employee read. */
+  compensationRead: "hr.compensation.read",
+  compensationManage: "hr.compensation.manage",
+  departmentRead: "hr.department.read",
+  departmentManage: "hr.department.manage",
+  positionRead: "hr.position.read",
+  positionManage: "hr.position.manage",
+  shiftRead: "hr.shift.read",
+  shiftManage: "hr.shift.manage",
+  payrollScheduleRead: "hr.payroll_schedule.read",
+  payrollScheduleManage: "hr.payroll_schedule.manage",
+  payrollPeriodRead: "hr.payroll_period.read",
+  payrollPeriodManage: "hr.payroll_period.manage",
   attendanceRead: "hr.attendance.read",
   attendanceManage: "hr.attendance.manage",
   payrollRead: "hr.payroll.read",
   payrollManage: "hr.payroll.manage",
+  settingsManage: "hr.settings.manage",
 } as const;
 
 export type HrPermission = (typeof HR_PERMISSIONS)[keyof typeof HR_PERMISSIONS];
+
+export const HR_PERMISSION_CODES: readonly HrPermission[] = Object.freeze(
+  Object.values(HR_PERMISSIONS),
+);
+
+/**
+ * Pay data is a separate decision from tenant administration, so these codes
+ * are never derived from an organization role. They must be granted explicitly
+ * through Platform-issued permissions.
+ */
+export const HR_COMPENSATION_PERMISSIONS: readonly HrPermission[] = [
+  HR_PERMISSIONS.compensationRead,
+  HR_PERMISSIONS.compensationManage,
+];
+
+export function isCompensationPermission(code: string): boolean {
+  return (HR_COMPENSATION_PERMISSIONS as readonly string[]).includes(code);
+}
+
+/** Everything a tenant administrator (OWNER / ADMIN) receives implicitly. */
+const ADMIN_PERMISSIONS: HrPermission[] = HR_PERMISSION_CODES.filter(
+  (code) => !isCompensationPermission(code),
+);
+
+/** Read-only codes granted to any other organization member. */
+const MEMBER_PERMISSIONS: HrPermission[] = [
+  HR_PERMISSIONS.employeeRead,
+  HR_PERMISSIONS.shiftRead,
+  HR_PERMISSIONS.payrollScheduleRead,
+  HR_PERMISSIONS.payrollPeriodRead,
+];
 
 /** Map coarse Platform org roles → HR permissions (fail closed for unknown). */
 export function hrPermissionsForOrganizationRoles(
   organizationRoles: string[],
 ): HrPermission[] {
   const roles = new Set(organizationRoles.map((r) => r.toUpperCase()));
-  const granted = new Set<HrPermission>();
 
+  // Administrators manage the tenant, but never see pay without an explicit grant.
   if (roles.has("OWNER") || roles.has("ADMIN")) {
-    for (const code of Object.values(HR_PERMISSIONS)) {
-      granted.add(code);
-    }
-    return [...granted];
+    return [...ADMIN_PERMISSIONS];
   }
 
-  // Default member: read-only employees/attendance — never payroll manage.
   if (organizationRoles.length > 0) {
-    granted.add(HR_PERMISSIONS.employeeRead);
-    granted.add(HR_PERMISSIONS.attendanceRead);
+    return [...MEMBER_PERMISSIONS];
   }
 
-  return [...granted];
+  return [];
 }
 
 export function hasHrPermission(
@@ -41,4 +87,23 @@ export function hasHrPermission(
   required: HrPermission,
 ): boolean {
   return granted.includes(required);
+}
+
+export function hasAnyHrPermission(
+  granted: readonly string[],
+  required: readonly HrPermission[],
+): boolean {
+  return required.some((code) => granted.includes(code));
+}
+
+/** UI helper: SUPER_ADMIN bypasses product-local codes, mirroring the guards. */
+export function canHr(
+  ctx: { permissions: readonly string[]; platformRoles: readonly string[] },
+  required: HrPermission | readonly HrPermission[],
+): boolean {
+  if (ctx.platformRoles.includes("SUPER_ADMIN")) return true;
+  const codes = Array.isArray(required)
+    ? (required as readonly HrPermission[])
+    : [required as HrPermission];
+  return hasAnyHrPermission(ctx.permissions, codes);
 }

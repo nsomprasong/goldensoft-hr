@@ -4,14 +4,20 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import {
-  hasHrPermission,
-  type HrPermission,
-} from "@/lib/hr/permissions";
+import { hrCan } from "@/lib/hr/authorize";
+import type { HrPermission } from "@/lib/hr/permissions";
 import { resolveHrRequestContext } from "@/lib/hr/resolve-context";
 import { createHttpPlatformClient } from "@/lib/platform/client";
 import { PlatformIntegrationError } from "@/lib/platform/errors";
 import type { HrRequestContext, PlatformClient } from "@/lib/platform/types";
+
+export {
+  assertBranchInScope,
+  assertHrPermission,
+  assertSameOrganization,
+  hrCan,
+  isPlatformAdmin,
+} from "@/lib/hr/authorize";
 
 function buildCookieHeader(
   jar: Awaited<ReturnType<typeof cookies>>,
@@ -23,7 +29,8 @@ function buildCookieHeader(
 }
 
 export const requireHrPage = cache(async function requireHrPage(options?: {
-  permission?: HrPermission;
+  /** Single permission, or a set where any one of them is enough. */
+  permission?: HrPermission | readonly HrPermission[];
   branchId?: string | null;
   platformClient?: PlatformClient;
   allowedBranchIds?: string[] | null;
@@ -43,11 +50,7 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
       allowedBranchIds: options?.allowedBranchIds,
     });
 
-    if (
-      options?.permission &&
-      !hasHrPermission(ctx.permissions, options.permission) &&
-      !ctx.platformRoles.includes("SUPER_ADMIN")
-    ) {
+    if (options?.permission && !hrCan(ctx, options.permission)) {
       redirect("/forbidden");
     }
 
@@ -63,13 +66,3 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
     throw error;
   }
 });
-
-export function assertHrPermission(
-  ctx: HrRequestContext,
-  permission: HrPermission,
-): void {
-  if (ctx.platformRoles.includes("SUPER_ADMIN")) return;
-  if (!hasHrPermission(ctx.permissions, permission)) {
-    throw new PlatformIntegrationError("FORBIDDEN");
-  }
-}

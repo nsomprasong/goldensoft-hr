@@ -1,0 +1,444 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { describe, it } from "node:test";
+
+/**
+ * Structural checks for the Phase 8B HR UI. Files are read as text so the suite
+ * stays runnable without a browser, a database, or a Next.js build.
+ */
+
+const ROOT = path.resolve(__dirname, "..");
+const APP = path.join(ROOT, "src/app");
+const COMPONENTS = path.join(ROOT, "src/components");
+
+function read(relativePath: string): string {
+  return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
+}
+
+function exists(relativePath: string): boolean {
+  return fs.existsSync(path.join(ROOT, relativePath));
+}
+
+const PAGES = [
+  "src/app/page.tsx",
+  "src/app/employees/page.tsx",
+  "src/app/employees/new/page.tsx",
+  "src/app/employees/[id]/page.tsx",
+  "src/app/employees/[id]/edit/page.tsx",
+  "src/app/settings/departments/page.tsx",
+  "src/app/settings/positions/page.tsx",
+  "src/app/settings/shifts/page.tsx",
+  "src/app/settings/overtime-rules/page.tsx",
+  "src/app/settings/payroll-schedules/page.tsx",
+  "src/app/payroll/periods/page.tsx",
+  "src/app/payroll/periods/[id]/page.tsx",
+];
+
+const FORMS = [
+  "src/components/hr/employee-form.tsx",
+  "src/components/hr/department-form.tsx",
+  "src/components/hr/position-form.tsx",
+  "src/components/hr/shift-form.tsx",
+  "src/components/hr/overtime-rule-form.tsx",
+  "src/components/hr/payroll-schedule-form.tsx",
+  "src/components/hr/link-platform-user-form.tsx",
+  "src/components/hr/compensation-form.tsx",
+  "src/components/hr/payroll-period-form.tsx",
+  "src/components/hr/payroll-period-status-form.tsx",
+];
+
+const THAI = /[\u0E00-\u0E7F]/;
+
+describe("Phase 8B routes", () => {
+  it("ships every planned page", () => {
+    for (const page of PAGES) {
+      assert.ok(exists(page), `expected page ${page}`);
+    }
+  });
+
+  it("guards every page with requireHrPage", () => {
+    for (const page of PAGES) {
+      const source = read(page);
+      assert.match(
+        source,
+        /requireHrPage\(/,
+        `${page} should authenticate through requireHrPage`,
+      );
+    }
+  });
+
+  it("requires an explicit HR permission outside the dashboard", () => {
+    // A page may accept any one of several codes, so the value is either a
+    // single code or an array literal of them.
+    for (const page of PAGES.filter((p) => p !== "src/app/page.tsx")) {
+      assert.match(
+        read(page),
+        /permission:\s*(HR_PERMISSIONS\.|\[\s*HR_PERMISSIONS\.)/,
+        `${page} should require an HR_PERMISSIONS code`,
+      );
+    }
+  });
+
+  it("renders every page inside the HR shell", () => {
+    for (const page of PAGES) {
+      assert.match(read(page), /<HrShell/, `${page} should render HrShell`);
+    }
+  });
+
+  it("keeps user-facing copy in Thai", () => {
+    for (const page of [...PAGES, ...FORMS]) {
+      assert.ok(THAI.test(read(page)), `${page} should contain Thai copy`);
+    }
+  });
+});
+
+describe("Phase 8B actions are real", () => {
+  it("wires every form to an /api/hr route", () => {
+    for (const form of FORMS) {
+      const source = read(form);
+      assert.match(
+        source,
+        /submitHrJson\(\s*[`"']\/api\/hr\//,
+        `${form} should submit to a real /api/hr route`,
+      );
+    }
+  });
+
+  it("submits with a real HTTP method", () => {
+    for (const form of FORMS) {
+      assert.match(
+        read(form),
+        /"(POST|PATCH|PUT|DELETE)"/,
+        `${form} should use an explicit HTTP method`,
+      );
+    }
+  });
+
+  it("has no placeholder or disabled-only actions", () => {
+    for (const file of [...PAGES, ...FORMS]) {
+      const source = read(file);
+      assert.doesNotMatch(source, /TODO|coming soon|เร็ว ๆ นี้|ยังไม่เปิดใช้งาน/i);
+      assert.doesNotMatch(
+        source,
+        /onClick=\{\s*\(\)\s*=>\s*\{\s*\}\s*\}/,
+        `${file} should not contain empty click handlers`,
+      );
+      assert.doesNotMatch(
+        source,
+        /href="#"/,
+        `${file} should not contain placeholder links`,
+      );
+      assert.doesNotMatch(
+        source,
+        /alert\(['"`]/,
+        `${file} should not fake feedback with window.alert`,
+      );
+    }
+  });
+
+  it("only calls /api/hr paths that actually have a route handler", () => {
+    const missing: string[] = [];
+    for (const form of FORMS) {
+      const source = read(form);
+      for (const match of source.matchAll(/\/api\/hr\/[A-Za-z0-9\-_/$.{}]*/g)) {
+        const normalized = match[0]
+          .replace(/\$\{[^}]*\}/g, "[id]")
+          .replace(/\/+$/, "");
+        const segments = normalized.split("/").slice(3);
+        // The generic toggle builds its resource from a prop, so skip those.
+        if (segments[0] === "[id]") continue;
+        const route = path.join(
+          "src/app/api/hr",
+          ...segments,
+          "route.ts",
+        );
+        if (!exists(route)) missing.push(`${form} → ${normalized}`);
+      }
+    }
+    assert.deepEqual(missing, []);
+  });
+
+  it("covers every resource the toggle button can deactivate", () => {
+    const source = read("src/components/hr/toggle-active-button.tsx");
+    const resources = [
+      "employees",
+      "departments",
+      "positions",
+      "shifts",
+      "overtime-rules",
+      "payroll-schedules",
+    ];
+    for (const resource of resources) {
+      assert.ok(source.includes(`"${resource}"`), `expected ${resource}`);
+      assert.ok(
+        exists(`src/app/api/hr/${resource}/[id]/route.ts`),
+        `expected an API route for ${resource}`,
+      );
+    }
+    assert.match(source, /"DELETE"/);
+    assert.match(source, /\/api\/hr\/employees\/\$\{id\}\/deactivate/);
+  });
+
+  it("performs mutations through fetch, never a form action attribute", () => {
+    assert.match(
+      read("src/components/hr/form-utils.ts"),
+      /await fetch\(url, \{/,
+      "submitHrJson should call fetch",
+    );
+    for (const form of FORMS) {
+      assert.doesNotMatch(
+        read(form),
+        /action="\/(?!api\/hr)/,
+        "mutating forms must not post to a non-API path",
+      );
+    }
+  });
+
+  it("navigates search and pagination through real GET links", () => {
+    const employees = read("src/app/employees/page.tsx");
+    assert.match(employees, /method="get"/);
+    assert.match(employees, /action="\/employees"/);
+    assert.match(employees, /name="employeeStatusId"/);
+    assert.match(employees, /name="employmentTypeId"/);
+    assert.match(employees, /pageHref\(params, result\.page - 1\)/);
+    assert.match(employees, /pageHref\(params, result\.page \+ 1\)/);
+  });
+});
+
+describe("Phase 8B permission gating", () => {
+  it("gates the compensation tab behind hr.compensation.read", () => {
+    const detail = read("src/app/employees/[id]/page.tsx");
+    assert.match(detail, /HR_PERMISSIONS\.compensationRead/);
+    assert.match(detail, /canReadCompensation\s*\?\s*\[\.\.\.TABS, COMPENSATION_TAB\]/);
+    assert.match(
+      detail,
+      /activeTab === "compensation" && canReadCompensation/,
+      "compensation panel must require the read permission",
+    );
+    assert.match(
+      detail,
+      /canManageCompensation\s*\?/,
+      "compensation form must require the manage permission",
+    );
+  });
+
+  it("declares fine-grained HR permission codes", () => {
+    const permissions = read("src/lib/hr/permissions.ts");
+    for (const code of [
+      "hr.employee.read",
+      "hr.employee.create",
+      "hr.employee.update",
+      "hr.employee.deactivate",
+      "hr.employee.link_user",
+      "hr.compensation.read",
+      "hr.compensation.manage",
+      "hr.department.manage",
+      "hr.position.manage",
+      "hr.shift.manage",
+      "hr.payroll_schedule.manage",
+      "hr.payroll_period.manage",
+    ]) {
+      assert.ok(permissions.includes(code), `expected permission ${code}`);
+    }
+    assert.doesNotMatch(
+      permissions,
+      /MEMBER_PERMISSIONS[^;]*compensation/s,
+      "plain members must never receive compensation access",
+    );
+  });
+
+  it("hides navigation links the user cannot open", () => {
+    const shell = read("src/components/hr-shell.tsx");
+    assert.match(shell, /item\.permission === null \|\| canHr\(ctx, item\.permission\)/);
+    for (const label of [
+      "แดชบอร์ด",
+      "พนักงาน",
+      "แผนก",
+      "ตำแหน่ง",
+      "กะงาน",
+      "กฎ OT",
+      "รอบจ่าย",
+      "งวดเงินเดือน",
+    ]) {
+      assert.ok(shell.includes(label), `expected nav label ${label}`);
+    }
+  });
+
+  it("only renders management controls for permitted roles", () => {
+    for (const page of [
+      "src/app/settings/departments/page.tsx",
+      "src/app/settings/positions/page.tsx",
+      "src/app/settings/shifts/page.tsx",
+      "src/app/settings/overtime-rules/page.tsx",
+      "src/app/settings/payroll-schedules/page.tsx",
+    ]) {
+      const source = read(page);
+      assert.match(source, /canHr\(ctx, HR_PERMISSIONS\.\w+Manage\)/, page);
+      assert.match(source, /canManage \?/, page);
+    }
+  });
+});
+
+describe("Phase 8B validation feedback", () => {
+  it("validates client-side before calling the API", () => {
+    for (const form of FORMS) {
+      const source = read(form);
+      assert.match(
+        source,
+        /setErrors?\(/,
+        `${form} should track field-level errors`,
+      );
+      assert.match(
+        source,
+        /noValidate/,
+        `${form} should own its validation messages`,
+      );
+    }
+  });
+
+  it("shows Thai success and error feedback", () => {
+    for (const form of FORMS) {
+      const source = read(form);
+      assert.match(
+        source,
+        /kind: "error"/,
+        `${form} should surface an error state`,
+      );
+      assert.match(
+        source,
+        /Alert kind=\{feedback\.kind\}/,
+        `${form} should render an inline alert`,
+      );
+    }
+  });
+
+  it("renders field errors with an accessible role", () => {
+    const field = read("src/components/hr/field.tsx");
+    assert.match(field, /className="field-error"/);
+    assert.match(field, /role="alert"/);
+    assert.match(field, /aria-invalid/);
+  });
+
+  it("maps server validation errors back onto fields", () => {
+    const utils = read("src/components/hr/form-utils.ts");
+    assert.match(utils, /fieldErrors/);
+    assert.match(utils, /issues/);
+    assert.match(utils, /ข้อมูลไม่ถูกต้อง/);
+  });
+});
+
+describe("Phase 8B resilience without the migration", () => {
+  it("keeps reads fail-safe and typed", () => {
+    const data = read("src/lib/hr/data.ts");
+    assert.match(data, /ฐานข้อมูล HR ยังไม่พร้อม — รออนุมัติ migration/);
+    assert.match(data, /catch \(error\)/);
+    assert.match(data, /available: false/);
+  });
+
+  it("tells the user when HR data is not ready", () => {
+    for (const page of PAGES) {
+      assert.match(
+        read(page),
+        /DatabaseUnavailableNotice/,
+        `${page} should render the migration notice`,
+      );
+    }
+  });
+});
+
+describe("Phase 8B layout and styling", () => {
+  it("loads the global stylesheet from the root layout", () => {
+    const layout = read("src/app/layout.tsx");
+    assert.match(layout, /import "\.\/globals\.css"/);
+    assert.match(layout, /lang="th"/);
+    assert.match(layout, /viewport/);
+  });
+
+  it("uses a Thai-first font stack instead of the Next.js default", () => {
+    const css = read("src/app/globals.css");
+    assert.match(css, /IBM Plex Sans Thai/);
+    assert.match(css, /Noto Sans Thai/);
+    assert.match(css, /system-ui/);
+    assert.doesNotMatch(css, /Inter|Roboto|Geist/);
+  });
+
+  it("is responsive between 375px and 1440px", () => {
+    const css = read("src/app/globals.css");
+    const queries = css.match(/@media \(max-width: \d+px\)/g) ?? [];
+    assert.ok(queries.length >= 3, "expected mobile/tablet breakpoints");
+    assert.match(css, /--hr-content-max:\s*\d+px/);
+    assert.match(css, /max-width: var\(--hr-content-max\)/);
+    assert.match(css, /overflow-x: auto/);
+    assert.match(css, /minmax\(/);
+  });
+
+  it("keeps the sticky header clear of page content", () => {
+    const css = read("src/app/globals.css");
+    assert.match(css, /\.hr-header \{[^}]*position: sticky/s);
+    assert.match(css, /scroll-padding-top/);
+    // The mobile menu expands in flow (details/summary), so it cannot overlay.
+    assert.match(css, /\.hr-nav-mobile \.hr-nav \{[^}]*flex-direction: column/s);
+    const shell = read("src/components/hr-shell.tsx");
+    assert.match(shell, /<details className="hr-nav-mobile">/);
+    assert.match(shell, /<summary>เมนู<\/summary>/);
+    assert.doesNotMatch(css, /position: fixed/);
+  });
+});
+
+describe("Phase 8B project wiring", () => {
+  it("keeps HR pages behind the middleware auth default", () => {
+    const middleware = read("middleware.ts");
+    const publicPrefixes = middleware.match(/PUBLIC_PREFIXES = \[(.*?)\]/s)?.[1] ?? "";
+    for (const guarded of ["/employees", "/settings", "/payroll"]) {
+      assert.ok(
+        !publicPrefixes.includes(guarded),
+        `${guarded} must not be public`,
+      );
+    }
+  });
+
+  it("runs the UI suite from npm test", () => {
+    const pkg = JSON.parse(read("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    assert.match(pkg.scripts.test, /phase8b-ui\.test\.ts/);
+  });
+
+  it("does not leave stray page files outside the planned routes", () => {
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name === "page.tsx") {
+          found.push(path.relative(ROOT, full).split(path.sep).join("/"));
+        }
+      }
+    };
+    walk(APP);
+
+    const allowed = new Set([
+      ...PAGES,
+      "src/app/login/page.tsx",
+      "src/app/access/page.tsx",
+      "src/app/forbidden/page.tsx",
+      "src/app/select-organization/page.tsx",
+      "src/app/branches/[branchId]/page.tsx",
+    ]);
+    for (const page of found) {
+      assert.ok(allowed.has(page), `unexpected page ${page}`);
+    }
+  });
+
+  it("keeps shared HR form components together", () => {
+    for (const form of FORMS) {
+      assert.ok(
+        form.startsWith("src/components/hr/"),
+        `${form} should live under src/components/hr`,
+      );
+      assert.match(read(form), /^"use client";/);
+    }
+    assert.ok(fs.existsSync(path.join(COMPONENTS, "hr-shell.tsx")));
+  });
+});

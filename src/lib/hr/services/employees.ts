@@ -1,0 +1,490 @@
+/**
+ * Employee domain service.
+ *
+ * HR owns employee records only. It never creates Supabase auth users and an
+ * employee is perfectly valid with no email and no Platform account — the link
+ * to a platform user is an explicit, separately-permissioned action.
+ */
+import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
+import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { HrError } from "@/lib/hr/errors";
+import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { toDateOnly } from "@/lib/hr/payroll-rules";
+import type {
+  EmployeeRecord,
+  HrRepository,
+} from "@/lib/hr/repository/types";
+import {
+  normalizeCode,
+  normalizePagination,
+  optionalText,
+  requireActiveMaster,
+  requireMasterByCode,
+  requireText,
+  resolveBranchScope,
+  toPagedResponse,
+  type HrServiceContext,
+  type PagedResponse,
+  type PageRequest,
+} from "@/lib/hr/services/shared";
+
+export type EmployeeListInput = PageRequest & {
+  search?: string | null;
+  branchId?: string | null;
+  departmentId?: string | null;
+  positionId?: string | null;
+  employmentTypeId?: string | null;
+  employeeStatusId?: string | null;
+  isActive?: boolean | null;
+};
+
+export type EmployeeCreateData = {
+  employeeCode: string;
+  branchId: string;
+  employmentTypeId: string;
+  employeeStatusId: string;
+  firstNameTh: string;
+  lastNameTh: string;
+  firstNameEn?: string | null;
+  lastNameEn?: string | null;
+  displayName?: string | null;
+  phone: string;
+  email?: string | null;
+  hireDate: string | Date;
+  probationEndDate?: string | Date | null;
+  departmentId?: string | null;
+  positionId?: string | null;
+  notes?: string | null;
+};
+
+export type EmployeeUpdateData = Partial<
+  Omit<EmployeeCreateData, "employeeCode">
+> & {
+  resignationDate?: string | Date | null;
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_PATTERN = /^[0-9+\-() ]{6,20}$/;
+
+function normalizeEmail(raw: string | null | undefined): string | null {
+  const value = optionalText(raw, 320);
+  if (!value) return null;
+  if (!EMAIL_PATTERN.test(value)) {
+    throw new HrError("VALIDATION_ERROR", { message: "รูปแบบอีเมลไม่ถูกต้อง" });
+  }
+  return value.toLowerCase();
+}
+
+function normalizePhone(raw: string): string {
+  const value = requireText(raw, "เบอร์โทรศัพท์", 20);
+  if (!PHONE_PATTERN.test(value)) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง",
+    });
+  }
+  return value;
+}
+
+function optionalDate(value: string | Date | null | undefined): Date | null {
+  if (value == null || value === "") return null;
+  return toDateOnly(value);
+}
+
+/** Only structural rows that are still active may be attached to an employee. */
+async function requireActiveDepartment(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  departmentId: string,
+): Promise<void> {
+  const row = await repository.departments.findById(
+    ctx.organizationId,
+    departmentId,
+  );
+  if (!row) throw new HrError("NOT_FOUND", { details: { departmentId } });
+  if (!row.isActive) {
+    throw new HrError("INACTIVE_ENTITY", { details: { departmentId } });
+  }
+}
+
+async function requireActivePosition(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  positionId: string,
+): Promise<void> {
+  const row = await repository.positions.findById(
+    ctx.organizationId,
+    positionId,
+  );
+  if (!row) throw new HrError("NOT_FOUND", { details: { positionId } });
+  if (!row.isActive) {
+    throw new HrError("INACTIVE_ENTITY", { details: { positionId } });
+  }
+}
+
+export async function listEmployees(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  input: EmployeeListInput = {},
+): Promise<PagedResponse<EmployeeRecord>> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeRead);
+  const pagination = normalizePagination(input);
+  const scope = resolveBranchScope(ctx, input.branchId);
+
+  const result = await repository.employees.list({
+    organizationId: ctx.organizationId,
+    branchIds: scope.branchIds,
+    branchId: scope.branchId,
+    departmentId: input.departmentId ?? null,
+    positionId: input.positionId ?? null,
+    employmentTypeId: input.employmentTypeId ?? null,
+    employeeStatusId: input.employeeStatusId ?? null,
+    isActive: input.isActive ?? null,
+    search: input.search ?? null,
+    skip: pagination.skip,
+    take: pagination.take,
+  });
+
+  return toPagedResponse(result, pagination);
+}
+
+export async function getEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeRead);
+  const employee = await repository.employees.findById(
+    ctx.organizationId,
+    employeeId,
+  );
+  if (!employee) throw new HrError("NOT_FOUND", { details: { employeeId } });
+  assertBranchInScope(ctx, employee.branchId);
+  return employee;
+}
+
+export async function createEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  data: EmployeeCreateData,
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeCreate);
+
+  const employeeCode = normalizeCode(data.employeeCode, "รหัสพนักงาน");
+  const duplicate = await repository.employees.findByCode(
+    ctx.organizationId,
+    employeeCode,
+  );
+  if (duplicate) {
+    throw new HrError("DUPLICATE_CODE", { details: { employeeCode } });
+  }
+
+  const branchId = requireText(data.branchId, "สาขา", 64);
+  assertBranchInScope(ctx, branchId);
+
+  await requireActiveMaster(repository, "employmentType", data.employmentTypeId);
+  await requireActiveMaster(repository, "employeeStatus", data.employeeStatusId);
+
+  if (data.departmentId) {
+    await requireActiveDepartment(repository, ctx, data.departmentId);
+  }
+  if (data.positionId) {
+    await requireActivePosition(repository, ctx, data.positionId);
+  }
+
+  const firstNameTh = requireText(data.firstNameTh, "ชื่อ (ไทย)", 100);
+  const lastNameTh = requireText(data.lastNameTh, "นามสกุล (ไทย)", 100);
+
+  const created = await repository.employees.create({
+    organizationId: ctx.organizationId,
+    employeeCode,
+    platformUserId: null,
+    authUserId: null,
+    branchId,
+    departmentId: data.departmentId ?? null,
+    positionId: data.positionId ?? null,
+    employmentTypeId: data.employmentTypeId,
+    employeeStatusId: data.employeeStatusId,
+    firstNameTh,
+    lastNameTh,
+    firstNameEn: optionalText(data.firstNameEn, 100),
+    lastNameEn: optionalText(data.lastNameEn, 100),
+    displayName:
+      optionalText(data.displayName, 200) ?? `${firstNameTh} ${lastNameTh}`,
+    phone: normalizePhone(data.phone),
+    email: normalizeEmail(data.email),
+    hireDate: toDateOnly(data.hireDate),
+    probationEndDate: optionalDate(data.probationEndDate),
+    resignationDate: null,
+    notes: optionalText(data.notes, 2000),
+    isActive: true,
+    createdBy: ctx.actorAuthUserId,
+    updatedBy: ctx.actorAuthUserId,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: created.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeCreate,
+    entityType: "employee",
+    entityId: created.id,
+    after: created,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return created;
+}
+
+export async function updateEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+  data: EmployeeUpdateData,
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeUpdate);
+
+  const before = await repository.employees.findById(
+    ctx.organizationId,
+    employeeId,
+  );
+  if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
+  assertBranchInScope(ctx, before.branchId);
+
+  const patch: Parameters<HrRepository["employees"]["update"]>[1] = {
+    updatedBy: ctx.actorAuthUserId,
+  };
+
+  if (data.branchId !== undefined) {
+    const branchId = requireText(data.branchId, "สาขา", 64);
+    assertBranchInScope(ctx, branchId);
+    patch.branchId = branchId;
+  }
+  if (data.employmentTypeId !== undefined) {
+    await requireActiveMaster(
+      repository,
+      "employmentType",
+      data.employmentTypeId,
+    );
+    patch.employmentTypeId = data.employmentTypeId;
+  }
+  if (data.employeeStatusId !== undefined) {
+    await requireActiveMaster(
+      repository,
+      "employeeStatus",
+      data.employeeStatusId,
+    );
+    patch.employeeStatusId = data.employeeStatusId;
+  }
+  if (data.departmentId !== undefined) {
+    if (data.departmentId) {
+      await requireActiveDepartment(repository, ctx, data.departmentId);
+    }
+    patch.departmentId = data.departmentId ?? null;
+  }
+  if (data.positionId !== undefined) {
+    if (data.positionId) {
+      await requireActivePosition(repository, ctx, data.positionId);
+    }
+    patch.positionId = data.positionId ?? null;
+  }
+  if (data.firstNameTh !== undefined) {
+    patch.firstNameTh = requireText(data.firstNameTh, "ชื่อ (ไทย)", 100);
+  }
+  if (data.lastNameTh !== undefined) {
+    patch.lastNameTh = requireText(data.lastNameTh, "นามสกุล (ไทย)", 100);
+  }
+  if (data.firstNameEn !== undefined) {
+    patch.firstNameEn = optionalText(data.firstNameEn, 100);
+  }
+  if (data.lastNameEn !== undefined) {
+    patch.lastNameEn = optionalText(data.lastNameEn, 100);
+  }
+  if (data.displayName !== undefined) {
+    patch.displayName = requireText(data.displayName, "ชื่อที่แสดง", 200);
+  }
+  if (data.phone !== undefined) {
+    patch.phone = normalizePhone(data.phone);
+  }
+  if (data.email !== undefined) {
+    patch.email = normalizeEmail(data.email);
+  }
+  if (data.hireDate !== undefined) {
+    patch.hireDate = toDateOnly(data.hireDate);
+  }
+  if (data.probationEndDate !== undefined) {
+    patch.probationEndDate = optionalDate(data.probationEndDate);
+  }
+  if (data.resignationDate !== undefined) {
+    patch.resignationDate = optionalDate(data.resignationDate);
+  }
+  if (data.notes !== undefined) {
+    patch.notes = optionalText(data.notes, 2000);
+  }
+
+  const after = await repository.employees.update(employeeId, patch);
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeUpdate,
+    entityType: "employee",
+    entityId: after.id,
+    before,
+    after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return after;
+}
+
+export async function deactivateEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+  options: {
+    employeeStatusCode?: string;
+    resignationDate?: string | Date | null;
+  } = {},
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeDeactivate);
+
+  const before = await repository.employees.findById(
+    ctx.organizationId,
+    employeeId,
+  );
+  if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
+  assertBranchInScope(ctx, before.branchId);
+
+  const status = await requireMasterByCode(
+    repository,
+    "employeeStatus",
+    options.employeeStatusCode ?? "INACTIVE",
+  );
+
+  const after = await repository.employees.update(employeeId, {
+    isActive: false,
+    employeeStatusId: status.id,
+    resignationDate: optionalDate(options.resignationDate),
+    updatedBy: ctx.actorAuthUserId,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeDeactivate,
+    entityType: "employee",
+    entityId: after.id,
+    before,
+    after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return after;
+}
+
+export type LinkPlatformUserInput = {
+  platformUserId: string;
+  /** auth.users.id, when the person can already sign in. */
+  authUserId?: string | null;
+  /**
+   * Organization the platform user actually belongs to, verified upstream by
+   * the Platform API. Supplying a foreign organization is refused outright.
+   */
+  platformUserOrganizationId: string;
+};
+
+export async function linkPlatformUser(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+  input: LinkPlatformUserInput,
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeLinkUser);
+
+  const anyOrg = await repository.employees.findByIdAnyOrganization(employeeId);
+  if (anyOrg && anyOrg.organizationId !== ctx.organizationId) {
+    throw new HrError("CROSS_ORG_LINK", { details: { employeeId } });
+  }
+  if (!anyOrg) throw new HrError("NOT_FOUND", { details: { employeeId } });
+
+  const before = anyOrg;
+  assertBranchInScope(ctx, before.branchId);
+
+  if (input.platformUserOrganizationId !== ctx.organizationId) {
+    throw new HrError("CROSS_ORG_LINK", {
+      details: { platformUserId: input.platformUserId },
+    });
+  }
+
+  const taken = await repository.employees.findByPlatformUserId(
+    ctx.organizationId,
+    input.platformUserId,
+  );
+  if (taken && taken.id !== employeeId) {
+    throw new HrError("DUPLICATE_PLATFORM_USER", {
+      details: { platformUserId: input.platformUserId },
+    });
+  }
+
+  const after = await repository.employees.update(employeeId, {
+    platformUserId: input.platformUserId,
+    authUserId: input.authUserId ?? null,
+    updatedBy: ctx.actorAuthUserId,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeLinkUser,
+    entityType: "employee",
+    entityId: after.id,
+    before,
+    after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return after;
+}
+
+export async function unlinkPlatformUser(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeLinkUser);
+
+  const before = await repository.employees.findById(
+    ctx.organizationId,
+    employeeId,
+  );
+  if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
+  assertBranchInScope(ctx, before.branchId);
+
+  const after = await repository.employees.update(employeeId, {
+    platformUserId: null,
+    authUserId: null,
+    updatedBy: ctx.actorAuthUserId,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeUnlinkUser,
+    entityType: "employee",
+    entityId: after.id,
+    before,
+    after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return after;
+}

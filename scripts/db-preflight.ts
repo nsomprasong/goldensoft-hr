@@ -1,0 +1,324 @@
+import path from "node:path";
+
+import { loadProjectEnv } from "./load-project-env";
+
+// Shell/IDE stubs must not shadow project .env.local for DB / API URLs.
+loadProjectEnv(process.cwd());
+
+export const HR_MIGRATION_NAME = "0001_hr_core";
+
+export type SqlQuery = (
+  text: string,
+  values?: unknown[],
+) => Promise<{ rows: Array<Record<string, unknown>>; rowCount: number | null }>;
+
+export type HrMigrationStatus = {
+  applied: boolean;
+  schema: string | null;
+  reason:
+    | "applied"
+    | "table_missing"
+    | "migration_missing"
+    | "not_finished"
+    | "rolled_back";
+  /** Successful attempts: finished_at IS NOT NULL AND rolled_back_at IS NULL */
+  appliedCount: number;
+  /** Attempts with rolled_back_at IS NOT NULL */
+  rolledBackCount: number;
+  /** Unresolved attempts: finished_at IS NULL AND rolled_back_at IS NULL */
+  unresolvedCount: number;
+};
+
+const EMPTY_MIGRATION_COUNTS = {
+  appliedCount: 0,
+  rolledBackCount: 0,
+  unresolvedCount: 0,
+} as const;
+
+const SAFE_IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function quoteIdent(ident: string): string {
+  if (!SAFE_IDENT.test(ident)) {
+    throw new Error(`Unsafe SQL identifier rejected: ${ident}`);
+  }
+  return `"${ident}"`;
+}
+
+/** Locate `_prisma_migrations` via PostgreSQL catalog (any schema). Read-only. */
+export async function locatePrismaMigrationsTable(
+  query: SqlQuery,
+): Promise<{ schema: string; table: string } | null> {
+  const result = await query(
+    `
+    SELECT n.nspname AS schema_name, c.relname AS table_name
+    FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind = 'r'
+      AND c.relname = '_prisma_migrations'
+    ORDER BY
+      CASE n.nspname
+        WHEN 'hr' THEN 0
+        WHEN 'public' THEN 1
+        ELSE 2
+      END,
+      n.nspname
+    LIMIT 1
+    `,
+  );
+
+  const row = result.rows[0];
+  if (!row?.schema_name || !row?.table_name) {
+    return null;
+  }
+
+  return {
+    schema: String(row.schema_name),
+    table: String(row.table_name),
+  };
+}
+
+/**
+ * True when at least one successful attempt exists for the migration name:
+ * finished_at IS NOT NULL AND rolled_back_at IS NULL.
+ * Older rolled-back rows for the same name do not force a failure.
+ * Unresolved attempts (finished_at IS NULL AND rolled_back_at IS NULL) fail closed.
+ */
+export async function checkHrMigrationApplied(
+  query: SqlQuery,
+  migrationName: string = HR_MIGRATION_NAME,
+): Promise<HrMigrationStatus> {
+  const located = await locatePrismaMigrationsTable(query);
+  if (!located) {
+    return {
+      applied: false,
+      schema: null,
+      reason: "table_missing",
+      ...EMPTY_MIGRATION_COUNTS,
+    };
+  }
+
+  const qualified = `${quoteIdent(located.schema)}.${quoteIdent(located.table)}`;
+  const result = await query(
+    `
+    SELECT
+      COUNT(*) FILTER (
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      )::int AS applied_count,
+      COUNT(*) FILTER (
+        WHERE rolled_back_at IS NOT NULL
+      )::int AS rolled_back_count,
+      COUNT(*) FILTER (
+        WHERE finished_at IS NULL AND rolled_back_at IS NULL
+      )::int AS unresolved_count,
+      COUNT(*)::int AS total_count
+    FROM ${qualified}
+    WHERE migration_name = $1
+    `,
+    [migrationName],
+  );
+
+  const row = result.rows[0];
+  const appliedCount = Number(row?.applied_count ?? 0);
+  const rolledBackCount = Number(row?.rolled_back_count ?? 0);
+  const unresolvedCount = Number(row?.unresolved_count ?? 0);
+  const totalCount = Number(row?.total_count ?? 0);
+  const counts = {
+    appliedCount,
+    rolledBackCount,
+    unresolvedCount,
+  };
+
+  if (totalCount === 0) {
+    return {
+      applied: false,
+      schema: located.schema,
+      reason: "migration_missing",
+      ...counts,
+    };
+  }
+
+  if (unresolvedCount > 0) {
+    return {
+      applied: false,
+      schema: located.schema,
+      reason: "not_finished",
+      ...counts,
+    };
+  }
+
+  if (appliedCount >= 1) {
+    return {
+      applied: true,
+      schema: located.schema,
+      reason: "applied",
+      ...counts,
+    };
+  }
+
+  if (rolledBackCount > 0) {
+    return {
+      applied: false,
+      schema: located.schema,
+      reason: "rolled_back",
+      ...counts,
+    };
+  }
+
+  return {
+    applied: false,
+    schema: located.schema,
+    reason: "migration_missing",
+    ...counts,
+  };
+}
+
+/**
+ * Read-only HR preflight.
+ * Connects with DATABASE_URL, reports schema/migration state, and never
+ * applies a migration or writes anything.
+ */
+async function main() {
+  const {
+    assertSafeEnvironment,
+    describeDirectUrlTls,
+    redactConnectionString,
+    requireSafeEnvironment,
+  } = await import("../src/lib/env/guard");
+  const {
+    buildDatabasePoolConfig,
+    buildTrustedPgSsl,
+    loadSupabaseDbCaCertificate,
+    resolveProjectRelativePath,
+  } = await import("../src/lib/db/ca-certificate");
+  const { Pool } = await import("pg");
+
+  const projectRoot = process.cwd();
+  const configuredCaPath = process.env.SUPABASE_DB_CA_CERT_PATH ?? "";
+
+  let resolvedCaPath = "";
+  try {
+    resolvedCaPath = resolveProjectRelativePath(configuredCaPath, projectRoot);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to resolve CA path";
+    console.error(`[ENV_GUARD] CA_CERT_INVALID: ${message}`);
+    process.exit(1);
+  }
+
+  const guard = assertSafeEnvironment({ projectRoot });
+  if (!guard.ok) {
+    console.error(`[ENV_GUARD] ${guard.code}: ${guard.reason}`);
+    process.exit(1);
+  }
+  requireSafeEnvironment({ projectRoot });
+
+  const databaseUrl = process.env.DATABASE_URL;
+  const directUrl = process.env.DIRECT_URL;
+  if (!databaseUrl || !directUrl) {
+    console.error(
+      "DATABASE_URL and DIRECT_URL are required. Copy them from Supabase Connect Panel into .env.local first.",
+    );
+    process.exit(1);
+  }
+
+  const dbMeta = redactConnectionString(databaseUrl);
+  const directMeta = redactConnectionString(directUrl);
+  const directTls = describeDirectUrlTls(directUrl);
+
+  // Runtime CA from SUPABASE_DB_CA_CERT_PATH only (not from DIRECT_URL query params).
+  const { content: caContent, absolutePath: caAbsolutePath } =
+    loadSupabaseDbCaCertificate(configuredCaPath, projectRoot);
+  const ssl = buildTrustedPgSsl(caContent);
+
+  // Connect with DATABASE_URL only. DIRECT_URL is metadata-only here.
+  const poolConfig = buildDatabasePoolConfig(databaseUrl, ssl, { max: 1 });
+
+  console.log("APP_CODE:", process.env.APP_CODE ?? "(missing)");
+  console.log("Project root:", path.resolve(projectRoot));
+  console.log("Project ref:", guard.projectRef);
+  console.log("CA certificate path:", caAbsolutePath);
+  console.log(
+    "CA path matches resolve(cwd, configured):",
+    caAbsolutePath === resolvedCaPath,
+  );
+  console.log(
+    "DATABASE_URL host/port/db:",
+    dbMeta.host,
+    dbMeta.port,
+    dbMeta.database,
+  );
+  console.log(
+    "DIRECT_URL host/port/db (metadata only, not connected):",
+    directMeta.host,
+    directMeta.port,
+    directMeta.database,
+  );
+  console.log("DIRECT_URL project ref:", directMeta.projectRef);
+  console.log("DIRECT_URL TLS mode:", directTls.sslmode ?? "(missing)");
+  console.log("SSL verification enabled:", ssl.rejectUnauthorized === true);
+  console.log("Pool connection source: DATABASE_URL");
+  console.log("Write operations: NONE");
+  console.log("Migration apply: NEVER (preflight is read-only)");
+
+  const pool = new Pool(poolConfig);
+
+  try {
+    const ping = await pool.query(
+      "select current_database() as db, current_user as usr",
+    );
+    console.log("Connection success: true");
+    console.log("Read-only ping OK. database:", ping.rows[0]?.db);
+
+    const schema = await pool.query(
+      `select schema_name from information_schema.schemata where schema_name = 'hr'`,
+    );
+    const tables = await pool.query(
+      `select table_name from information_schema.tables where table_schema = 'hr'`,
+    );
+
+    console.log("Schema hr exists:", (schema.rowCount ?? 0) > 0);
+
+    const migrationStatus = await checkHrMigrationApplied(async (text, values) =>
+      pool.query(text, values),
+    );
+    console.log("HR migration applied:", migrationStatus.applied);
+    if (migrationStatus.schema) {
+      console.log("Prisma migrations table schema:", migrationStatus.schema);
+    }
+    if (!migrationStatus.applied) {
+      console.log("HR migration status reason:", migrationStatus.reason);
+    }
+
+    if (schema.rowCount && tables.rowCount && tables.rowCount > 0) {
+      console.log(
+        `Note: schema hr already has ${tables.rowCount} table(s). Review before applying migrations.`,
+      );
+    } else {
+      console.log(
+        "HR schema tables: none yet (ready for initial migration after approval)",
+      );
+    }
+  } catch (error) {
+    console.log("Connection success: false");
+    throw error;
+  } finally {
+    await pool.end().catch(() => undefined);
+  }
+}
+
+const isDirectRun =
+  typeof process.argv[1] === "string" &&
+  process.argv[1].replace(/\\/g, "/").endsWith("scripts/db-preflight.ts");
+
+if (isDirectRun) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : "preflight failed";
+    console.error(
+      "db:preflight failed:",
+      message
+        .replace(/:[^:@/]+@/g, ":***@")
+        .replace(/-----BEGIN[\s\S]*?-----END[^-]+-----/g, "[redacted-pem]"),
+    );
+    process.exit(1);
+  });
+}

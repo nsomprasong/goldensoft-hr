@@ -25,10 +25,12 @@ export default async function AccessPage({
     : "FORBIDDEN";
 
   return (
-    <main style={{ padding: "1.5rem" }}>
-      <h1>ไม่สามารถเข้าถึง HR</h1>
-      <p>{thaiMessageForCode(code)}</p>
-      <p style={{ color: "#64748b", fontSize: 14 }}>รหัส: {code}</p>
+    <main className="hr-main">
+      <div className="card">
+        <h1>ไม่สามารถเข้าถึง HR</h1>
+        <p>{thaiMessageForCode(code)}</p>
+        <p className="muted">รหัส: {code}</p>
+      </div>
     </main>
   );
 }

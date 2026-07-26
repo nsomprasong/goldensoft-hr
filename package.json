@@ -8,13 +8,25 @@
     "start": "next start --port 3001",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/phase8a-integration.test.ts tests/legacy-untouched.test.ts",
-    "git:diff-check": "git diff --check"
+    "test": "tsx --test tests/phase8a-integration.test.ts tests/legacy-untouched.test.ts tests/migration-safety.test.ts tests/phase8b-schema.test.ts tests/phase8b-security.test.ts tests/phase8b-employees.test.ts tests/phase8b-compensation.test.ts tests/phase8b-shifts.test.ts tests/phase8b-overtime.test.ts tests/phase8b-payroll.test.ts tests/phase8b-seed.test.ts tests/phase8b-ui.test.ts",
+    "git:diff-check": "git diff --check",
+    "db:preflight": "tsx scripts/db-preflight.ts",
+    "db:verify": "tsx scripts/db-verify.ts",
+    "db:migration:check": "tsx scripts/migration-check.ts",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "seed:hr": "tsx scripts/seed-hr.ts",
+    "seed:hr:demo": "tsx scripts/seed-hr-demo.ts",
+    "seed:hr:demo:cleanup": "tsx scripts/seed-hr-demo-cleanup.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^6.19.3",
+    "@prisma/client": "^6.14.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.53.0",
+    "dotenv": "^17.4.2",
     "next": "^15.5.21",
+    "pg": "^8.22.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "server-only": "^0.0.1",
@@ -22,9 +34,11 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
+    "prisma": "^6.14.0",
     "tsx": "^4.20.3",
     "typescript": "^5"
   }

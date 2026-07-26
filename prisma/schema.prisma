@@ -1,0 +1,496 @@
+// GoldenSoft HR — PostgreSQL schema "hr"
+//
+// Architecture rules enforced here:
+//   1. Every model lives in schema "hr". HR never owns objects in platform/auth/public.
+//   2. No PostgreSQL or Prisma enums — status/type columns point at master tables
+//      that carry an immutable unique `code`.
+//   3. organization_id / branch_id / platform_user_id / auth_user_id are soft UUID
+//      references. There is deliberately no foreign key to the platform or auth schemas.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["hr"]
+}
+
+// ─── Master / Lookup tables ───────────────────────────────────────────────
+
+/// DAILY | MONTHLY | CONTRACT | TEMPORARY
+model EmploymentType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employees Employee[]
+
+  @@map("employment_types")
+  @@schema("hr")
+}
+
+/// ACTIVE | INACTIVE | RESIGNED | TERMINATED | SUSPENDED
+model EmployeeStatus {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employees Employee[]
+
+  @@map("employee_statuses")
+  @@schema("hr")
+}
+
+/// REGULAR | NIGHT | SPLIT | OFF | LEAVE
+model ShiftType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shifts Shift[]
+
+  @@map("shift_types")
+  @@schema("hr")
+}
+
+/// SEMIMONTHLY | MONTHLY | WEEKLY | DAILY
+model PayFrequency {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payrollSchedules PayrollSchedule[]
+
+  @@map("pay_frequencies")
+  @@schema("hr")
+}
+
+/// DAILY | MONTHLY | HOURLY
+model WageType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  compensations EmployeeCompensation[]
+
+  @@map("wage_types")
+  @@schema("hr")
+}
+
+/// NORMAL_DAY | HOLIDAY | REST_DAY | SPECIAL
+model OvertimeRateType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  overtimeRules OvertimeRule[]
+
+  @@map("overtime_rate_types")
+  @@schema("hr")
+}
+
+/// DRAFT | OPEN | CALCULATING | REVIEW | APPROVED | PAID | LOCKED
+model PayrollPeriodStatus {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payrollPeriods PayrollPeriod[]
+
+  @@map("payroll_period_statuses")
+  @@schema("hr")
+}
+
+/// Audit vocabulary, e.g. employee.create / payroll_period.status_change
+model AuditActionType {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  auditLogs AuditLog[]
+
+  @@map("audit_action_types")
+  @@schema("hr")
+}
+
+// ─── Organization-scoped structure ────────────────────────────────────────
+
+model Department {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// Soft reference to a Platform organization (no cross-schema FK).
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String
+  nameTh         String   @map("name_th")
+  nameEn         String   @map("name_en")
+  description    String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  positions Position[]
+  employees Employee[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@map("departments")
+  @@schema("hr")
+}
+
+model Position {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  departmentId   String?  @map("department_id") @db.Uuid
+  code           String
+  nameTh         String   @map("name_th")
+  nameEn         String   @map("name_en")
+  description    String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employees  Employee[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([departmentId])
+  @@map("positions")
+  @@schema("hr")
+}
+
+/// Physical clock-in site. Geofence is stored here for Phase 8C attendance.
+model WorkLocation {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  /// Soft reference to a Platform branch (no cross-schema FK).
+  branchId              String   @map("branch_id") @db.Uuid
+  code                  String
+  name                  String
+  latitude              Decimal? @db.Decimal(10, 7)
+  longitude             Decimal? @db.Decimal(10, 7)
+  geofenceRadiusMeters  Int      @default(50) @map("geofence_radius_meters")
+  timezone              String   @default("Asia/Bangkok")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([branchId])
+  @@map("work_locations")
+  @@schema("hr")
+}
+
+// ─── Employee ─────────────────────────────────────────────────────────────
+
+model Employee {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  employeeCode     String    @map("employee_code")
+  /// Soft link to platform.user_profiles.id — nullable until the person has a Platform account.
+  platformUserId   String?   @map("platform_user_id") @db.Uuid
+  /// Soft link to auth.users.id — nullable until the person can sign in.
+  authUserId       String?   @map("auth_user_id") @db.Uuid
+  branchId         String    @map("branch_id") @db.Uuid
+  departmentId     String?   @map("department_id") @db.Uuid
+  positionId       String?   @map("position_id") @db.Uuid
+  employmentTypeId String    @map("employment_type_id") @db.Uuid
+  employeeStatusId String    @map("employee_status_id") @db.Uuid
+  firstNameTh      String    @map("first_name_th")
+  lastNameTh       String    @map("last_name_th")
+  firstNameEn      String?   @map("first_name_en")
+  lastNameEn       String?   @map("last_name_en")
+  displayName      String    @map("display_name")
+  phone            String
+  email            String?
+  hireDate         DateTime  @map("hire_date") @db.Date
+  probationEndDate DateTime? @map("probation_end_date") @db.Date
+  resignationDate  DateTime? @map("resignation_date") @db.Date
+  notes            String?
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// auth.users.id of the actor who created / last updated the row (soft reference).
+  createdBy        String    @map("created_by") @db.Uuid
+  updatedBy        String    @map("updated_by") @db.Uuid
+
+  department     Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  position       Position?       @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  employmentType EmploymentType  @relation(fields: [employmentTypeId], references: [id])
+  employeeStatus EmployeeStatus  @relation(fields: [employeeStatusId], references: [id])
+
+  branchAssignments EmployeeBranchAssignment[]
+  compensations     EmployeeCompensation[]
+
+  @@unique([organizationId, employeeCode])
+  // PostgreSQL treats NULLs as distinct, so unlinked employees do not collide.
+  @@unique([organizationId, platformUserId])
+  @@unique([organizationId, authUserId])
+  @@index([organizationId])
+  @@index([branchId])
+  @@index([employeeStatusId])
+  @@index([organizationId, isActive])
+  @@index([departmentId])
+  @@index([positionId])
+  @@map("employees")
+  @@schema("hr")
+}
+
+/// Employees may serve several branches; exactly one row should be primary at a time.
+model EmployeeBranchAssignment {
+  id            String    @id @default(uuid()) @db.Uuid
+  employeeId    String    @map("employee_id") @db.Uuid
+  branchId      String    @map("branch_id") @db.Uuid
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, branchId, effectiveFrom])
+  @@index([employeeId, isPrimary])
+  @@index([branchId])
+  @@map("employee_branch_assignments")
+  @@schema("hr")
+}
+
+// ─── Compensation ─────────────────────────────────────────────────────────
+
+/// Append-only wage history. `isCurrent` marks the row payroll should read.
+model EmployeeCompensation {
+  id                    String    @id @default(uuid()) @db.Uuid
+  employeeId            String    @map("employee_id") @db.Uuid
+  wageTypeId            String    @map("wage_type_id") @db.Uuid
+  amount                Decimal   @db.Decimal(14, 2)
+  currency              String    @default("THB")
+  effectiveFrom         DateTime  @map("effective_from") @db.Date
+  effectiveTo           DateTime? @map("effective_to") @db.Date
+  standardHoursPerDay   Decimal?  @map("standard_hours_per_day") @db.Decimal(5, 2)
+  standardDaysPerMonth  Decimal?  @map("standard_days_per_month") @db.Decimal(5, 2)
+  overtimeEligible      Boolean   @default(true) @map("overtime_eligible")
+  isCurrent             Boolean   @default(true) @map("is_current")
+  createdBy             String    @map("created_by") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  wageType WageType @relation(fields: [wageTypeId], references: [id])
+
+  @@index([employeeId])
+  @@index([employeeId, isCurrent])
+  @@index([wageTypeId])
+  @@map("employee_compensations")
+  @@schema("hr")
+}
+
+/// Organization-level overtime multipliers per rate type.
+model OvertimeRule {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  code           String
+  name           String
+  rateTypeId     String    @map("rate_type_id") @db.Uuid
+  multiplier     Decimal   @db.Decimal(6, 3)
+  fixedAmount    Decimal?  @map("fixed_amount") @db.Decimal(14, 2)
+  effectiveFrom  DateTime  @map("effective_from") @db.Date
+  effectiveTo    DateTime? @map("effective_to") @db.Date
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rateType OvertimeRateType @relation(fields: [rateTypeId], references: [id])
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([rateTypeId])
+  @@map("overtime_rules")
+  @@schema("hr")
+}
+
+// ─── Shifts ───────────────────────────────────────────────────────────────
+
+/// Shift definition (template). Daily rostering lands in Phase 8C.
+model Shift {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @map("organization_id") @db.Uuid
+  /// Null means the shift template is available to every branch in the organization.
+  branchId               String?  @map("branch_id") @db.Uuid
+  code                   String
+  name                   String
+  shiftTypeId            String   @map("shift_type_id") @db.Uuid
+  startTime              DateTime @map("start_time") @db.Time(6)
+  endTime                DateTime @map("end_time") @db.Time(6)
+  breakMinutes           Int      @default(0) @map("break_minutes")
+  graceLateMinutes       Int      @default(0) @map("grace_late_minutes")
+  graceEarlyLeaveMinutes Int      @default(0) @map("grace_early_leave_minutes")
+  crossesMidnight        Boolean  @default(false) @map("crosses_midnight")
+  standardWorkMinutes    Int      @map("standard_work_minutes")
+  overtimeAfterMinutes   Int?     @map("overtime_after_minutes")
+  isActive               Boolean  @default(true) @map("is_active")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shiftType ShiftType @relation(fields: [shiftTypeId], references: [id])
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([branchId])
+  @@index([shiftTypeId])
+  @@map("shifts")
+  @@schema("hr")
+}
+
+// ─── Payroll ──────────────────────────────────────────────────────────────
+
+/// Rules that generate payroll periods, e.g. semi-monthly on the 15th and last day.
+model PayrollSchedule {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  code            String
+  name            String
+  payFrequencyId  String   @map("pay_frequency_id") @db.Uuid
+  periodStartRule String   @map("period_start_rule")
+  periodEndRule   String   @map("period_end_rule")
+  paymentDayRule  String   @map("payment_day_rule")
+  timezone        String   @default("Asia/Bangkok")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payFrequency PayFrequency    @relation(fields: [payFrequencyId], references: [id])
+  periods      PayrollPeriod[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive])
+  @@index([payFrequencyId])
+  @@map("payroll_schedules")
+  @@schema("hr")
+}
+
+model PayrollPeriod {
+  id                String    @id @default(uuid()) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  payrollScheduleId String    @map("payroll_schedule_id") @db.Uuid
+  periodStart       DateTime  @map("period_start") @db.Date
+  periodEnd         DateTime  @map("period_end") @db.Date
+  paymentDate       DateTime  @map("payment_date") @db.Date
+  statusId          String    @map("status_id") @db.Uuid
+  lockedAt          DateTime? @map("locked_at") @db.Timestamptz(6)
+  /// auth.users.id of the actor who locked the period (soft reference).
+  lockedBy          String?   @map("locked_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payrollSchedule PayrollSchedule     @relation(fields: [payrollScheduleId], references: [id], onDelete: Cascade)
+  status          PayrollPeriodStatus @relation(fields: [statusId], references: [id])
+
+  @@unique([organizationId, payrollScheduleId, periodStart, periodEnd])
+  @@index([organizationId, statusId])
+  @@index([payrollScheduleId])
+  @@index([organizationId, periodStart])
+  @@map("payroll_periods")
+  @@schema("hr")
+}
+
+// ─── Audit ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String?  @map("organization_id") @db.Uuid
+  branchId        String?  @map("branch_id") @db.Uuid
+  /// Soft reference to auth.users.id — kept as UUID, never joined across schemas.
+  actorAuthUserId String?  @map("actor_auth_user_id") @db.Uuid
+  actionTypeId    String   @map("action_type_id") @db.Uuid
+  entityType      String   @map("entity_type")
+  entityId        String   @map("entity_id")
+  beforeJson      Json?    @map("before_json") @db.JsonB
+  afterJson       Json?    @map("after_json") @db.JsonB
+  ip              String?
+  userAgent       String?  @map("user_agent")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actionType AuditActionType @relation(fields: [actionTypeId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorAuthUserId])
+  @@index([actionTypeId])
+  @@map("audit_logs")
+  @@schema("hr")
+}
+
+// ─── Demo seeding helper ──────────────────────────────────────────────────
+
+/// Marks rows written by the development demo seed so cleanup stays idempotent
+/// and can never touch real tenant data.
+model DemoSeedMarker {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  markerKey      String   @map("marker_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, markerKey])
+  @@index([organizationId])
+  @@map("demo_seed_markers")
+  @@schema("hr")
+}
