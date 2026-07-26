@@ -364,7 +364,7 @@ describe("Phase 8B layout and styling", () => {
     assert.match(layout, /from "next\/font\/google"/);
     assert.match(layout, /Anuphan/);
     assert.match(layout, /Prompt/);
-    assert.match(tokens, /"Leelawadee UI"/);
+    assert.match(tokens, /Anuphan/);
     assert.match(css, /--hr-font:\s*var\(--font-family-sans\)/);
     assert.doesNotMatch(layout, /fonts\.googleapis\.com/);
   });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { HrNavIcon, hrNavIconForPath } from "@/components/ui/icons";
 import { canHr } from "@/lib/hr/permissions";
 import {
   hrNavRegistry,
@@ -43,15 +44,40 @@ function ProductNav({
   const activeKey = active ? hrNavRouteKey(active) : null;
   return (
     <nav className="hr-product-nav" aria-label="เมนูผลิตภัณฑ์ HR">
-      {items.map((item) => (
-        <Link
-          key={item.key}
-          href={item.path}
-          aria-current={item.key === activeKey ? "page" : undefined}
-        >
-          {item.labelTh}
-        </Link>
-      ))}
+      {items.map((item) => {
+        const isActive = item.key === activeKey;
+        return (
+          <Link
+            key={item.key}
+            href={item.path}
+            className={[
+              "shell-nav-link",
+              isActive ? "active nav-row-active-services" : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-current={isActive ? "page" : undefined}
+          >
+            {isActive ? (
+              <span
+                className="shell-nav-accent nav-accent-services"
+                aria-hidden="true"
+              />
+            ) : null}
+            <span
+              className={[
+                "shell-nav-icon",
+                isActive
+                  ? "nav-icon-active-services"
+                  : "nav-icon-idle-services",
+              ].join(" ")}
+            >
+              <HrNavIcon name={hrNavIconForPath(item.path)} size={18} />
+            </span>
+            <span className="shell-nav-label">{item.labelTh}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }
