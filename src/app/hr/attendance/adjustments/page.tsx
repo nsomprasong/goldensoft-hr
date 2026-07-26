@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function AttendanceAdjustmentsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.attendanceManage }); return <HrShell ctx={ctx}><OperationsWorkspace title="ปรับปรุงเวลาทำงาน" description="คำขอแก้ไขรายการลงเวลา พร้อมเหตุผลและร่องรอยตรวจสอบ" emptyMessage="ยังไม่มีคำขอปรับปรุงเวลา" endpoint="/api/hr/attendance/adjustments" actions={[{ label: "สร้างคำขอปรับปรุง", action: "create" }]} /></HrShell>; }

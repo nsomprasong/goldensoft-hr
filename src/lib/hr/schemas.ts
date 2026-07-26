@@ -18,6 +18,9 @@ export const employeeCreateSchema = z.object({
   displayName: nullableText,
   phone: nonEmpty,
   email: nullableText,
+  photoUrl: nullableText,
+  emergencyContactName: nullableText,
+  emergencyContactPhone: nullableText,
   hireDate: dateString,
   probationEndDate: z.union([z.string(), z.date()]).nullable().optional(),
   departmentId: uuid.nullable().optional(),
@@ -36,9 +39,13 @@ export const employeeUpdateSchema = z.object({
   displayName: nonEmpty.optional(),
   phone: nonEmpty.optional(),
   email: nullableText,
+  photoUrl: nullableText,
+  emergencyContactName: nullableText,
+  emergencyContactPhone: nullableText,
   hireDate: dateString.optional(),
   probationEndDate: z.union([z.string(), z.date()]).nullable().optional(),
   resignationDate: z.union([z.string(), z.date()]).nullable().optional(),
+  terminatedAt: z.union([z.string(), z.date()]).nullable().optional(),
   departmentId: uuid.nullable().optional(),
   positionId: uuid.nullable().optional(),
   notes: nullableText,
@@ -173,3 +180,27 @@ export const payrollPeriodCreateSchema = z.union([
 export const payrollPeriodUpdateSchema = z.object({
   statusCode: nonEmpty,
 });
+
+/** Operational endpoints validate a strict object while domain services own
+ * cross-field and state-transition validation. */
+export const hrOperationSchema = z.object({
+  action: z.string().trim().optional(),
+  confirm: z.boolean().optional(),
+  idempotencyKey: z.string().trim().min(8).optional(),
+  code: z.string().trim().optional(),
+  name: z.string().trim().optional(),
+  branchId: uuid.optional(),
+  employeeId: uuid.optional(),
+  workLocationId: uuid.optional(),
+  workCalendarId: uuid.optional(),
+  payrollPeriodId: uuid.optional(),
+  shiftId: uuid.optional().nullable(),
+  workDate: dateString.optional(),
+  startDate: dateString.optional(),
+  endDate: dateString.optional(),
+  periodStart: dateString.optional(),
+  periodEnd: dateString.optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  accuracyMeters: z.number().nonnegative().optional(),
+}).passthrough();

@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function PayrollRunDetailPage({ params }: { params: Promise<{ id: string }> }) { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollRead }); const { id } = await params; return <HrShell ctx={ctx}><OperationsWorkspace title="รายละเอียดการประมวลผล" description={`รายการประมวลผล ${id}`} emptyMessage="ยังไม่มีผลลัพธ์การคำนวณ" endpoint={`/api/hr/payroll/runs/${id}`} actions={[{ label: "คำนวณใหม่", action: "calculate", confirm: true }]} /></HrShell>; }

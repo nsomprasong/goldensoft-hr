@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function AttendanceExceptionsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.attendanceRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="ข้อยกเว้นเวลา" description="รายการมาสาย ขาดงาน และลืมลงเวลา" emptyMessage="ไม่พบข้อยกเว้นเวลาทำงาน" endpoint="/api/hr/attendance/exceptions" /></HrShell>; }

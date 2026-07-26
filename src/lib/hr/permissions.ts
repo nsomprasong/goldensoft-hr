@@ -11,6 +11,10 @@ export const HR_PERMISSIONS = {
   employeeManage: "hr.employee.manage",
   /** Linking an employee row to a Platform user account. */
   employeeLinkUser: "hr.employee.link_user",
+  scheduleRead: "hr.schedule.read",
+  scheduleManage: "hr.schedule.manage",
+  schedulePublish: "hr.schedule.publish",
+  attendanceSelf: "hr.attendance.self",
   /** Wage amounts are sensitive: read is separate from employee read. */
   compensationRead: "hr.compensation.read",
   compensationManage: "hr.compensation.manage",
@@ -26,8 +30,29 @@ export const HR_PERMISSIONS = {
   payrollPeriodManage: "hr.payroll_period.manage",
   attendanceRead: "hr.attendance.read",
   attendanceManage: "hr.attendance.manage",
+  attendanceOverride: "hr.attendance.override",
+  leaveSelf: "hr.leave.self",
+  leaveRead: "hr.leave.read",
+  leaveManage: "hr.leave.manage",
+  leaveApprove: "hr.leave.approve",
+  overtimeSelf: "hr.overtime.self",
+  overtimeRead: "hr.overtime.read",
+  overtimeManage: "hr.overtime.manage",
+  overtimeApprove: "hr.overtime.approve",
   payrollRead: "hr.payroll.read",
+  payrollCalculate: "hr.payroll.calculate",
+  payrollReview: "hr.payroll.review",
+  payrollApprove: "hr.payroll.approve",
+  payrollMarkPaid: "hr.payroll.mark_paid",
+  payrollLock: "hr.payroll.lock",
+  payslipSelf: "hr.payslip.self",
+  payslipRead: "hr.payslip.read",
   payrollManage: "hr.payroll.manage",
+  locationManage: "hr.location.manage",
+  calendarManage: "hr.calendar.manage",
+  reportRead: "hr.report.read",
+  approvalRead: "hr.approval.read",
+  approvalManage: "hr.approval.manage",
   settingsManage: "hr.settings.manage",
 } as const;
 
@@ -56,12 +81,13 @@ const ADMIN_PERMISSIONS: HrPermission[] = HR_PERMISSION_CODES.filter(
   (code) => !isCompensationPermission(code),
 );
 
-/** Read-only codes granted to any other organization member. */
+/** Self-service set for ordinary organization members. */
 const MEMBER_PERMISSIONS: HrPermission[] = [
-  HR_PERMISSIONS.employeeRead,
-  HR_PERMISSIONS.shiftRead,
-  HR_PERMISSIONS.payrollScheduleRead,
-  HR_PERMISSIONS.payrollPeriodRead,
+  HR_PERMISSIONS.scheduleRead,
+  HR_PERMISSIONS.attendanceSelf,
+  HR_PERMISSIONS.leaveSelf,
+  HR_PERMISSIONS.overtimeSelf,
+  HR_PERMISSIONS.payslipSelf,
 ];
 
 /** Map coarse Platform org roles → HR permissions (fail closed for unknown). */

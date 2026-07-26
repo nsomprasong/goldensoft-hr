@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function PayrollReviewPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollReview }); return <HrShell ctx={ctx}><OperationsWorkspace title="ตรวจสอบเงินเดือน" description="ตรวจสอบผลการคำนวณก่อนอนุมัติหรือจ่ายเงิน" emptyMessage="ยังไม่มีงวดที่รอตรวจสอบ" endpoint="/api/hr/payroll/review" /></HrShell>; }

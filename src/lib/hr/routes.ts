@@ -24,7 +24,33 @@ export type HrRouteKey =
   | "payrollSchedules"
   | "payrollPeriods"
   | "payrollPeriodDetail"
-  | "branchEmployees";
+  | "branchEmployees"
+  | "me"
+  | "meAttendance"
+  | "meSchedule"
+  | "meLeave"
+  | "meOvertime"
+  | "mePayslips"
+  | "mePayslipDetail"
+  | "schedules"
+  | "scheduleDetail"
+  | "calendars"
+  | "locations"
+  | "attendance"
+  | "attendanceExceptions"
+  | "attendanceAdjustments"
+  | "leave"
+  | "leaveBalances"
+  | "overtime"
+  | "approvals"
+  | "compensation"
+  | "payItems"
+  | "payrollRuns"
+  | "payrollRunDetail"
+  | "payrollReview"
+  | "payslips"
+  | "reports"
+  | "settings";
 
 export type HrRouteDefinition = {
   key: HrRouteKey;
@@ -146,6 +172,114 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     nav: false,
     requiredPermissions: [HR_PERMISSIONS.employeeRead],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "me",
+    path: `${HR_ROUTE_PREFIX}/me`,
+    labelTh: "บริการของฉัน",
+    nav: true,
+    requiredPermissions: [HR_PERMISSIONS.attendanceSelf, HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.overtimeSelf, HR_PERMISSIONS.payslipSelf],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "meAttendance", path: `${HR_ROUTE_PREFIX}/me/attendance`, labelTh: "ลงเวลาของฉัน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.attendanceSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "meSchedule", path: `${HR_ROUTE_PREFIX}/me/schedule`, labelTh: "ตารางงานของฉัน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.scheduleRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "meLeave", path: `${HR_ROUTE_PREFIX}/me/leave`, labelTh: "ลางานของฉัน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.leaveSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "meOvertime", path: `${HR_ROUTE_PREFIX}/me/overtime`, labelTh: "OT ของฉัน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.overtimeSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "mePayslips", path: `${HR_ROUTE_PREFIX}/me/payslips`, labelTh: "สลิปเงินเดือนของฉัน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.payslipSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "mePayslipDetail", path: `${HR_ROUTE_PREFIX}/me/payslips/[id]`, labelTh: "สลิปเงินเดือน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.payslipSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "schedules", path: `${HR_ROUTE_PREFIX}/schedules`, labelTh: "ตารางกะงาน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.scheduleRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "scheduleDetail", path: `${HR_ROUTE_PREFIX}/schedules/[id]`, labelTh: "รายละเอียดตารางกะ", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.scheduleRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "calendars", path: `${HR_ROUTE_PREFIX}/calendars`, labelTh: "ปฏิทินทำงาน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.calendarManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "locations", path: `${HR_ROUTE_PREFIX}/locations`, labelTh: "สถานที่ทำงาน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.locationManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "attendance", path: `${HR_ROUTE_PREFIX}/attendance`, labelTh: "เวลาทำงาน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.attendanceRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "attendanceExceptions", path: `${HR_ROUTE_PREFIX}/attendance/exceptions`, labelTh: "ข้อยกเว้นเวลา", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.attendanceRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "attendanceAdjustments", path: `${HR_ROUTE_PREFIX}/attendance/adjustments`, labelTh: "ปรับปรุงเวลา", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.attendanceManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "leave", path: `${HR_ROUTE_PREFIX}/leave`, labelTh: "การลา", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.leaveRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "leaveBalances", path: `${HR_ROUTE_PREFIX}/leave/balances`, labelTh: "ยอดคงเหลือการลา", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.leaveRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "overtime", path: `${HR_ROUTE_PREFIX}/overtime`, labelTh: "ทำงานล่วงเวลา", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.overtimeRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "approvals", path: `${HR_ROUTE_PREFIX}/approvals`, labelTh: "รายการอนุมัติ", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.approvalRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "compensation", path: `${HR_ROUTE_PREFIX}/compensation`, labelTh: "ค่าตอบแทน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.compensationRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "payItems", path: `${HR_ROUTE_PREFIX}/pay-items`, labelTh: "รายการจ่ายและหัก", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.compensationRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "payrollRuns", path: `${HR_ROUTE_PREFIX}/payroll/runs`, labelTh: "ประมวลผลเงินเดือน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.payrollRead], requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "payrollRunDetail", path: `${HR_ROUTE_PREFIX}/payroll/runs/[id]`, labelTh: "รายละเอียดการประมวลผล", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.payrollRead], requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "payrollReview", path: `${HR_ROUTE_PREFIX}/payroll/review`, labelTh: "ตรวจสอบเงินเดือน", nav: false,
+    requiredPermissions: [HR_PERMISSIONS.payrollReview], requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "payslips", path: `${HR_ROUTE_PREFIX}/payslips`, labelTh: "สลิปเงินเดือน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.payslipRead], requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "reports", path: `${HR_ROUTE_PREFIX}/reports`, labelTh: "รายงาน", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.reportRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "settings", path: `${HR_ROUTE_PREFIX}/settings`, labelTh: "ตั้งค่า HR", nav: true,
+    requiredPermissions: [HR_PERMISSIONS.settingsManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
 ] as const;
 

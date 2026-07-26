@@ -11,6 +11,7 @@ import {
   unlinkPlatformUser,
   updateEmployee,
 } from "../src/lib/hr/services/employees";
+import { HR_PERMISSIONS } from "../src/lib/hr/permissions";
 import {
   ACTOR_ID,
   adminContext,
@@ -227,7 +228,16 @@ describe("Phase 8B employees", () => {
     );
   });
 
-  it("keeps a member from reading another branch", async () => {
+  it("keeps ordinary members on self-service permissions only", async () => {
+    const { store, repository } = createHarness();
+    const admin = adminContext();
+    await createEmployee(repository, admin, employeeData(store));
+
+    const member = memberContext();
+    await expectHrError("FORBIDDEN", () => listEmployees(repository, member));
+  });
+
+  it("keeps a branch-scoped reader from reading another branch", async () => {
     const { store, repository } = createHarness();
     const admin = adminContext();
     await createEmployee(repository, admin, employeeData(store));
@@ -240,13 +250,18 @@ describe("Phase 8B employees", () => {
       }),
     );
 
-    const member = memberContext();
-    const listed = await listEmployees(repository, member);
+    const reader = {
+      ...memberContext(),
+      permissions: [HR_PERMISSIONS.employeeRead],
+      branchIds: [BRANCH_MAIN],
+      branchScope: "limited" as const,
+    };
+    const listed = await listEmployees(repository, reader);
     assert.equal(listed.total, 1);
     assert.equal(listed.rows[0].branchId, BRANCH_MAIN);
 
     await expectHrError("BRANCH_OUT_OF_SCOPE", () =>
-      getEmployee(repository, member, otherBranch.id),
+      getEmployee(repository, reader, otherBranch.id),
     );
   });
 

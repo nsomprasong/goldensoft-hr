@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function PayrollRunsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="ประมวลผลเงินเดือน" description="รอบการคำนวณเงินเดือนแยกตามงวด" emptyMessage="ยังไม่มีรายการประมวลผลเงินเดือน" endpoint="/api/hr/payroll/runs" actions={[{ label: "เริ่มประมวลผล", action: "create", confirm: true }]} /></HrShell>; }

@@ -28,6 +28,26 @@ import {
   type PageRequest,
 } from "@/lib/hr/services/shared";
 
+async function recordAssignmentHistory(input: {
+  employeeId: string;
+  branchId: string;
+  departmentId: string | null;
+  positionId: string | null;
+  changedByAuthUserId: string;
+}): Promise<void> {
+  if (
+    !process.env.DATABASE_URL ||
+    process.env.HR_USE_MEMORY_REPO === "true" ||
+    process.env.NODE_ENV === "test"
+  ) {
+    return;
+  }
+  const { writeEmployeeAssignmentHistory } = await import(
+    "./employee-history"
+  );
+  await writeEmployeeAssignmentHistory(input);
+}
+
 export type EmployeeListInput = PageRequest & {
   search?: string | null;
   branchId?: string | null;
@@ -50,6 +70,9 @@ export type EmployeeCreateData = {
   displayName?: string | null;
   phone: string;
   email?: string | null;
+  photoUrl?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
   hireDate: string | Date;
   probationEndDate?: string | Date | null;
   departmentId?: string | null;
@@ -61,6 +84,7 @@ export type EmployeeUpdateData = Partial<
   Omit<EmployeeCreateData, "employeeCode">
 > & {
   resignationDate?: string | Date | null;
+  terminatedAt?: string | Date | null;
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -212,9 +236,13 @@ export async function createEmployee(
       optionalText(data.displayName, 200) ?? `${firstNameTh} ${lastNameTh}`,
     phone: normalizePhone(data.phone),
     email: normalizeEmail(data.email),
+    photoUrl: optionalText(data.photoUrl, 2000),
+    emergencyContactName: optionalText(data.emergencyContactName, 200),
+    emergencyContactPhone: data.emergencyContactPhone ? normalizePhone(data.emergencyContactPhone) : null,
     hireDate: toDateOnly(data.hireDate),
     probationEndDate: optionalDate(data.probationEndDate),
     resignationDate: null,
+    terminatedAt: null,
     notes: optionalText(data.notes, 2000),
     isActive: true,
     createdBy: ctx.actorAuthUserId,
@@ -309,6 +337,9 @@ export async function updateEmployee(
   if (data.email !== undefined) {
     patch.email = normalizeEmail(data.email);
   }
+  if (data.photoUrl !== undefined) patch.photoUrl = optionalText(data.photoUrl, 2000);
+  if (data.emergencyContactName !== undefined) patch.emergencyContactName = optionalText(data.emergencyContactName, 200);
+  if (data.emergencyContactPhone !== undefined) patch.emergencyContactPhone = data.emergencyContactPhone ? normalizePhone(data.emergencyContactPhone) : null;
   if (data.hireDate !== undefined) {
     patch.hireDate = toDateOnly(data.hireDate);
   }
@@ -318,11 +349,26 @@ export async function updateEmployee(
   if (data.resignationDate !== undefined) {
     patch.resignationDate = optionalDate(data.resignationDate);
   }
+  if (data.terminatedAt !== undefined) patch.terminatedAt = optionalDate(data.terminatedAt);
   if (data.notes !== undefined) {
     patch.notes = optionalText(data.notes, 2000);
   }
 
   const after = await repository.employees.update(employeeId, patch);
+
+  if (
+    after.branchId !== before.branchId ||
+    after.departmentId !== before.departmentId ||
+    after.positionId !== before.positionId
+  ) {
+    await recordAssignmentHistory({
+      employeeId: after.id,
+      branchId: after.branchId,
+      departmentId: after.departmentId,
+      positionId: after.positionId,
+      changedByAuthUserId: ctx.actorAuthUserId,
+    });
+  }
 
   await writeHrAudit(repository, {
     organizationId: ctx.organizationId,
@@ -487,4 +533,30 @@ export async function unlinkPlatformUser(
   });
 
   return after;
+}
+
+export async function resignEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+  resignationDate: string | Date,
+): Promise<EmployeeRecord> {
+  return deactivateEmployee(repository, ctx, employeeId, {
+    employeeStatusCode: "RESIGNED",
+    resignationDate,
+  });
+}
+
+export async function terminateEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+): Promise<EmployeeRecord> {
+  const employee = await deactivateEmployee(repository, ctx, employeeId, {
+    employeeStatusCode: "TERMINATED",
+  });
+  return repository.employees.update(employeeId, {
+    terminatedAt: new Date(),
+    updatedBy: ctx.actorAuthUserId,
+  });
 }

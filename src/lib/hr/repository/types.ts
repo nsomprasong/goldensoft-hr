@@ -97,9 +97,13 @@ export type EmployeeRecord = {
   displayName: string;
   phone: string;
   email: string | null;
+  photoUrl: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
   hireDate: Date;
   probationEndDate: Date | null;
   resignationDate: Date | null;
+  terminatedAt: Date | null;
   notes: string | null;
   isActive: boolean;
   createdAt: Date;

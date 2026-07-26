@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function PayItemsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.compensationRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="รายการจ่ายและหัก" description="รายการประจำและรายการปรับปรุงที่ใช้คำนวณเงินเดือน" emptyMessage="ยังไม่มีรายการจ่ายหรือหัก" endpoint="/api/hr/pay-items" actions={[{ label: "เพิ่มรายการ", action: "create" }]} /></HrShell>; }

@@ -35,6 +35,36 @@ const PAGES = [
   "src/app/hr/payroll/periods/[id]/page.tsx",
 ];
 
+/** Phase 8B core + HR 100% suite pages (allowed inventory). */
+const HR100_PAGES = [
+  "src/app/hr/settings/page.tsx",
+  "src/app/hr/me/page.tsx",
+  "src/app/hr/me/attendance/page.tsx",
+  "src/app/hr/me/schedule/page.tsx",
+  "src/app/hr/me/leave/page.tsx",
+  "src/app/hr/me/overtime/page.tsx",
+  "src/app/hr/me/payslips/page.tsx",
+  "src/app/hr/me/payslips/[id]/page.tsx",
+  "src/app/hr/schedules/page.tsx",
+  "src/app/hr/schedules/[id]/page.tsx",
+  "src/app/hr/calendars/page.tsx",
+  "src/app/hr/locations/page.tsx",
+  "src/app/hr/attendance/page.tsx",
+  "src/app/hr/attendance/exceptions/page.tsx",
+  "src/app/hr/attendance/adjustments/page.tsx",
+  "src/app/hr/leave/page.tsx",
+  "src/app/hr/leave/balances/page.tsx",
+  "src/app/hr/overtime/page.tsx",
+  "src/app/hr/approvals/page.tsx",
+  "src/app/hr/compensation/page.tsx",
+  "src/app/hr/pay-items/page.tsx",
+  "src/app/hr/payroll/runs/page.tsx",
+  "src/app/hr/payroll/runs/[id]/page.tsx",
+  "src/app/hr/payroll/review/page.tsx",
+  "src/app/hr/payslips/page.tsx",
+  "src/app/hr/reports/page.tsx",
+];
+
 const FORMS = [
   "src/components/hr/employee-form.tsx",
   "src/components/hr/department-form.tsx",
@@ -475,6 +505,7 @@ describe("Phase 8B project wiring", () => {
 
     const allowed = new Set([
       ...PAGES,
+      ...HR100_PAGES,
       "src/app/page.tsx",
       "src/app/login/page.tsx",
       "src/app/access/page.tsx",
@@ -496,6 +527,9 @@ describe("Phase 8B project wiring", () => {
     ]);
     for (const page of found) {
       assert.ok(allowed.has(page), `unexpected page ${page}`);
+    }
+    for (const page of HR100_PAGES) {
+      assert.ok(exists(page), `expected HR100 page ${page}`);
     }
   });
 

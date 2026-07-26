@@ -56,6 +56,26 @@ export default async function HrDashboardPage() {
           <div className="stat-label">โควตาพนักงานตามแพ็กเกจ</div>
           <div className="stat-value">{employeeLimit}</div>
         </div>
+        <div className="stat">
+          <div className="stat-label">คำขอลารออนุมัติ</div>
+          <div className="stat-value">—</div>
+          <p className="muted">ยังไม่มีข้อมูลจากระบบคำขอลา</p>
+        </div>
+        <div className="stat">
+          <div className="stat-label">คำขอ OT รออนุมัติ</div>
+          <div className="stat-value">—</div>
+          <p className="muted">ยังไม่มีข้อมูลจากระบบ OT</p>
+        </div>
+        <div className="stat">
+          <div className="stat-label">ลืมลงเวลาออก</div>
+          <div className="stat-value">—</div>
+          <p className="muted">ยังไม่มีข้อมูลจากระบบลงเวลา</p>
+        </div>
+        <div className="stat">
+          <div className="stat-label">คำเตือนงวดเงินเดือน</div>
+          <div className="stat-value">—</div>
+          <p className="muted">ยังไม่มีข้อมูลตรวจสอบงวด</p>
+        </div>
       </div>
 
       <div className="two-col">

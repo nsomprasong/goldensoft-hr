@@ -1,0 +1,3 @@
+import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+export const dynamic = "force-dynamic";
+export default async function CalendarsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.calendarManage }); return <HrShell ctx={ctx}><OperationsWorkspace title="ปฏิทินทำงาน" description="วันทำงาน วันหยุด และปฏิทินตามสาขา" emptyMessage="ยังไม่มีปฏิทินทำงาน" endpoint="/api/hr/calendars" actions={[{ label: "เพิ่มปฏิทิน", action: "create" }]} /></HrShell>; }

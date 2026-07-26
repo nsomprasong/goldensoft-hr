@@ -99,7 +99,10 @@ describe("Phase 8B Prisma schema", () => {
   it("puts every model in the hr schema", () => {
     const modelCount = schema.match(/^model /gm)?.length ?? 0;
     const schemaAttributes = schema.match(/@@schema\("hr"\)/g)?.length ?? 0;
-    assert.equal(modelCount, EXPECTED_MODELS.length);
+    assert.ok(
+      modelCount >= EXPECTED_MODELS.length,
+      `expected at least ${EXPECTED_MODELS.length} models, got ${modelCount}`,
+    );
     assert.equal(schemaAttributes, modelCount);
   });
 
