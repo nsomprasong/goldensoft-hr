@@ -10,6 +10,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +56,9 @@ export default async function PayrollPeriodsPage() {
               {periods.data.map((row) => (
                 <tr key={row.id}>
                   <td>{row.scheduleName}</td>
-                  <td className="nowrap">{row.periodStart}</td>
-                  <td className="nowrap">{row.periodEnd}</td>
-                  <td className="nowrap">{row.paymentDate}</td>
+                  <td className="nowrap">{formatThaiDate(row.periodStart)}</td>
+                  <td className="nowrap">{formatThaiDate(row.periodEnd)}</td>
+                  <td className="nowrap">{formatThaiDate(row.paymentDate)}</td>
                   <td>
                     <span className="badge">{row.statusNameTh}</span>
                   </td>

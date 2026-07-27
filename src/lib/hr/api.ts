@@ -196,13 +196,16 @@ export async function parseJsonBody<T>(
 
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      message: issue.message,
+    }));
     throw new HrError("VALIDATION_ERROR", {
-      details: {
-        issues: parsed.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
-      },
+      message:
+        issues[0]?.message && issues[0].path
+          ? `${issues[0].path}: ${issues[0].message}`
+          : (issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง"),
+      details: { issues },
     });
   }
   return parsed.data;

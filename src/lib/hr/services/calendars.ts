@@ -1,1 +1,10 @@
-export { copyHolidayYear, listCalendars, saveCalendar, saveHoliday } from "@/lib/hr/services/operations";
+export {
+  copyHolidayYear,
+  deleteCalendar,
+  deleteHoliday,
+  listCalendars,
+  listHolidayTypes,
+  saveCalendar,
+  saveHoliday,
+  seedThaiPublicHolidays,
+} from "@/lib/hr/services/operations";

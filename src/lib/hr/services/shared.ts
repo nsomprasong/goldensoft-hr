@@ -108,6 +108,21 @@ export function requireText(
   return value;
 }
 
+/** One user-facing name; mirrors into nameEn when the bilingual column is required. */
+export function resolveDisplayNamePair(
+  name: string,
+  nameEn: string | null | undefined,
+  label: string,
+  max = 200,
+): { nameTh: string; nameEn: string } {
+  const nameTh = requireText(name, label, max);
+  const en = (nameEn ?? "").trim();
+  return {
+    nameTh,
+    nameEn: en ? requireText(en, label, max) : nameTh,
+  };
+}
+
 export function optionalText(
   raw: string | null | undefined,
   max = 500,

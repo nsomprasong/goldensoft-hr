@@ -10,7 +10,6 @@ import {
   requireSelect,
   requireText,
   submitHrJson,
-  validateCode,
   validateDate,
   validatePositiveNumber,
   type FieldErrors,
@@ -66,7 +65,6 @@ export default function OvertimeRuleForm({
     setFeedback(null);
 
     const nextErrors = compact({
-      code: mode === "create" ? (validateCode(values.code) ?? "") : "",
       name: requireText(values.name) ?? "",
       rateTypeId: requireSelect(values.rateTypeId) ?? "",
       multiplier:
@@ -100,7 +98,7 @@ export default function OvertimeRuleForm({
         ? await submitHrJson(
             "/api/hr/overtime-rules",
             "POST",
-            { ...payload, code: values.code.trim() },
+            payload,
             "เพิ่มกฎ OT เรียบร้อยแล้ว",
           )
         : await submitHrJson(
@@ -128,21 +126,19 @@ export default function OvertimeRuleForm({
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        <Field
-          id="ot-code"
-          label="รหัสกฎ OT"
-          required
-          error={errors.code}
-          hint={mode === "edit" ? "รหัสแก้ไขไม่ได้" : undefined}
-        >
-          <input
-            {...fieldProps("ot-code", errors.code)}
-            value={values.code}
-            onChange={(e) => setValues({ ...values, code: e.target.value })}
-            placeholder="OT_NORMAL"
-            readOnly={mode === "edit"}
-          />
-        </Field>
+        {mode === "edit" ? (
+          <Field
+            id="ot-code"
+            label="รหัสกฎ OT"
+            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
+          >
+            <input {...fieldProps("ot-code")} value={values.code} readOnly />
+          </Field>
+        ) : (
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            รหัสกฎ OT จะถูกสร้างอัตโนมัติเมื่อบันทึก
+          </p>
+        )}
 
         <Field id="ot-name" label="ชื่อกฎ OT" required error={errors.name}>
           <input

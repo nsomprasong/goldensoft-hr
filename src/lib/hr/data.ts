@@ -30,6 +30,14 @@ import { listPayrollSchedules as listPayrollSchedulesService } from "@/lib/hr/se
 import { listPositions as listPositionsService } from "@/lib/hr/services/positions";
 import { listShifts as listShiftsService } from "@/lib/hr/services/shifts";
 import {
+  getSchedulePeriod as getSchedulePeriodService,
+  listSchedulePeriods as listSchedulePeriodsService,
+} from "@/lib/hr/services/schedules";
+import {
+  listCalendars as listCalendarsService,
+  listHolidayTypes as listHolidayTypesService,
+} from "@/lib/hr/services/calendars";
+import {
   toHrServiceContext,
   type HrServiceContext,
 } from "@/lib/hr/services/shared";
@@ -760,3 +768,198 @@ export async function getPayrollPeriod(
     return toPayrollPeriodRow(row, lookups.scheduleNames, lookups.statuses);
   });
 }
+
+// ─── Schedule periods ─────────────────────────────────────────────────────
+
+export type SchedulePeriodRow = {
+  id: string;
+  code: string;
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  statusCode: string;
+  statusName: string;
+  timezone: string;
+  assignmentCount?: number;
+};
+
+export async function listSchedulePeriods(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<SchedulePeriodRow[]>> {
+  return safeRead<SchedulePeriodRow[]>([], async () => {
+    const rows = await listSchedulePeriodsService(serviceContext(ctx));
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      periodStart: isoDate(row.periodStart) ?? "",
+      periodEnd: isoDate(row.periodEnd) ?? "",
+      statusCode: row.status?.code ?? "—",
+      statusName: row.status?.name ?? row.status?.code ?? "—",
+      timezone: row.timezone,
+    }));
+  });
+}
+
+export async function getSchedulePeriod(
+  ctx: HrRequestContext,
+  id: string,
+): Promise<
+  HrDataResult<{
+    period: SchedulePeriodRow;
+    assignments: Array<{
+      id: string;
+      workDate: string;
+      employeeLabel: string;
+      shiftLabel: string;
+      isRestDay: boolean;
+      isLeaveDay: boolean;
+    }>;
+  } | null>
+> {
+  return safeRead(null, async () => {
+    const row = await getSchedulePeriodService(serviceContext(ctx), id);
+    return {
+      period: {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        periodStart: isoDate(row.periodStart) ?? "",
+        periodEnd: isoDate(row.periodEnd) ?? "",
+        statusCode: row.status?.code ?? "—",
+        statusName: row.status?.name ?? row.status?.code ?? "—",
+        timezone: row.timezone,
+        assignmentCount: row.shiftAssignments.length,
+      },
+      assignments: row.shiftAssignments.map((item) => ({
+        id: item.id,
+        workDate: isoDate(item.workDate) ?? "",
+        employeeLabel: item.employee
+          ? `${item.employee.employeeCode} · ${item.employee.firstNameTh} ${item.employee.lastNameTh}`
+          : "—",
+        shiftLabel: item.shift
+          ? `${item.shift.code} · ${item.shift.name}`
+          : item.isRestDay
+            ? "วันหยุด"
+            : item.isLeaveDay
+              ? "วันลา"
+              : "—",
+        isRestDay: item.isRestDay,
+        isLeaveDay: item.isLeaveDay,
+      })),
+    };
+  });
+}
+
+/** Compact employee + shift lists for the one-step schedule composer. */
+export type ScheduleRosterOption = {
+  id: string;
+  label: string;
+};
+
+export async function listScheduleComposerOptions(
+  ctx: HrRequestContext,
+): Promise<
+  HrDataResult<{
+    employees: ScheduleRosterOption[];
+    shifts: ScheduleRosterOption[];
+  }>
+> {
+  const empty = { employees: [] as ScheduleRosterOption[], shifts: [] as ScheduleRosterOption[] };
+  return safeRead(empty, async (repository) => {
+    const service = serviceContext(ctx);
+    const [employees, shifts] = await Promise.all([
+      listEmployeesService(repository, service, {
+        page: 1,
+        pageSize: ALL,
+        isActive: true,
+      }),
+      listShiftsService(repository, service, { pageSize: ALL }),
+    ]);
+
+    return {
+      employees: employees.rows.map((row) => ({
+        id: row.id,
+        label: `${row.employeeCode} · ${row.displayName}`,
+      })),
+      shifts: shifts.rows
+        .filter((row) => row.isActive)
+        .map((row) => ({
+          id: row.id,
+          label: `${row.code} · ${row.name} (${row.startTime.slice(0, 5)}–${row.endTime.slice(0, 5)})`,
+        })),
+    };
+  });
+}
+
+// ─── Work calendars ───────────────────────────────────────────────────────
+
+export type HolidayTypeOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type HolidayRow = {
+  id: string;
+  holidayDate: string;
+  name: string;
+  isPaid: boolean;
+  holidayTypeId: string;
+  holidayTypeName: string;
+};
+
+export type WorkCalendarRow = {
+  id: string;
+  code: string;
+  name: string;
+  timezone: string;
+  workDays: number[];
+  isActive: boolean;
+  holidays: HolidayRow[];
+};
+
+function parseWorkDays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((d) => Number(d))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+}
+
+export async function listWorkCalendars(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<WorkCalendarRow[]>> {
+  return safeRead<WorkCalendarRow[]>([], async () => {
+    const rows = await listCalendarsService(serviceContext(ctx));
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      timezone: row.timezone,
+      workDays: parseWorkDays(row.workDays),
+      isActive: row.isActive,
+      holidays: (row.holidays ?? []).map((h) => ({
+        id: h.id,
+        holidayDate: isoDate(h.holidayDate) ?? "",
+        name: h.name,
+        isPaid: h.isPaid,
+        holidayTypeId: h.holidayTypeId,
+        holidayTypeName: h.holidayType?.name ?? "—",
+      })),
+    }));
+  });
+}
+
+export async function listHolidayTypeOptions(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<HolidayTypeOption[]>> {
+  return safeRead<HolidayTypeOption[]>([], async () => {
+    const rows = await listHolidayTypesService(serviceContext(ctx));
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+    }));
+  });
+}
+

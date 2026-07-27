@@ -8,7 +8,6 @@ import Field, { fieldProps } from "@/components/hr/field";
 import {
   compact,
   submitHrJson,
-  validateCode,
   validateDate,
   validateEmail,
   validatePhone,
@@ -22,8 +21,6 @@ export type EmployeeFormValues = {
   employeeCode: string;
   firstNameTh: string;
   lastNameTh: string;
-  firstNameEn: string;
-  lastNameEn: string;
   displayName: string;
   phone: string;
   email: string;
@@ -43,8 +40,6 @@ const EMPTY_VALUES: EmployeeFormValues = {
   employeeCode: "",
   firstNameTh: "",
   lastNameTh: "",
-  firstNameEn: "",
-  lastNameEn: "",
   displayName: "",
   phone: "",
   email: "",
@@ -61,11 +56,8 @@ const EMPTY_VALUES: EmployeeFormValues = {
 function validate(
   values: EmployeeFormValues,
   hasBranchOptions: boolean,
-  mode: "create" | "edit",
 ) {
   const errors: FieldErrors = {
-    // The employee code is immutable, so it is only validated on create.
-    employeeCode: mode === "create" ? (validateCode(values.employeeCode) ?? "") : "",
     firstNameTh: requireText(values.firstNameTh) ?? "",
     lastNameTh: requireText(values.lastNameTh) ?? "",
     displayName: requireText(values.displayName) ?? "",
@@ -149,7 +141,7 @@ export default function EmployeeForm({
     event.preventDefault();
     setFeedback(null);
 
-    const nextErrors = validate(values, branches.length > 0, mode);
+    const nextErrors = validate(values, branches.length > 0);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       setFeedback({
@@ -162,8 +154,8 @@ export default function EmployeeForm({
     const payload = {
       firstNameTh: values.firstNameTh.trim(),
       lastNameTh: values.lastNameTh.trim(),
-      firstNameEn: values.firstNameEn.trim() || null,
-      lastNameEn: values.lastNameEn.trim() || null,
+      firstNameEn: null,
+      lastNameEn: null,
       displayName: values.displayName.trim(),
       phone: values.phone.trim(),
       email: values.email.trim() || null,
@@ -183,7 +175,7 @@ export default function EmployeeForm({
         ? await submitHrJson(
             "/api/hr/employees",
             "POST",
-            { ...payload, employeeCode: values.employeeCode.trim() },
+            payload,
             "สร้างพนักงานเรียบร้อยแล้ว",
           )
         : await submitHrJson(
@@ -220,25 +212,27 @@ export default function EmployeeForm({
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        <Field
-          id="employeeCode"
-          label="รหัสพนักงาน"
-          required
-          error={errors.employeeCode}
-          hint={mode === "edit" ? "รหัสพนักงานแก้ไขไม่ได้" : undefined}
-        >
-          <input
-            {...fieldProps("employeeCode", errors.employeeCode)}
-            value={values.employeeCode}
-            onChange={(e) => set("employeeCode", e.target.value)}
-            placeholder="EMP-001"
-            readOnly={mode === "edit"}
-          />
-        </Field>
+        {mode === "edit" ? (
+          <Field
+            id="employeeCode"
+            label="รหัสพนักงาน"
+            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
+          >
+            <input
+              {...fieldProps("employeeCode")}
+              value={values.employeeCode}
+              readOnly
+            />
+          </Field>
+        ) : (
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            รหัสพนักงานจะถูกสร้างอัตโนมัติเมื่อบันทึก
+          </p>
+        )}
 
         <Field
           id="firstNameTh"
-          label="ชื่อ (ไทย)"
+          label="ชื่อ"
           required
           error={errors.firstNameTh}
         >
@@ -246,12 +240,13 @@ export default function EmployeeForm({
             {...fieldProps("firstNameTh", errors.firstNameTh)}
             value={values.firstNameTh}
             onChange={(e) => set("firstNameTh", e.target.value)}
+            placeholder="พิมพ์ได้ทั้งไทยและอังกฤษ"
           />
         </Field>
 
         <Field
           id="lastNameTh"
-          label="นามสกุล (ไทย)"
+          label="นามสกุล"
           required
           error={errors.lastNameTh}
         >
@@ -259,22 +254,7 @@ export default function EmployeeForm({
             {...fieldProps("lastNameTh", errors.lastNameTh)}
             value={values.lastNameTh}
             onChange={(e) => set("lastNameTh", e.target.value)}
-          />
-        </Field>
-
-        <Field id="firstNameEn" label="ชื่อ (อังกฤษ)">
-          <input
-            {...fieldProps("firstNameEn")}
-            value={values.firstNameEn}
-            onChange={(e) => set("firstNameEn", e.target.value)}
-          />
-        </Field>
-
-        <Field id="lastNameEn" label="นามสกุล (อังกฤษ)">
-          <input
-            {...fieldProps("lastNameEn")}
-            value={values.lastNameEn}
-            onChange={(e) => set("lastNameEn", e.target.value)}
+            placeholder="พิมพ์ได้ทั้งไทยและอังกฤษ"
           />
         </Field>
 

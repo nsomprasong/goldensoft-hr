@@ -78,8 +78,6 @@ export default async function EditEmployeePage({
             employeeCode: employee.employeeCode,
             firstNameTh: employee.firstNameTh,
             lastNameTh: employee.lastNameTh,
-            firstNameEn: employee.firstNameEn ?? "",
-            lastNameEn: employee.lastNameEn ?? "",
             displayName: employee.displayName,
             phone: employee.phone,
             email: employee.email ?? "",

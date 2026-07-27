@@ -9,21 +9,18 @@ import {
   compact,
   requireText,
   submitHrJson,
-  validateCode,
   type FieldErrors,
 } from "@/components/hr/form-utils";
 
 export type DepartmentFormValues = {
   code: string;
   nameTh: string;
-  nameEn: string;
   description: string;
 };
 
 const EMPTY: DepartmentFormValues = {
   code: "",
   nameTh: "",
-  nameEn: "",
   description: "",
 };
 
@@ -57,9 +54,7 @@ export default function DepartmentForm({
     setFeedback(null);
 
     const nextErrors = compact({
-      code: mode === "create" ? (validateCode(values.code) ?? "") : "",
       nameTh: requireText(values.nameTh) ?? "",
-      nameEn: requireText(values.nameEn) ?? "",
     });
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -68,9 +63,10 @@ export default function DepartmentForm({
     }
 
     // The tenant-scoped code is immutable, so PATCH never sends it.
+    // On create the server allocates DEPT-#### automatically.
+    // nameEn is mirrored from nameTh on the server.
     const payload = {
       nameTh: values.nameTh.trim(),
-      nameEn: values.nameEn.trim(),
       description: values.description.trim() || null,
     };
 
@@ -80,7 +76,7 @@ export default function DepartmentForm({
         ? await submitHrJson(
             "/api/hr/departments",
             "POST",
-            { ...payload, code: values.code.trim() },
+            payload,
             "เพิ่มแผนกเรียบร้อยแล้ว",
           )
         : await submitHrJson(
@@ -109,40 +105,30 @@ export default function DepartmentForm({
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        <Field
-          id="dept-code"
-          label="รหัสแผนก"
-          required
-          error={errors.code}
-          hint={mode === "edit" ? "รหัสแก้ไขไม่ได้" : undefined}
-        >
-          <input
-            {...fieldProps("dept-code", errors.code)}
-            value={values.code}
-            onChange={(e) => setValues({ ...values, code: e.target.value })}
-            placeholder="HR"
-            readOnly={mode === "edit"}
-          />
-        </Field>
+        {mode === "edit" ? (
+          <Field
+            id="dept-code"
+            label="รหัสแผนก"
+            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
+          >
+            <input
+              {...fieldProps("dept-code")}
+              value={values.code}
+              readOnly
+            />
+          </Field>
+        ) : (
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            รหัสแผนกจะถูกสร้างอัตโนมัติเมื่อบันทึก
+          </p>
+        )}
 
-        <Field id="dept-nameTh" label="ชื่อแผนก (ไทย)" required error={errors.nameTh}>
+        <Field id="dept-nameTh" label="ชื่อแผนก" required error={errors.nameTh}>
           <input
             {...fieldProps("dept-nameTh", errors.nameTh)}
             value={values.nameTh}
             onChange={(e) => setValues({ ...values, nameTh: e.target.value })}
-          />
-        </Field>
-
-        <Field
-          id="dept-nameEn"
-          label="ชื่อแผนก (อังกฤษ)"
-          required
-          error={errors.nameEn}
-        >
-          <input
-            {...fieldProps("dept-nameEn", errors.nameEn)}
-            value={values.nameEn}
-            onChange={(e) => setValues({ ...values, nameEn: e.target.value })}
+            placeholder="พิมพ์ได้ทั้งไทยและอังกฤษ"
           />
         </Field>
 

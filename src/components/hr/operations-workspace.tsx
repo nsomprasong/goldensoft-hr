@@ -24,7 +24,7 @@ type Status = { kind: "success" | "error" | "info"; message: string } | null;
 
 function messageFromResponse(response: Response): string {
   if (response.status === 404) {
-    return "บริการนี้ยังไม่พร้อมใช้งาน กรุณารอการติดตั้งฐานข้อมูล HR";
+    return "ไม่พบบริการนี้ในระบบ กรุณาลองใหม่หรือติดต่อผู้ดูแล";
   }
   if (response.status >= 500) {
     return "ไม่สามารถบันทึกข้อมูลได้ในขณะนี้ กรุณาลองใหม่ภายหลัง";
@@ -176,7 +176,7 @@ export default function OperationsWorkspace({
         </section>
       )}
       <p className="muted">
-        หากข้อมูลยังไม่แสดง กรุณาลองใหม่หลังจากผู้ดูแลติดตั้งฐานข้อมูล HR แล้ว
+        หากข้อมูลยังไม่แสดง ให้ลองรีเฟรชหน้า หรือตรวจสอบสิทธิ์การเข้าถึง
       </p>
       <Link className="btn btn-sm" href="/hr">
         กลับแดชบอร์ด

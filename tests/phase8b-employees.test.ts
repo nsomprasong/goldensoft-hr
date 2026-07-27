@@ -50,6 +50,25 @@ describe("Phase 8B employees", () => {
     assert.equal(audit[0].actionCode, "employee.create");
   });
 
+  it("auto-generates employeeCode when omitted", async () => {
+    const { store, repository } = createHarness();
+    const ctx = adminContext();
+
+    const first = await createEmployee(
+      repository,
+      ctx,
+      employeeData(store, { employeeCode: undefined }),
+    );
+    const second = await createEmployee(
+      repository,
+      ctx,
+      employeeData(store, { employeeCode: null, phone: "0800000002" }),
+    );
+
+    assert.equal(first.employeeCode, "EMP-0001");
+    assert.equal(second.employeeCode, "EMP-0002");
+  });
+
   it("normalizes the employee code and refuses duplicates", async () => {
     const { store, repository } = createHarness();
     const ctx = adminContext();

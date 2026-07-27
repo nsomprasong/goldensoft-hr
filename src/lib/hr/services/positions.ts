@@ -1,6 +1,7 @@
 /** Position CRUD. Positions are never deleted, only deactivated. */
 import { assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextPositionCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import type { HrRepository, PositionRecord } from "@/lib/hr/repository/types";
@@ -9,6 +10,7 @@ import {
   normalizePagination,
   optionalText,
   requireText,
+  resolveDisplayNamePair,
   toPagedResponse,
   type HrServiceContext,
   type PagedResponse,
@@ -22,9 +24,9 @@ export type PositionListInput = PageRequest & {
 };
 
 export type PositionCreateData = {
-  code: string;
+  code?: string | null;
   nameTh: string;
-  nameEn: string;
+  nameEn?: string | null;
   departmentId?: string | null;
   description?: string | null;
 };
@@ -92,7 +94,9 @@ export async function createPosition(
 ): Promise<PositionRecord> {
   assertHrPermission(ctx, HR_PERMISSIONS.positionManage);
 
-  const code = normalizeCode(data.code, "รหัสตำแหน่ง");
+  const code = data.code?.trim()
+    ? normalizeCode(data.code, "รหัสตำแหน่ง")
+    : await nextPositionCode(repository, ctx.organizationId);
   const duplicate = await repository.positions.findByCode(
     ctx.organizationId,
     code,
@@ -103,12 +107,13 @@ export async function createPosition(
     await assertDepartmentUsable(repository, ctx, data.departmentId);
   }
 
+  const names = resolveDisplayNamePair(data.nameTh, data.nameEn, "ชื่อตำแหน่ง");
   const created = await repository.positions.create({
     organizationId: ctx.organizationId,
     departmentId: data.departmentId ?? null,
     code,
-    nameTh: requireText(data.nameTh, "ชื่อตำแหน่ง (ไทย)", 200),
-    nameEn: requireText(data.nameEn, "ชื่อตำแหน่ง (อังกฤษ)", 200),
+    nameTh: names.nameTh,
+    nameEn: names.nameEn,
     description: optionalText(data.description),
     isActive: true,
   });
@@ -146,11 +151,12 @@ export async function updatePosition(
       ? {}
       : { departmentId: data.departmentId ?? null }),
     ...(data.nameTh === undefined
-      ? {}
-      : { nameTh: requireText(data.nameTh, "ชื่อตำแหน่ง (ไทย)", 200) }),
-    ...(data.nameEn === undefined
-      ? {}
-      : { nameEn: requireText(data.nameEn, "ชื่อตำแหน่ง (อังกฤษ)", 200) }),
+      ? data.nameEn === undefined
+        ? {}
+        : {
+            nameEn: requireText(data.nameEn, "ชื่อตำแหน่ง", 200),
+          }
+      : resolveDisplayNamePair(data.nameTh, data.nameEn, "ชื่อตำแหน่ง")),
     ...(data.description === undefined
       ? {}
       : { description: optionalText(data.description) }),

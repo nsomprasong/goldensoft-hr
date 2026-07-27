@@ -10,7 +10,6 @@ import {
   requireSelect,
   requireText,
   submitHrJson,
-  validateCode,
   type FieldErrors,
 } from "@/components/hr/form-utils";
 
@@ -28,9 +27,9 @@ const EMPTY: PayrollScheduleFormValues = {
   code: "",
   name: "",
   payFrequencyId: "",
-  periodStartRule: "DAY_1",
-  periodEndRule: "LAST_DAY",
-  paymentDayRule: "LAST_DAY",
+  periodStartRule: "DAY:1",
+  periodEndRule: "END_OF_MONTH",
+  paymentDayRule: "END_OF_PERIOD",
   timezone: "Asia/Bangkok",
 };
 
@@ -64,7 +63,6 @@ export default function PayrollScheduleForm({
     setFeedback(null);
 
     const nextErrors = compact({
-      code: mode === "create" ? (validateCode(values.code) ?? "") : "",
       name: requireText(values.name) ?? "",
       payFrequencyId: requireSelect(values.payFrequencyId) ?? "",
       periodStartRule: requireText(values.periodStartRule) ?? "",
@@ -94,7 +92,7 @@ export default function PayrollScheduleForm({
         ? await submitHrJson(
             "/api/hr/payroll-schedules",
             "POST",
-            { ...payload, code: values.code.trim() },
+            payload,
             "เพิ่มรอบจ่ายเรียบร้อยแล้ว",
           )
         : await submitHrJson(
@@ -122,21 +120,19 @@ export default function PayrollScheduleForm({
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        <Field
-          id="sched-code"
-          label="รหัสรอบจ่าย"
-          required
-          error={errors.code}
-          hint={mode === "edit" ? "รหัสแก้ไขไม่ได้" : undefined}
-        >
-          <input
-            {...fieldProps("sched-code", errors.code)}
-            value={values.code}
-            onChange={(e) => setValues({ ...values, code: e.target.value })}
-            placeholder="MONTHLY"
-            readOnly={mode === "edit"}
-          />
-        </Field>
+        {mode === "edit" ? (
+          <Field
+            id="sched-code"
+            label="รหัสรอบจ่าย"
+            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
+          >
+            <input {...fieldProps("sched-code")} value={values.code} readOnly />
+          </Field>
+        ) : (
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            รหัสรอบจ่ายจะถูกสร้างอัตโนมัติเมื่อบันทึก
+          </p>
+        )}
 
         <Field id="sched-name" label="ชื่อรอบจ่าย" required error={errors.name}>
           <input

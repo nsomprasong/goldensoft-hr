@@ -7,10 +7,11 @@ import Alert from "@/components/hr/alert";
 import Field, { fieldProps } from "@/components/hr/field";
 import {
   compact,
+  firstError,
+  normalizeTime,
   requireSelect,
   requireText,
   submitHrJson,
-  validateCode,
   validatePositiveNumber,
   validateTime,
   type FieldErrors,
@@ -76,7 +77,6 @@ export default function ShiftForm({
     setFeedback(null);
 
     const nextErrors = compact({
-      code: mode === "create" ? (validateCode(values.code) ?? "") : "",
       name: requireText(values.name) ?? "",
       shiftTypeId: requireSelect(values.shiftTypeId) ?? "",
       startTime: validateTime(values.startTime) ?? "",
@@ -110,8 +110,8 @@ export default function ShiftForm({
       name: values.name.trim(),
       shiftTypeId: values.shiftTypeId,
       branchId: values.branchId || null,
-      startTime: values.startTime,
-      endTime: values.endTime,
+      startTime: normalizeTime(values.startTime),
+      endTime: normalizeTime(values.endTime),
       breakMinutes: Number(values.breakMinutes),
       graceLateMinutes: Number(values.graceLateMinutes),
       graceEarlyLeaveMinutes: Number(values.graceEarlyLeaveMinutes),
@@ -127,7 +127,7 @@ export default function ShiftForm({
         ? await submitHrJson(
             "/api/hr/shifts",
             "POST",
-            { ...payload, code: values.code.trim() },
+            payload,
             "เพิ่มกะงานเรียบร้อยแล้ว",
           )
         : await submitHrJson(
@@ -140,7 +140,11 @@ export default function ShiftForm({
 
     if (!result.ok) {
       setErrors(result.fieldErrors);
-      setFeedback({ kind: "error", text: result.message });
+      const fieldHint = firstError(result.fieldErrors);
+      setFeedback({
+        kind: "error",
+        text: fieldHint ? `${result.message} (${fieldHint})` : result.message,
+      });
       return;
     }
 
@@ -155,21 +159,23 @@ export default function ShiftForm({
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        <Field
-          id="shift-code"
-          label="รหัสกะ"
-          required
-          error={errors.code}
-          hint={mode === "edit" ? "รหัสแก้ไขไม่ได้" : undefined}
-        >
-          <input
-            {...fieldProps("shift-code", errors.code)}
-            value={values.code}
-            onChange={(e) => setValues({ ...values, code: e.target.value })}
-            placeholder="DAY"
-            readOnly={mode === "edit"}
-          />
-        </Field>
+        {mode === "edit" ? (
+          <Field
+            id="shift-code"
+            label="รหัสกะ"
+            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
+          >
+            <input
+              {...fieldProps("shift-code")}
+              value={values.code}
+              readOnly
+            />
+          </Field>
+        ) : (
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            รหัสกะจะถูกสร้างอัตโนมัติเมื่อบันทึก
+          </p>
+        )}
 
         <Field id="shift-name" label="ชื่อกะ" required error={errors.name}>
           <input

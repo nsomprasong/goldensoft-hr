@@ -6,6 +6,7 @@ import { loadHrDashboard } from "@/lib/hr/data";
 import { HR_ENTITLEMENTS } from "@/lib/hr/entitlements";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -140,10 +141,13 @@ export default async function HrDashboardPage() {
             <dd>{stats.currentPeriod.scheduleName}</dd>
             <dt>ช่วงงวด</dt>
             <dd>
-              {stats.currentPeriod.periodStart} ถึง {stats.currentPeriod.periodEnd}
+              {formatThaiDateRange(
+                stats.currentPeriod.periodStart,
+                stats.currentPeriod.periodEnd,
+              )}
             </dd>
             <dt>วันจ่ายเงิน</dt>
-            <dd>{stats.currentPeriod.paymentDate}</dd>
+            <dd>{formatThaiDate(stats.currentPeriod.paymentDate)}</dd>
             <dt>สถานะ</dt>
             <dd>
               <span className="badge">{stats.currentPeriod.statusNameTh}</span>

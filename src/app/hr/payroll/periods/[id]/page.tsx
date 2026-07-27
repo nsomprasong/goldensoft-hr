@@ -11,6 +11,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,9 @@ export default async function PayrollPeriodDetailPage({
     <HrShell ctx={ctx} active="payroll-periods">
       <p className="breadcrumb">
         <Link href="/hr/payroll/periods">งวดเงินเดือน</Link> ·{" "}
-        {row ? `${row.periodStart} – ${row.periodEnd}` : "รายละเอียด"}
+        {row
+          ? formatThaiDateRange(row.periodStart, row.periodEnd)
+          : "รายละเอียด"}
       </p>
 
       <div className="hr-page-head">
@@ -64,17 +67,17 @@ export default async function PayrollPeriodDetailPage({
               <dt>รอบจ่าย</dt>
               <dd>{row.scheduleName}</dd>
               <dt>วันเริ่มงวด</dt>
-              <dd>{row.periodStart}</dd>
+              <dd>{formatThaiDate(row.periodStart)}</dd>
               <dt>วันสิ้นงวด</dt>
-              <dd>{row.periodEnd}</dd>
+              <dd>{formatThaiDate(row.periodEnd)}</dd>
               <dt>วันจ่ายเงิน</dt>
-              <dd>{row.paymentDate}</dd>
+              <dd>{formatThaiDate(row.paymentDate)}</dd>
               <dt>สถานะ</dt>
               <dd>
                 <span className="badge">{row.statusNameTh}</span>
               </dd>
               <dt>ล็อกเมื่อ</dt>
-              <dd>{row.lockedAt ?? "—"}</dd>
+              <dd>{formatThaiDate(row.lockedAt)}</dd>
             </dl>
           </section>
 

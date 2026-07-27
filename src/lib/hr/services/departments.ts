@@ -1,6 +1,7 @@
 /** Department CRUD. Departments are never deleted, only deactivated. */
 import { assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextDepartmentCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import type { DepartmentRecord, HrRepository } from "@/lib/hr/repository/types";
@@ -9,6 +10,7 @@ import {
   normalizePagination,
   optionalText,
   requireText,
+  resolveDisplayNamePair,
   toPagedResponse,
   type HrServiceContext,
   type PagedResponse,
@@ -21,9 +23,9 @@ export type DepartmentListInput = PageRequest & {
 };
 
 export type DepartmentCreateData = {
-  code: string;
+  code?: string | null;
   nameTh: string;
-  nameEn: string;
+  nameEn?: string | null;
   description?: string | null;
 };
 
@@ -72,18 +74,21 @@ export async function createDepartment(
 ): Promise<DepartmentRecord> {
   assertHrPermission(ctx, HR_PERMISSIONS.departmentManage);
 
-  const code = normalizeCode(data.code, "รหัสแผนก");
+  const code = data.code?.trim()
+    ? normalizeCode(data.code, "รหัสแผนก")
+    : await nextDepartmentCode(repository, ctx.organizationId);
   const duplicate = await repository.departments.findByCode(
     ctx.organizationId,
     code,
   );
   if (duplicate) throw new HrError("DUPLICATE_CODE", { details: { code } });
 
+  const names = resolveDisplayNamePair(data.nameTh, data.nameEn, "ชื่อแผนก");
   const created = await repository.departments.create({
     organizationId: ctx.organizationId,
     code,
-    nameTh: requireText(data.nameTh, "ชื่อแผนก (ไทย)", 200),
-    nameEn: requireText(data.nameEn, "ชื่อแผนก (อังกฤษ)", 200),
+    nameTh: names.nameTh,
+    nameEn: names.nameEn,
     description: optionalText(data.description),
     isActive: true,
   });
@@ -114,11 +119,12 @@ export async function updateDepartment(
 
   const after = await repository.departments.update(id, {
     ...(data.nameTh === undefined
-      ? {}
-      : { nameTh: requireText(data.nameTh, "ชื่อแผนก (ไทย)", 200) }),
-    ...(data.nameEn === undefined
-      ? {}
-      : { nameEn: requireText(data.nameEn, "ชื่อแผนก (อังกฤษ)", 200) }),
+      ? data.nameEn === undefined
+        ? {}
+        : {
+            nameEn: requireText(data.nameEn, "ชื่อแผนก", 200),
+          }
+      : resolveDisplayNamePair(data.nameTh, data.nameEn, "ชื่อแผนก")),
     ...(data.description === undefined
       ? {}
       : { description: optionalText(data.description) }),

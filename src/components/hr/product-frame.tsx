@@ -85,29 +85,40 @@ function ProductNav({
 /**
  * Product-only chrome for Unified Customer Shell embedding.
  * No global Login / Sidebar / Header / org-branch selector.
+ * When `showProductNav` is false (Customer App), section hubs + bottom tabs
+ * live in goldensoft-app — do not duplicate the icon strip here.
  */
 export default function HrProductFrame({
   ctx,
   active,
+  /** Opt-in; Customer App owns section hubs + bottom tabs. */
+  showProductNav = false,
   children,
 }: {
   ctx: HrRequestContext;
   active?: HrNavKey;
+  showProductNav?: boolean;
   children: ReactNode;
 }) {
-  const items = visibleHrProductNav(ctx);
+  const items = showProductNav ? visibleHrProductNav(ctx) : [];
 
   return (
-    <div className="hr-root hr-product-frame" data-hr-shell="product">
-      <div className="hr-product-nav-bar">
-        <div className="hr-product-nav-desktop">
-          <ProductNav items={items} active={active} />
+    <div
+      className="hr-root hr-product-frame"
+      data-hr-shell="product"
+      data-hr-product-nav={showProductNav ? "1" : "0"}
+    >
+      {showProductNav ? (
+        <div className="hr-product-nav-bar">
+          <div className="hr-product-nav-desktop">
+            <ProductNav items={items} active={active} />
+          </div>
+          <details className="hr-product-nav-mobile">
+            <summary>เมนู HR</summary>
+            <ProductNav items={items} active={active} />
+          </details>
         </div>
-        <details className="hr-product-nav-mobile">
-          <summary>เมนู HR</summary>
-          <ProductNav items={items} active={active} />
-        </details>
-      </div>
+      ) : null}
       <div className="hr-product-body">{children}</div>
     </div>
   );

@@ -79,6 +79,23 @@ function verify(raw: string): Bridge | null {
   }
 }
 
+function productCodesCompatible(left: string, right: string): boolean {
+  const normalize = (code: string): string[] => {
+    const value = code.trim().toUpperCase();
+    if (value === "GOLDENSOFT_HR" || value === "HR") {
+      return ["GOLDENSOFT_HR", "HR"];
+    }
+    if (value === "RESIDENT_V2" || value === "RESIDENT") {
+      return ["RESIDENT_V2", "RESIDENT"];
+    }
+    if (value === "QRSTATION" || value === "QR_STATION") {
+      return ["QRSTATION", "QR_STATION"];
+    }
+    return [value];
+  };
+  return normalize(left).includes(right.trim().toUpperCase());
+}
+
 function entitlementFromBridge(
   bridge: Bridge,
   input: EntitlementCheckRequest,
@@ -86,7 +103,7 @@ function entitlementFromBridge(
   if (
     !bridge.organizationId ||
     bridge.organizationId !== input.organizationId ||
-    input.productCode !== "GOLDENSOFT_HR"
+    !productCodesCompatible(input.productCode, "GOLDENSOFT_HR")
   ) {
     return {
       allowed: false,
@@ -103,7 +120,7 @@ function entitlementFromBridge(
   const row = bridge.entitlements.find(
     (entry) =>
       entry.code === input.entitlementCode &&
-      entry.productCode === input.productCode,
+      productCodesCompatible(entry.productCode, input.productCode),
   );
   return {
     allowed: row?.allowed ?? false,
@@ -183,7 +200,7 @@ export function decodeCustomerShellMarkup(raw: string | null): string | null {
   }
   try {
     const result = inflateRawSync(Buffer.from(encoded, "base64url"), {
-      maxOutputLength: 64 * 1024,
+      maxOutputLength: 256 * 1024,
     }).toString("utf8");
     return result.includes('data-shell="customer"') ? result : null;
   } catch {

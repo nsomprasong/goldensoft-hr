@@ -8,6 +8,7 @@
  */
 import { assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextOvertimeRuleCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { toDateOnly } from "@/lib/hr/payroll-rules";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -44,7 +45,7 @@ export type OvertimeRuleListInput = PageRequest & {
 };
 
 export type OvertimeRuleCreateData = {
-  code: string;
+  code?: string | null;
   name: string;
   rateTypeId: string;
   multiplier: number;
@@ -131,7 +132,9 @@ export async function createOvertimeRule(
 ): Promise<OvertimeRuleRecord> {
   assertHrPermission(ctx, HR_PERMISSIONS.settingsManage);
 
-  const code = normalizeCode(data.code, "รหัสกฎ OT");
+  const code = data.code?.trim()
+    ? normalizeCode(data.code, "รหัสกฎ OT")
+    : await nextOvertimeRuleCode(repository, ctx.organizationId);
   const duplicate = await repository.overtimeRules.findByCode(
     ctx.organizationId,
     code,

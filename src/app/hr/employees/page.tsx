@@ -10,6 +10,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -186,7 +187,7 @@ export default async function EmployeesPage({
                       {employee.statusNameTh}
                     </span>
                   </td>
-                  <td className="nowrap">{employee.hireDate}</td>
+                  <td className="nowrap">{formatThaiDate(employee.hireDate)}</td>
                 </tr>
               ))}
             </tbody>

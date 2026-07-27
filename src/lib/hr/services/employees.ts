@@ -7,6 +7,7 @@
  */
 import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextEmployeeCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import { toDateOnly } from "@/lib/hr/payroll-rules";
@@ -59,7 +60,7 @@ export type EmployeeListInput = PageRequest & {
 };
 
 export type EmployeeCreateData = {
-  employeeCode: string;
+  employeeCode?: string | null;
   branchId: string;
   employmentTypeId: string;
   employeeStatusId: string;
@@ -193,7 +194,9 @@ export async function createEmployee(
 ): Promise<EmployeeRecord> {
   assertHrPermission(ctx, HR_PERMISSIONS.employeeCreate);
 
-  const employeeCode = normalizeCode(data.employeeCode, "รหัสพนักงาน");
+  const employeeCode = data.employeeCode?.trim()
+    ? normalizeCode(data.employeeCode, "รหัสพนักงาน")
+    : await nextEmployeeCode(repository, ctx.organizationId);
   const duplicate = await repository.employees.findByCode(
     ctx.organizationId,
     employeeCode,

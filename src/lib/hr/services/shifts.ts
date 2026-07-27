@@ -7,6 +7,7 @@
  */
 import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextShiftCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import type { HrRepository, ShiftRecord } from "@/lib/hr/repository/types";
@@ -34,7 +35,7 @@ export type ShiftListInput = PageRequest & {
 };
 
 export type ShiftCreateData = {
-  code: string;
+  code?: string | null;
   name: string;
   shiftTypeId: string;
   startTime: TimeInput;
@@ -112,7 +113,9 @@ export async function createShift(
 ): Promise<ShiftView> {
   assertHrPermission(ctx, HR_PERMISSIONS.shiftManage);
 
-  const code = normalizeCode(data.code, "รหัสกะ");
+  const code = data.code?.trim()
+    ? normalizeCode(data.code, "รหัสกะ")
+    : await nextShiftCode(repository, ctx.organizationId);
   const duplicate = await repository.shifts.findByCode(ctx.organizationId, code);
   if (duplicate) throw new HrError("DUPLICATE_CODE", { details: { code } });
 

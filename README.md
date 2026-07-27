@@ -21,6 +21,11 @@ Unified shell ADR: `docs/adr-unified-customer-shell.md`
 - Branch scope + permission checks (server-side)
 - No HR database migration in this phase (foundation only)
 
+## Local port
+
+- Dev / start: **3001** (fixed; will not auto-bump if busy)
+- Platform: `3000` · Customer App: `3002`
+
 ## Scripts
 
 ```bash
@@ -28,4 +33,5 @@ npm install
 npm test
 npm run typecheck
 npm run build
+npm run dev
 ```

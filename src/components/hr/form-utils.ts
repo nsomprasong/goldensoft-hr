@@ -185,7 +185,16 @@ export function validatePositiveNumber(
 
 export function validateTime(value: string): string | null {
   if (!value) return "กรุณาระบุเวลา";
-  return /^\d{2}:\d{2}$/.test(value) ? null : "รูปแบบเวลาไม่ถูกต้อง (HH:MM)";
+  return /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value.trim())
+    ? null
+    : "รูปแบบเวลาไม่ถูกต้อง (HH:MM)";
+}
+
+/** Normalize browser time inputs (sometimes HH:mm:ss) to HH:mm. */
+export function normalizeTime(value: string): string {
+  const trimmed = value.trim();
+  const match = /^(\d{2}:\d{2})(?::\d{2})?$/.exec(trimmed);
+  return match ? match[1] : trimmed;
 }
 
 export function validateUuid(value: string, required = true): string | null {

@@ -1,6 +1,7 @@
 /** Payroll schedule CRUD — the rules that later generate payroll periods. */
 import { assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
+import { nextPayrollScheduleCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import { parsePaymentDayRule } from "@/lib/hr/payroll-rules";
@@ -24,7 +25,7 @@ export type PayrollScheduleListInput = PageRequest & {
 };
 
 export type PayrollScheduleCreateData = {
-  code: string;
+  code?: string | null;
   name: string;
   payFrequencyId: string;
   periodStartRule: string;
@@ -77,7 +78,9 @@ export async function createPayrollSchedule(
 ): Promise<PayrollScheduleRecord> {
   assertHrPermission(ctx, HR_PERMISSIONS.payrollScheduleManage);
 
-  const code = normalizeCode(data.code, "รหัสรอบจ่าย");
+  const code = data.code?.trim()
+    ? normalizeCode(data.code, "รหัสรอบจ่าย")
+    : await nextPayrollScheduleCode(repository, ctx.organizationId);
   const duplicate = await repository.payrollSchedules.findByCode(
     ctx.organizationId,
     code,

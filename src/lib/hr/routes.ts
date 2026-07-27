@@ -177,12 +177,12 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     key: "me",
     path: `${HR_ROUTE_PREFIX}/me`,
     labelTh: "บริการของฉัน",
-    nav: true,
+    nav: false,
     requiredPermissions: [HR_PERMISSIONS.attendanceSelf, HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.overtimeSelf, HR_PERMISSIONS.payslipSelf],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "meAttendance", path: `${HR_ROUTE_PREFIX}/me/attendance`, labelTh: "ลงเวลาของฉัน", nav: false,
+    key: "meAttendance", path: `${HR_ROUTE_PREFIX}/me/attendance`, labelTh: "ลงเวลาของฉัน", nav: true,
     requiredPermissions: [HR_PERMISSIONS.attendanceSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
@@ -315,6 +315,8 @@ export type HrNavKey =
   | "departments"
   | "positions"
   | "shifts"
+  | "schedules"
+  | "calendars"
   | "overtime-rules"
   | "payroll-schedules"
   | "payroll-periods";
@@ -325,6 +327,8 @@ const NAV_KEY_TO_ROUTE: Record<HrNavKey, HrRouteKey> = {
   departments: "departments",
   positions: "positions",
   shifts: "shifts",
+  schedules: "schedules",
+  calendars: "calendars",
   "overtime-rules": "overtimeRules",
   "payroll-schedules": "payrollSchedules",
   "payroll-periods": "payrollPeriods",

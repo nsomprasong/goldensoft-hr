@@ -11,6 +11,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -87,8 +88,8 @@ export default async function OvertimeRulesPage({
                           maximumFractionDigits: 2,
                         })}
                   </td>
-                  <td className="nowrap">{row.effectiveFrom}</td>
-                  <td className="nowrap">{row.effectiveTo ?? "—"}</td>
+                  <td className="nowrap">{formatThaiDate(row.effectiveFrom)}</td>
+                  <td className="nowrap">{formatThaiDate(row.effectiveTo)}</td>
                   <td>
                     <span
                       className={

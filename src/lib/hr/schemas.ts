@@ -6,8 +6,37 @@ const uuid = z.string().uuid();
 const dateString = z.union([z.string().trim().min(1), z.date()]);
 const nullableText = z.string().nullable().optional();
 
+/** Empty string / null → omitted, so the service can auto-allocate. */
+const optionalCode = z.preprocess(
+  (value) => {
+    if (value == null) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  },
+  nonEmpty.optional(),
+);
+
+/** "" → null so “ทุกสาขา” from selects does not fail UUID validation. */
+const optionalBranchId = z.preprocess(
+  (value) => (value === "" || value === undefined ? null : value),
+  uuid.nullable().optional(),
+);
+
+const optionalInt = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return undefined;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return value;
+}, z.number().int().optional());
+
+const optionalNullableInt = z.preprocess((value) => {
+  if (value === "" || value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return value;
+}, z.number().int().nullable().optional());
+
+
 export const employeeCreateSchema = z.object({
-  employeeCode: nonEmpty,
+  employeeCode: optionalCode,
   branchId: uuid,
   employmentTypeId: uuid,
   employeeStatusId: uuid,
@@ -73,20 +102,24 @@ export const compensationCreateSchema = z.object({
 });
 
 export const departmentCreateSchema = z.object({
-  code: nonEmpty,
+  code: optionalCode,
   nameTh: nonEmpty,
-  nameEn: nonEmpty,
+  nameEn: optionalCode,
   description: nullableText,
 });
 
 export const departmentUpdateSchema = z.object({
   nameTh: nonEmpty.optional(),
-  nameEn: nonEmpty.optional(),
+  nameEn: optionalCode,
   description: nullableText,
   isActive: z.boolean().optional(),
 });
 
-export const positionCreateSchema = departmentCreateSchema.extend({
+export const positionCreateSchema = z.object({
+  code: optionalCode,
+  nameTh: nonEmpty,
+  nameEn: optionalCode,
+  description: nullableText,
   departmentId: uuid.nullable().optional(),
 });
 
@@ -95,17 +128,17 @@ export const positionUpdateSchema = departmentUpdateSchema.extend({
 });
 
 export const shiftCreateSchema = z.object({
-  code: nonEmpty,
+  code: optionalCode,
   name: nonEmpty,
   shiftTypeId: uuid,
   startTime: nonEmpty,
   endTime: nonEmpty,
-  branchId: uuid.nullable().optional(),
-  breakMinutes: z.number().int().optional(),
-  graceLateMinutes: z.number().int().optional(),
-  graceEarlyLeaveMinutes: z.number().int().optional(),
+  branchId: optionalBranchId,
+  breakMinutes: optionalInt,
+  graceLateMinutes: optionalInt,
+  graceEarlyLeaveMinutes: optionalInt,
   crossesMidnight: z.boolean().optional(),
-  overtimeAfterMinutes: z.number().int().nullable().optional(),
+  overtimeAfterMinutes: optionalNullableInt,
 });
 
 export const shiftUpdateSchema = z.object({
@@ -113,17 +146,17 @@ export const shiftUpdateSchema = z.object({
   shiftTypeId: uuid.optional(),
   startTime: nonEmpty.optional(),
   endTime: nonEmpty.optional(),
-  branchId: uuid.nullable().optional(),
-  breakMinutes: z.number().int().optional(),
-  graceLateMinutes: z.number().int().optional(),
-  graceEarlyLeaveMinutes: z.number().int().optional(),
+  branchId: optionalBranchId,
+  breakMinutes: optionalInt,
+  graceLateMinutes: optionalInt,
+  graceEarlyLeaveMinutes: optionalInt,
   crossesMidnight: z.boolean().optional(),
-  overtimeAfterMinutes: z.number().int().nullable().optional(),
+  overtimeAfterMinutes: optionalNullableInt,
   isActive: z.boolean().optional(),
 });
 
 export const overtimeRuleCreateSchema = z.object({
-  code: nonEmpty,
+  code: optionalCode,
   name: nonEmpty,
   rateTypeId: uuid,
   multiplier: z.number().positive(),
@@ -143,7 +176,7 @@ export const overtimeRuleUpdateSchema = z.object({
 });
 
 export const payrollScheduleCreateSchema = z.object({
-  code: nonEmpty,
+  code: optionalCode,
   name: nonEmpty,
   payFrequencyId: uuid,
   periodStartRule: nonEmpty,

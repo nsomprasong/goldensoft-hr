@@ -329,6 +329,25 @@ describe("Phase 8B validation feedback", () => {
     }
   });
 
+  it("auto-generates business codes instead of asking users to type them", () => {
+    for (const form of [
+      "src/components/hr/employee-form.tsx",
+      "src/components/hr/department-form.tsx",
+      "src/components/hr/position-form.tsx",
+      "src/components/hr/shift-form.tsx",
+      "src/components/hr/overtime-rule-form.tsx",
+      "src/components/hr/payroll-schedule-form.tsx",
+    ]) {
+      const source = read(form);
+      assert.match(source, /สร้างอัตโนมัติ/, form);
+      assert.doesNotMatch(
+        source,
+        /validateCode\(values\.(?:code|employeeCode)\)/,
+        `${form} must not require a manual code on create`,
+      );
+    }
+  });
+
   it("shows Thai success and error feedback", () => {
     for (const form of FORMS) {
       const source = read(form);
@@ -419,11 +438,13 @@ describe("Phase 8B layout and styling", () => {
       /\.hr-product-nav-mobile \.hr-product-nav \{[^}]*flex-direction: column/s,
     );
     const frame = read("src/components/hr/product-frame.tsx");
-    assert.match(frame, /<details className="hr-product-nav-mobile">/);
-    assert.match(frame, /<summary>เมนู HR<\/summary>/);
+    assert.match(frame, /showProductNav/);
+    assert.match(frame, /hr-product-nav-mobile/);
+    assert.match(frame, /เมนู HR/);
     const shell = read("src/components/hr-shell.tsx");
     assert.match(shell, /Debug Shell/);
     assert.match(shell, /standalone_debug/);
+    assert.match(shell, /showProductNav=\{false\}/);
     assert.doesNotMatch(css, /position: fixed/);
   });
 });

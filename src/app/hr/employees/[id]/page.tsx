@@ -14,6 +14,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDate } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -130,15 +131,9 @@ export default async function EmployeeDetailPage({
             <section className="card">
               <h2>ข้อมูลทั่วไป</h2>
               <dl className="dl">
-                <dt>ชื่อ-นามสกุล (ไทย)</dt>
+                <dt>ชื่อ-นามสกุล</dt>
                 <dd>
                   {employee.firstNameTh} {employee.lastNameTh}
-                </dd>
-                <dt>ชื่อ-นามสกุล (อังกฤษ)</dt>
-                <dd>
-                  {employee.firstNameEn || employee.lastNameEn
-                    ? `${employee.firstNameEn ?? ""} ${employee.lastNameEn ?? ""}`.trim()
-                    : "—"}
                 </dd>
                 <dt>เบอร์โทรศัพท์</dt>
                 <dd>{employee.phone}</dd>
@@ -191,11 +186,11 @@ export default async function EmployeeDetailPage({
                 <dt>ตำแหน่ง</dt>
                 <dd>{employee.positionNameTh ?? "—"}</dd>
                 <dt>วันเริ่มงาน</dt>
-                <dd>{employee.hireDate}</dd>
+                <dd>{formatThaiDate(employee.hireDate)}</dd>
                 <dt>วันสิ้นสุดทดลองงาน</dt>
-                <dd>{employee.probationEndDate ?? "—"}</dd>
+                <dd>{formatThaiDate(employee.probationEndDate)}</dd>
                 <dt>วันลาออก</dt>
-                <dd>{employee.resignationDate ?? "—"}</dd>
+                <dd>{formatThaiDate(employee.resignationDate)}</dd>
                 <dt>สถานะ</dt>
                 <dd>
                   <span
@@ -239,8 +234,12 @@ export default async function EmployeeDetailPage({
                             <td>{row.wageTypeNameTh}</td>
                             <td>{row.amount}</td>
                             <td>{row.currency}</td>
-                            <td className="nowrap">{row.effectiveFrom}</td>
-                            <td className="nowrap">{row.effectiveTo ?? "—"}</td>
+                            <td className="nowrap">
+                              {formatThaiDate(row.effectiveFrom)}
+                            </td>
+                            <td className="nowrap">
+                              {formatThaiDate(row.effectiveTo)}
+                            </td>
                             <td>{row.overtimeEligible ? "ได้" : "ไม่ได้"}</td>
                             <td>{row.isCurrent ? "ใช่" : "ไม่ใช่"}</td>
                           </tr>

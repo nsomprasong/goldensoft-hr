@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import DepartmentForm from "@/components/hr/department-form";
+import DepartmentPositionTabs from "@/components/hr/department-position-tabs";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrShell from "@/components/hr-shell";
 import { listDepartments } from "@/lib/hr/data";
@@ -30,10 +31,12 @@ export default async function DepartmentsPage({
     <HrShell ctx={ctx} active="departments">
       <div className="hr-page-head">
         <div>
-          <h1>แผนก</h1>
+          <h1>แผนกและตำแหน่ง</h1>
           <p>โครงสร้างแผนกขององค์กร {ctx.organizationName}</p>
         </div>
       </div>
+
+      <DepartmentPositionTabs active="departments" />
 
       <DatabaseUnavailableNotice message={departments.message} />
 
@@ -45,8 +48,7 @@ export default async function DepartmentsPage({
             <thead>
               <tr>
                 <th>รหัส</th>
-                <th>ชื่อ (ไทย)</th>
-                <th>ชื่อ (อังกฤษ)</th>
+                <th>ชื่อแผนก</th>
                 <th>สถานะ</th>
                 {canManage ? <th>จัดการ</th> : null}
               </tr>
@@ -56,7 +58,6 @@ export default async function DepartmentsPage({
                 <tr key={row.id}>
                   <td className="nowrap">{row.code}</td>
                   <td>{row.nameTh}</td>
-                  <td>{row.nameEn}</td>
                   <td>
                     <span
                       className={
@@ -101,7 +102,6 @@ export default async function DepartmentsPage({
             initialValues={{
               code: editing.code,
               nameTh: editing.nameTh,
-              nameEn: editing.nameEn,
               description: editing.description ?? "",
             }}
           />

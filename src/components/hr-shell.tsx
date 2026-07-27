@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
+import CustomerShellEffects from "@/components/hr/customer-shell-effects";
 import HrProductFrame, {
   visibleHrProductNav,
 } from "@/components/hr/product-frame";
@@ -40,7 +41,8 @@ export default async function HrShell({
             dangerouslySetInnerHTML={{ __html: customerShell }}
           />
         ) : null}
-        <HrProductFrame ctx={ctx} active={active}>
+        <CustomerShellEffects />
+        <HrProductFrame ctx={ctx} active={active} showProductNav={false}>
           {children}
         </HrProductFrame>
       </>
@@ -81,7 +83,7 @@ export default async function HrShell({
       </header>
 
       <main className="hr-main">
-        <HrProductFrame ctx={ctx} active={active}>
+        <HrProductFrame ctx={ctx} active={active} showProductNav>
           {children}
         </HrProductFrame>
       </main>
