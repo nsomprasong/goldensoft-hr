@@ -300,6 +300,7 @@ model Employee {
   attendanceEvents  AttendanceEvent[]
   attendanceDays    AttendanceDay[]
   attendanceAdjustments AttendanceAdjustment[]
+  shiftMismatchRequests ShiftMismatchRequest[]
   leaveBalances     EmployeeLeaveBalance[]
   leaveRequests     LeaveRequest[]
   leaveCoverRequests LeaveRequest[] @relation("LeaveCoverEmployee")
@@ -308,6 +309,7 @@ model Employee {
   payrollAdjustments PayrollAdjustment[]
   payrollRunEmployees PayrollRunEmployee[]
   payslips          Payslip[]
+  salaryAdvances    SalaryAdvance[]
   notifications     Notification[]
   documents         EmployeeDocument[]
 
@@ -340,7 +342,8 @@ model EmployeeDocument {
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  salaryAdvances  SalaryAdvance[]
 
   @@index([employeeId, createdAt(sort: Desc)])
   @@index([organizationId])
@@ -447,6 +450,8 @@ model Shift {
   shiftType ShiftType @relation(fields: [shiftTypeId], references: [id])
   assignments ShiftAssignment[]
   periodShifts SchedulePeriodShift[]
+  mismatchFromRequests ShiftMismatchRequest[] @relation("ShiftMismatchFrom")
+  mismatchToRequests ShiftMismatchRequest[] @relation("ShiftMismatchTo")
 
   @@unique([organizationId, code])
   @@index([organizationId, isActive])
@@ -501,6 +506,8 @@ model PayrollPeriod {
   status          PayrollPeriodStatus @relation(fields: [statusId], references: [id])
   adjustments     PayrollAdjustment[]
   payrollRuns     PayrollRun[]
+  salaryAdvances  SalaryAdvance[]
+  advanceInstallments SalaryAdvanceInstallment[]
 
   @@unique([organizationId, payrollScheduleId, periodStart, periodEnd])
   @@index([organizationId, statusId])
@@ -594,6 +601,7 @@ model LeaveRequestStatus {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   leaveRequests LeaveRequest[]
   attendanceAdjustments AttendanceAdjustment[]
+  shiftMismatchRequests ShiftMismatchRequest[]
   @@map("leave_request_statuses")
   @@schema("hr")
 }
@@ -824,6 +832,7 @@ model SchedulePeriod {
   shiftAssignments ShiftAssignment[]
   periodShifts SchedulePeriodShift[]
   attendanceDays AttendanceDay[]
+  shiftMismatchRequests ShiftMismatchRequest[]
   @@unique([organizationId, code])
   @@index([organizationId, branchId, periodStart(sort: Desc), statusId])
   @@map("schedule_periods")
@@ -939,6 +948,8 @@ model AttendanceDay {
   overtimeMinutes Int @default(0) @map("overtime_minutes")
   isLocked Boolean @default(false) @map("is_locked")
   notes String?
+  /// PENDING | APPROVED | REJECTED when clocked outside assigned shift.
+  shiftMismatchStatus String? @map("shift_mismatch_status")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -946,10 +957,42 @@ model AttendanceDay {
   shiftAssignment ShiftAssignment? @relation(fields: [shiftAssignmentId], references: [id], onDelete: SetNull)
   status AttendanceStatus @relation(fields: [statusId], references: [id])
   adjustments AttendanceAdjustment[]
+  shiftMismatchRequests ShiftMismatchRequest[]
   overtimeRequests OvertimeRequest[]
   @@unique([employeeId, workDate])
   @@index([organizationId, branchId, workDate(sort: Desc), statusId])
   @@map("attendance_days")
+  @@schema("hr")
+}
+
+model ShiftMismatchRequest {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  workDate DateTime @map("work_date") @db.Date
+  schedulePeriodId String @map("schedule_period_id") @db.Uuid
+  fromShiftId String @map("from_shift_id") @db.Uuid
+  toShiftId String @map("to_shift_id") @db.Uuid
+  attendanceDayId String? @map("attendance_day_id") @db.Uuid
+  attendanceEventId String? @map("attendance_event_id") @db.Uuid
+  reason String
+  statusId String @map("status_id") @db.Uuid
+  requestedByAuthUserId String @map("requested_by_auth_user_id") @db.Uuid
+  reviewedByAuthUserId String? @map("reviewed_by_auth_user_id") @db.Uuid
+  reviewedByName String? @map("reviewed_by_name")
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote String? @map("review_note")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  schedulePeriod SchedulePeriod @relation(fields: [schedulePeriodId], references: [id], onDelete: Cascade)
+  fromShift Shift @relation("ShiftMismatchFrom", fields: [fromShiftId], references: [id], onDelete: Restrict)
+  toShift Shift @relation("ShiftMismatchTo", fields: [toShiftId], references: [id], onDelete: Restrict)
+  attendanceDay AttendanceDay? @relation(fields: [attendanceDayId], references: [id], onDelete: SetNull)
+  status LeaveRequestStatus @relation(fields: [statusId], references: [id])
+  @@index([organizationId, statusId, createdAt(sort: Desc)])
+  @@index([employeeId, workDate(sort: Desc), statusId])
+  @@map("shift_mismatch_requests")
   @@schema("hr")
 }
 
@@ -965,6 +1008,7 @@ model AttendanceAdjustment {
   statusId String @map("status_id") @db.Uuid
   requestedByAuthUserId String @map("requested_by_auth_user_id") @db.Uuid
   reviewedByAuthUserId String? @map("reviewed_by_auth_user_id") @db.Uuid
+  reviewedByName String? @map("reviewed_by_name")
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewNote String? @map("review_note")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1081,6 +1125,7 @@ model LeaveRequest {
   submittedAt DateTime? @map("submitted_at") @db.Timestamptz(6)
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewedByAuthUserId String? @map("reviewed_by_auth_user_id") @db.Uuid
+  reviewedByName String? @map("reviewed_by_name")
   reviewNote String? @map("review_note")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1115,6 +1160,7 @@ model OvertimeRequest {
   submittedAt DateTime? @map("submitted_at") @db.Timestamptz(6)
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewedByAuthUserId String? @map("reviewed_by_auth_user_id") @db.Uuid
+  reviewedByName String? @map("reviewed_by_name")
   reviewNote String? @map("review_note")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1224,6 +1270,9 @@ model PayrollRun {
   payrollPeriod PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
   status PayrollPeriodStatus @relation("PayrollRunStatus", fields: [statusId], references: [id])
   employees PayrollRunEmployee[]
+  deductedAdvances SalaryAdvance[] @relation("AdvanceDeductedRun")
+  creditedAdvances SalaryAdvance[] @relation("AdvanceCreditedRun")
+  deductedInstallments SalaryAdvanceInstallment[]
   @@unique([payrollPeriodId, runNumber])
   @@index([organizationId, statusId, createdAt(sort: Desc)])
   @@map("payroll_runs")
@@ -1288,6 +1337,91 @@ model Payslip {
   employee Employee @relation(fields: [employeeId], references: [id])
   @@index([employeeId, issuedAt(sort: Desc)])
   @@map("payslips")
+  @@schema("hr")
+}
+
+/// Salary advance (เบิกล่วงหน้า) — deducted on next payroll calculate when APPROVED.
+model SalaryAdvance {
+  id                     String    @id @default(uuid()) @db.Uuid
+  organizationId         String    @map("organization_id") @db.Uuid
+  employeeId             String    @map("employee_id") @db.Uuid
+  amount                 Decimal   @db.Decimal(14, 2)
+  advanceDate            DateTime  @map("advance_date") @db.Date
+  reason                 String?
+  /// SUBMITTED | APPROVED | PARTIALLY_DEDUCTED | DEDUCTED | REJECTED | CANCELLED | RECORDED
+  status                 String    @default("SUBMITTED")
+  installmentCount       Int       @default(1) @map("installment_count")
+  startPayrollPeriodId   String?   @map("start_payroll_period_id") @db.Uuid
+  /// CASH_ALREADY (รับเงินเลย) | WITH_SALARY (รับพร้อมเงินเดือน)
+  disbursementMode       String?   @map("disbursement_mode")
+  /// Employee document evidence when disbursementMode = CASH_ALREADY
+  transferSlipDocumentId String?   @map("transfer_slip_document_id") @db.Uuid
+  submittedAt            DateTime? @map("submitted_at") @db.Timestamptz(6)
+  rejectedAt             DateTime? @map("rejected_at") @db.Timestamptz(6)
+  reviewNote             String?   @map("review_note")
+  creditedPayrollRunId   String?   @map("credited_payroll_run_id") @db.Uuid
+  creditedAt             DateTime? @map("credited_at") @db.Timestamptz(6)
+  deductedPayrollRunId   String?   @map("deducted_payroll_run_id") @db.Uuid
+  deductedAt             DateTime? @map("deducted_at") @db.Timestamptz(6)
+  createdByAuthUserId    String    @map("created_by_auth_user_id") @db.Uuid
+  approvedByAuthUserId   String?   @map("approved_by_auth_user_id") @db.Uuid
+  approvedAt             DateTime? @map("approved_at") @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee             Employee                    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deductedPayrollRun   PayrollRun?                 @relation("AdvanceDeductedRun", fields: [deductedPayrollRunId], references: [id], onDelete: SetNull)
+  creditedPayrollRun   PayrollRun?                 @relation("AdvanceCreditedRun", fields: [creditedPayrollRunId], references: [id], onDelete: SetNull)
+  startPayrollPeriod   PayrollPeriod?              @relation(fields: [startPayrollPeriodId], references: [id], onDelete: SetNull)
+  transferSlipDocument EmployeeDocument?           @relation(fields: [transferSlipDocumentId], references: [id], onDelete: SetNull)
+  installments         SalaryAdvanceInstallment[]
+
+  @@index([organizationId, status, advanceDate(sort: Desc)])
+  @@index([employeeId, status])
+  @@map("salary_advances")
+  @@schema("hr")
+}
+
+model SalaryAdvanceInstallment {
+  id                   String    @id @default(uuid()) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  salaryAdvanceId      String    @map("salary_advance_id") @db.Uuid
+  sequence             Int
+  amount               Decimal   @db.Decimal(14, 2)
+  /// Bound when a payroll run for a period is calculated (may be null until then).
+  payrollPeriodId      String?   @map("payroll_period_id") @db.Uuid
+  /// PENDING | DEDUCTED | CANCELLED
+  status               String    @default("PENDING")
+  deductedPayrollRunId String?   @map("deducted_payroll_run_id") @db.Uuid
+  deductedAt           DateTime? @map("deducted_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  advance            SalaryAdvance  @relation(fields: [salaryAdvanceId], references: [id], onDelete: Cascade)
+  payrollPeriod      PayrollPeriod? @relation(fields: [payrollPeriodId], references: [id], onDelete: Restrict)
+  deductedPayrollRun PayrollRun?    @relation(fields: [deductedPayrollRunId], references: [id], onDelete: SetNull)
+
+  @@unique([salaryAdvanceId, sequence])
+  @@index([organizationId, payrollPeriodId, status])
+  @@index([salaryAdvanceId, sequence])
+  @@map("salary_advance_installments")
+  @@schema("hr")
+}
+
+/// Tenant-configurable tax / SSO rates for Phase 4 (2B) estimates — not legal-grade.
+model PayrollDeductionSettings {
+  id                          String   @id @default(uuid()) @db.Uuid
+  organizationId              String   @unique @map("organization_id") @db.Uuid
+  taxEnabled                  Boolean  @default(true) @map("tax_enabled")
+  taxRatePercent              Decimal  @default(0) @map("tax_rate_percent") @db.Decimal(8, 4)
+  socialSecurityEnabled       Boolean  @default(true) @map("social_security_enabled")
+  socialSecurityRatePercent   Decimal  @default(5) @map("social_security_rate_percent") @db.Decimal(8, 4)
+  socialSecurityMaxAmount     Decimal  @default(750) @map("social_security_max_amount") @db.Decimal(14, 2)
+  updatedByAuthUserId         String?  @map("updated_by_auth_user_id") @db.Uuid
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("payroll_deduction_settings")
   @@schema("hr")
 }
 

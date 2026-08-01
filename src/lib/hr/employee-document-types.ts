@@ -4,6 +4,7 @@ export const EMPLOYEE_DOCUMENT_CATEGORIES = [
   { value: "ID_CARD", label: "บัตรประชาชน" },
   { value: "CONTRACT", label: "สัญญาจ้าง" },
   { value: "EDUCATION", label: "วุฒิการศึกษา" },
+  { value: "ADVANCE_SLIP", label: "สลิปโอนเบิกล่วงหน้า" },
   { value: "OTHER", label: "อื่นๆ" },
 ] as const;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -39,12 +40,31 @@ function formatMinutes(minutes: number): string {
   return `${h} ชม. ${m} นาที`;
 }
 
+function formatSubmittedAt(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(iso));
+  } catch {
+    return "—";
+  }
+}
+
 export default function OvertimeApprovalList({
   rows,
   canApprove,
   emptyMessage = "ยังไม่มีคำขอทำงานล่วงเวลา",
   showHero = true,
   sectionTitle = "คำขอ OT",
+  heroLead = "คำขอ OT และการอนุมัติขององค์กร",
+  heroAction,
 }: {
   rows: OvertimeRequestRow[];
   canApprove: boolean;
@@ -52,6 +72,8 @@ export default function OvertimeApprovalList({
   /** When false, omit page hero (for embedding in unified approvals). */
   showHero?: boolean;
   sectionTitle?: string;
+  heroLead?: string;
+  heroAction?: ReactNode;
 }) {
   const router = useRouter();
   const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
@@ -113,7 +135,8 @@ export default function OvertimeApprovalList({
       {showHero ? (
         <header className="hr-schedule-hero hr-leave-hero">
           <h1 className="hr-schedule-hero-title">ทำงานล่วงเวลา</h1>
-          <p className="hr-leave-hero-lead">คำขอ OT และการอนุมัติขององค์กร</p>
+          <p className="hr-leave-hero-lead">{heroLead}</p>
+          {heroAction ? <p>{heroAction}</p> : null}
         </header>
       ) : null}
 
@@ -135,8 +158,8 @@ export default function OvertimeApprovalList({
               const pending = row.statusCode === "SUBMITTED";
               const busy = busyId === row.id;
               return (
-                <li key={row.id} className="hr-ot-approval-row">
-                  <div className="hr-ot-approval-main">
+                <li key={row.id} className="hr-leave-approval-item">
+                  <div className="hr-leave-approval-head">
                     <div className="hr-ot-approval-person">
                       <EmployeeAvatar
                         displayName={row.employeeName}
@@ -145,48 +168,48 @@ export default function OvertimeApprovalList({
                       />
                       <div className="hr-leave-request-main">
                         <strong>{row.employeeName}</strong>
-                        <span>{row.employeeCode}</span>
+                        <span>
+                          {formatThaiDate(row.workDate)} ·{" "}
+                          {formatClock(row.startAt)}–{formatClock(row.endAt)} ·{" "}
+                          {formatMinutes(row.requestedMinutes)}
+                        </span>
+                        <span className="hr-leave-request-submitted">
+                          ยื่นเมื่อ {formatSubmittedAt(row.submittedAt)}
+                        </span>
+                        {row.reason?.trim() ? (
+                          <span className="hr-leave-request-reason">
+                            {row.reason.trim()}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
-                    <div className="hr-leave-request-main">
-                      <strong>{formatThaiDate(row.workDate)}</strong>
-                      <span>
-                        {formatClock(row.startAt)}–{formatClock(row.endAt)} ·{" "}
-                        {formatMinutes(row.requestedMinutes)}
-                      </span>
-                      {row.reason?.trim() ? (
-                        <span className="hr-leave-request-reason">
-                          {row.reason.trim()}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="hr-ot-approval-side">
-                    <span className={statusClass(row.statusCode)}>
+                    <span
+                      className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
+                    >
                       {row.statusName}
                     </span>
-                    {canApprove && pending ? (
-                      <div className="hr-ot-approval-actions">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={busy}
-                          onClick={() => void review(row, "approve")}
-                        >
-                          {busy ? "…" : "อนุมัติ"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          disabled={busy}
-                          onClick={() => void review(row, "reject")}
-                        >
-                          ไม่อนุมัติ
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
+
+                  {canApprove && pending ? (
+                    <div className="hr-leave-approval-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={busy}
+                        onClick={() => void review(row, "approve")}
+                      >
+                        {busy ? "…" : "อนุมัติ"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={busy}
+                        onClick={() => void review(row, "reject")}
+                      >
+                        ไม่อนุมัติ
+                      </button>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

@@ -395,6 +395,7 @@ export default function MeLeaveWorkspace() {
             <div className="hr-overlay-body">
               <form
                 className="hr-leave-form"
+                method="post"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void submitLeave();

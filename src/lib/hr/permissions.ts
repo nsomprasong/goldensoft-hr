@@ -48,6 +48,8 @@ export const HR_PERMISSIONS = {
   payslipSelf: "hr.payslip.self",
   payslipRead: "hr.payslip.read",
   payrollManage: "hr.payroll.manage",
+  advanceSelf: "hr.advance.self",
+  advanceApprove: "hr.advance.approve",
   locationManage: "hr.location.manage",
   calendarManage: "hr.calendar.manage",
   reportRead: "hr.report.read",
@@ -86,6 +88,20 @@ const MEMBER_PERMISSIONS: HrPermission[] = [
   HR_PERMISSIONS.leaveSelf,
   HR_PERMISSIONS.overtimeSelf,
   HR_PERMISSIONS.payslipSelf,
+  HR_PERMISSIONS.advanceSelf,
+];
+
+/** Branch manager: self-service + approve within their SELECTED branch. */
+const BRANCH_MANAGER_PERMISSIONS: HrPermission[] = [
+  ...MEMBER_PERMISSIONS,
+  HR_PERMISSIONS.approvalRead,
+  HR_PERMISSIONS.leaveRead,
+  HR_PERMISSIONS.leaveApprove,
+  HR_PERMISSIONS.overtimeRead,
+  HR_PERMISSIONS.overtimeApprove,
+  HR_PERMISSIONS.advanceApprove,
+  HR_PERMISSIONS.attendanceRead,
+  HR_PERMISSIONS.attendanceManage,
 ];
 
 /** Map coarse Platform org roles → HR permissions (fail closed for unknown). */
@@ -96,6 +112,10 @@ export function hrPermissionsForOrganizationRoles(
 
   if (roles.has("OWNER") || roles.has("ADMIN")) {
     return [...ADMIN_PERMISSIONS];
+  }
+
+  if (roles.has("BRANCH_MANAGER")) {
+    return [...BRANCH_MANAGER_PERMISSIONS];
   }
 
   if (organizationRoles.length > 0) {

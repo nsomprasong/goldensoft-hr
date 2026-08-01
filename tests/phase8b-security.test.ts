@@ -171,6 +171,23 @@ describe("Phase 8B API security", () => {
       branchId: BRANCH_MAIN,
     });
     assert.deepEqual(session.service.allowedBranchIds, [BRANCH_MAIN]);
+    assert.deepEqual(session.ctx.membershipBranchIds, [BRANCH_MAIN]);
+  });
+
+  it("limits BRANCH_MANAGER to membership SELECTED branches", async () => {
+    const { repository } = createHarness();
+    const { state, organizationId, branchId } = mockEntitledHrUser({
+      organizationId: ORG_A,
+      branchId: BRANCH_MAIN,
+      organizationRoles: ["BRANCH_MANAGER"],
+    });
+    const platformClient = createMockPlatformClient(state);
+    const session = await requireHrApi(
+      request({ cookie: cookieHeader(organizationId, branchId) }),
+      { platformClient, repository },
+    );
+    assert.deepEqual(resolveAllowedBranchIds(session.ctx), [BRANCH_MAIN]);
+    assert.ok(!resolveAllowedBranchIds(session.ctx)?.includes(BRANCH_OTHER));
   });
 
   it("gives administrators organization-wide branch scope", async () => {

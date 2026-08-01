@@ -15,6 +15,8 @@ import type { HrRequestContext } from "@/lib/platform/types";
 export type HrServiceContext = HrAccessContext & {
   /** auth.users.id recorded as created_by / updated_by and in the audit trail. */
   actorAuthUserId: string;
+  /** Display name snapshot for approval audit (who approved). */
+  actorDisplayName?: string | null;
   ip?: string | null;
   userAgent?: string | null;
 };
@@ -35,6 +37,7 @@ export function toHrServiceContext(
     contextMode: ctx.contextMode,
     allowedBranchIds: options?.allowedBranchIds ?? null,
     actorAuthUserId: ctx.authUserId,
+    actorDisplayName: ctx.profile?.displayName?.trim() || null,
     ip: options?.ip ?? null,
     userAgent: options?.userAgent ?? null,
   };
@@ -186,4 +189,35 @@ export function resolveBranchScope(
   }
 
   return { branchIds: allowed, branchId: null };
+}
+
+/**
+ * Filter for rows that join `employee` (leave, OT, payroll run lines, …).
+ *
+ * Order of precedence (must stay consistent across HR):
+ * 1. Shell header selected branch (`ctx.branchId`) — even for OWNER/ADMIN
+ * 2. Membership allow-list (`ctx.allowedBranchIds`) — BRANCH_MANAGER etc.
+ * 3. No filter — “ทุกสาขา” + org-wide admin
+ */
+export function employeeBranchWhere(ctx: HrServiceContext): {
+  employee?: { branchId: string | { in: string[] } };
+} {
+  if (ctx.branchId) {
+    return { employee: { branchId: ctx.branchId } };
+  }
+  if (ctx.allowedBranchIds != null) {
+    return { employee: { branchId: { in: [...ctx.allowedBranchIds] } } };
+  }
+  return {};
+}
+
+/** Same rules as `employeeBranchWhere`, for queries on `Employee` itself. */
+export function employeeOwnBranchWhere(ctx: HrServiceContext): {
+  branchId?: string | { in: string[] };
+} {
+  if (ctx.branchId) return { branchId: ctx.branchId };
+  if (ctx.allowedBranchIds != null) {
+    return { branchId: { in: [...ctx.allowedBranchIds] } };
+  }
+  return {};
 }

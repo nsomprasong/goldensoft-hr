@@ -1,3 +1,48 @@
-import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import PayrollRunsWorkspace from "@/components/hr/payroll-runs-workspace";
+import HrShell from "@/components/hr-shell";
+import {
+  combineAvailability,
+  listPayrollPeriods,
+  listPayrollRuns,
+} from "@/lib/hr/data";
+import { requireHrPage } from "@/lib/hr/guards";
+import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { formatThaiDateRange } from "@/lib/hr/thai-date";
+
 export const dynamic = "force-dynamic";
-export default async function PayrollRunsPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="ประมวลผลเงินเดือน" description="รอบการคำนวณเงินเดือนแยกตามงวด" emptyMessage="ยังไม่มีรายการประมวลผลเงินเดือน" endpoint="/api/hr/payroll/runs" actions={[{ label: "เริ่มประมวลผล", action: "create", confirm: true }]} /></HrShell>; }
+
+export default async function PayrollRunsPage() {
+  const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollRead });
+  const [runs, periods] = await Promise.all([
+    listPayrollRuns(ctx),
+    listPayrollPeriods(ctx),
+  ]);
+  const availability = combineAvailability(runs, periods);
+  const canManage = canHr(ctx, HR_PERMISSIONS.payrollCalculate);
+
+  const periodOptions = periods.data.map((row) => ({
+    id: row.id,
+    label: `${row.scheduleName} · ${formatThaiDateRange(row.periodStart, row.periodEnd)}`,
+  }));
+
+  return (
+    <HrShell ctx={ctx}>
+      <div className="hr-page-head">
+        <div>
+          <h1>ประมวลผลเงินเดือน</h1>
+          <p>รอบการคำนวณเงินเดือนแยกตามงวด</p>
+        </div>
+      </div>
+
+      <DatabaseUnavailableNotice message={availability.message} />
+
+      <PayrollRunsWorkspace
+        runs={runs.data}
+        periodOptions={periodOptions}
+        canManage={canManage}
+        available={availability.available}
+      />
+    </HrShell>
+  );
+}

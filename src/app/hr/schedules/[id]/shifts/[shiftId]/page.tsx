@@ -1,8 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import ScheduleShiftWorkspace from "@/components/hr/schedule-shift-workspace";
 import HrShell from "@/components/hr-shell";
+import { schedulesHrefForBranch } from "@/lib/hr/branch-nav";
 import { getScheduleShiftBoard } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -21,6 +22,16 @@ export default async function ScheduleShiftPage({
   const data = board.data;
   const canManage = canHr(ctx, HR_PERMISSIONS.scheduleManage);
   const locked = data?.period.statusCode === "LOCKED";
+
+  // Header branch changed away from this period's branch → go to that branch's list.
+  if (
+    board.message === "BRANCH_OUT_OF_SCOPE" ||
+    (ctx.branchId &&
+      data?.period.branchId &&
+      data.period.branchId !== ctx.branchId)
+  ) {
+    redirect(schedulesHrefForBranch(ctx.branchId));
+  }
 
   if (board.available && !data) {
     notFound();

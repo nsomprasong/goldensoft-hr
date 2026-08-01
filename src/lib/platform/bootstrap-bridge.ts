@@ -152,6 +152,7 @@ export function platformClientFromBridge(raw: string): PlatformClient | null {
                 organizationStatus: bridge.membership.organizationStatus,
                 roles: bridge.membership.roles,
                 branchCount: bridge.membership.branches.length,
+                branches: bridge.membership.branches,
               },
             ]
           : [],

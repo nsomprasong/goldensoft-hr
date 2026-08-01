@@ -11,9 +11,18 @@ import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import type { HrServiceContext } from "@/lib/hr/services/shared";
 
-async function requireEmployee(ctx: HrServiceContext, employeeId: string) {
-  const rows = await prisma.$queryRaw<Array<{ id: string; branch_id: string }>>`
-    SELECT id::text AS id, branch_id::text AS branch_id
+async function requireEmployee(
+  ctx: HrServiceContext,
+  employeeId: string,
+  options: { allowSelfWithoutBranchScope?: boolean } = {},
+) {
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; branch_id: string; auth_user_id: string | null }>
+  >`
+    SELECT
+      id::text AS id,
+      branch_id::text AS branch_id,
+      auth_user_id::text AS auth_user_id
     FROM hr.employees
     WHERE id = ${employeeId}::uuid
       AND organization_id = ${ctx.organizationId}::uuid
@@ -21,8 +30,15 @@ async function requireEmployee(ctx: HrServiceContext, employeeId: string) {
   `;
   const employee = rows[0];
   if (!employee) throw new HrError("NOT_FOUND", { message: "ไม่พบพนักงาน" });
-  assertBranchInScope(ctx, employee.branch_id);
-  return employee;
+  const isSelf = Boolean(
+    ctx.actorAuthUserId &&
+      employee.auth_user_id &&
+      employee.auth_user_id === ctx.actorAuthUserId,
+  );
+  if (!(options.allowSelfWithoutBranchScope && isSelf)) {
+    assertBranchInScope(ctx, employee.branch_id);
+  }
+  return { ...employee, isSelf };
 }
 
 export type EmployeeDocumentRow = {
@@ -183,8 +199,19 @@ export async function getEmployeeDocumentFile(
   employeeId: string,
   documentId: string,
 ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
-  assertHrPermission(ctx, HR_PERMISSIONS.employeeRead);
-  await requireEmployee(ctx, employeeId);
+  const employee = await requireEmployee(ctx, employeeId, {
+    allowSelfWithoutBranchScope: true,
+  });
+  // Staff with employee.read may open any in-scope file; employees may open
+  // their own (e.g. สลิปโอนเบิกล่วงหน้า on /hr/me/advances).
+  if (employee.isSelf) {
+    assertHrPermission(ctx, [
+      HR_PERMISSIONS.employeeRead,
+      HR_PERMISSIONS.advanceSelf,
+    ]);
+  } else {
+    assertHrPermission(ctx, HR_PERMISSIONS.employeeRead);
+  }
   const rows = await prisma.$queryRaw<
     Array<{ storage_key: string; file_name: string }>
   >`

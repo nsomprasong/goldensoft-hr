@@ -29,6 +29,8 @@ export type PlatformMeResponse = {
     organizationStatus: string;
     roles: string[];
     branchCount: number;
+    /** Accessible branches for SELECTED scope (empty when ALL_BRANCHES / none). */
+    branches?: Array<{ id: string; name: string; code: string }>;
   }>;
   activeOrganization: { id: string; name: string } | null;
   activeBranch: { id: string; name: string; code: string } | null;
@@ -92,5 +94,11 @@ export type HrRequestContext = {
   branch: PlatformMeResponse["activeBranch"];
   contextMode: PlatformContextMode;
   membershipRoles: string[];
+  /**
+   * Branch IDs from Platform membership SELECTED scope.
+   * Null/undefined = unknown (fall back to active branch only).
+   * Empty array = no branch access.
+   */
+  membershipBranchIds?: string[] | null;
   entitlements: Partial<Record<string, EntitlementCheckResponse>>;
 };

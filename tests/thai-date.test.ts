@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   formatThaiDate,
+  formatThaiDateCompact,
   formatThaiDateRange,
+  formatThaiDateRangeCompact,
   parseDateParts,
   toIsoDate,
 } from "../src/lib/hr/thai-date";
@@ -32,6 +34,22 @@ describe("Thai date display", () => {
     assert.equal(
       formatThaiDateRange("2026-06-01", "2026-06-30"),
       "01/06/2569 – 30/06/2569",
+    );
+  });
+
+  it("formats compact dates and ranges", () => {
+    assert.equal(formatThaiDateCompact("2026-08-15"), "15 ส.ค. 69");
+    assert.equal(
+      formatThaiDateCompact("2026-08-15", "—", { omitYear: true }),
+      "15 ส.ค.",
+    );
+    assert.equal(
+      formatThaiDateRangeCompact("2026-08-01", "2026-08-15"),
+      "1–15 ส.ค. 69",
+    );
+    assert.equal(
+      formatThaiDateRangeCompact("2026-07-28", "2026-08-15"),
+      "28 ก.ค. – 15 ส.ค. 69",
     );
   });
 

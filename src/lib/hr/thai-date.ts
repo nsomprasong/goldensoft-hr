@@ -66,6 +66,21 @@ export function toIsoDate(value: DateLike): string {
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
 }
 
+const THAI_MONTH_SHORT = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+] as const;
+
 /** `18/06/2569` — empty/invalid → fallback (default "—"). */
 export function formatThaiDate(
   value: DateLike,
@@ -74,6 +89,24 @@ export function formatThaiDate(
   const parts = parseDateParts(value);
   if (!parts) return fallback;
   return `${pad2(parts.day)}/${pad2(parts.month)}/${parts.year + 543}`;
+}
+
+/**
+ * Compact list date: `15 ส.ค. 69` (day + short month + 2-digit พ.ศ.).
+ * Pass `{ omitYear: true }` → `15 ส.ค.` when the year is already clear from context.
+ */
+export function formatThaiDateCompact(
+  value: DateLike,
+  fallback = "—",
+  options?: { omitYear?: boolean },
+): string {
+  const parts = parseDateParts(value);
+  if (!parts) return fallback;
+  const month = THAI_MONTH_SHORT[parts.month - 1] ?? pad2(parts.month);
+  const day = String(parts.day);
+  if (options?.omitYear) return `${day} ${month}`;
+  const beShort = String((parts.year + 543) % 100).padStart(2, "0");
+  return `${day} ${month} ${beShort}`;
 }
 
 /** `01/06/2569 – 30/06/2569` */
@@ -88,4 +121,37 @@ export function formatThaiDateRange(
   if (!a) return b;
   if (!b) return a;
   return `${a} – ${b}`;
+}
+
+/**
+ * Compact range for period captions.
+ * Same month: `1–15 ส.ค. 69`
+ * Cross month: `28 ก.ค. – 15 ส.ค. 69`
+ * Cross year: `28 ธ.ค. 68 – 5 ม.ค. 69`
+ */
+export function formatThaiDateRangeCompact(
+  start: DateLike,
+  end: DateLike,
+  fallback = "—",
+): string {
+  const a = parseDateParts(start);
+  const b = parseDateParts(end);
+  if (!a && !b) return fallback;
+  if (!a) return formatThaiDateCompact(end, fallback);
+  if (!b) return formatThaiDateCompact(start, fallback);
+
+  const aMonth = THAI_MONTH_SHORT[a.month - 1] ?? pad2(a.month);
+  const bMonth = THAI_MONTH_SHORT[b.month - 1] ?? pad2(b.month);
+  const aBe = a.year + 543;
+  const bBe = b.year + 543;
+  const aBeShort = String(aBe % 100).padStart(2, "0");
+  const bBeShort = String(bBe % 100).padStart(2, "0");
+
+  if (a.year === b.year && a.month === b.month) {
+    return `${a.day}–${b.day} ${aMonth} ${aBeShort}`;
+  }
+  if (a.year === b.year) {
+    return `${a.day} ${aMonth} – ${b.day} ${bMonth} ${aBeShort}`;
+  }
+  return `${a.day} ${aMonth} ${aBeShort} – ${b.day} ${bMonth} ${bBeShort}`;
 }

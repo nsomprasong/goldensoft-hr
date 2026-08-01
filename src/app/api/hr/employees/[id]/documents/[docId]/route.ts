@@ -17,7 +17,10 @@ export async function GET(
   return withHrApi(async () => {
     const { id, docId } = await context.params;
     const { service } = await requireHrApi(request, {
-      permission: HR_PERMISSIONS.employeeRead,
+      permission: [
+        HR_PERMISSIONS.employeeRead,
+        HR_PERMISSIONS.advanceSelf,
+      ],
     });
     const file = await getEmployeeDocumentFile(service, id, docId);
     const disposition = request.url.includes("download=1")

@@ -8,7 +8,19 @@ import FeedbackPopup, {
 } from "@/components/hr/feedback-popup";
 import { createClientId } from "@/lib/hr/client-id";
 import { compressImageForUpload } from "@/lib/hr/compress-image-client";
-import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
+import {
+  formatThaiDate,
+  formatThaiDateCompact,
+  formatThaiDateRangeCompact,
+} from "@/lib/hr/thai-date";
+
+type ShiftHint = {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  crossesMidnight?: boolean;
+};
 
 type AttendanceDayRow = {
   id: string;
@@ -16,6 +28,11 @@ type AttendanceDayRow = {
   dutyLabel?: string;
   isRestDay?: boolean;
   isLeaveDay?: boolean;
+  /** Planned shift wall-clock HH:mm (Bangkok), when assigned. */
+  plannedClockIn?: string | null;
+  plannedClockOut?: string | null;
+  crossesMidnight?: boolean;
+  shiftMismatchStatus?: string | null;
   clockInAt: string | null;
   clockOutAt: string | null;
   lateLabel: string;
@@ -171,6 +188,11 @@ export default function MeAttendanceWorkspace() {
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const adjustTitleId = useId();
+  const mismatchTitleId = useId();
+  const [mismatchConfirm, setMismatchConfirm] = useState<{
+    assigned: ShiftHint;
+    suggested: ShiftHint | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -314,15 +336,22 @@ export default function MeAttendanceWorkspace() {
   }
 
   function openAdjust(row: AttendanceDayRow) {
-    const inHm = row.clockInAt
-      ? formatClockTime(row.clockInAt)
-      : "08:00";
-    const outHm = row.clockOutAt
-      ? formatClockTime(row.clockOutAt)
-      : "17:00";
+    const plannedIn = row.plannedClockIn?.slice(0, 5) || null;
+    const plannedOut = row.plannedClockOut?.slice(0, 5) || null;
+    const recordedIn = row.clockInAt ? formatClockTime(row.clockInAt) : null;
+    const recordedOut = row.clockOutAt ? formatClockTime(row.clockOutAt) : null;
+    // Prefer actual punches; else planned shift times (night/day); else daytime fallback.
+    const inHm =
+      recordedIn && recordedIn !== "—"
+        ? recordedIn
+        : plannedIn || "08:00";
+    const outHm =
+      recordedOut && recordedOut !== "—"
+        ? recordedOut
+        : plannedOut || "17:00";
     setAdjustDay(row);
-    setAdjustIn(inHm === "—" ? "08:00" : inHm);
-    setAdjustOut(outHm === "—" ? "17:00" : outHm);
+    setAdjustIn(inHm);
+    setAdjustOut(outHm);
     setAdjustReason("");
   }
 
@@ -407,8 +436,45 @@ export default function MeAttendanceWorkspace() {
   const canClockIn = !hasClockIn && !todayRow?.isRestDay && !todayRow?.isLeaveDay;
   const canClockOut =
     hasClockIn && !hasClockOut && !todayRow?.isRestDay && !todayRow?.isLeaveDay;
+  const clockAction: "clockIn" | "clockOut" | null = canClockIn
+    ? "clockIn"
+    : canClockOut
+      ? "clockOut"
+      : null;
+  const clockButtonLabel = submitting
+    ? "กำลังบันทึก…"
+    : hasClockOut
+      ? "ออกงานแล้ว"
+      : todayRow?.isRestDay
+        ? "วันหยุด"
+        : todayRow?.isLeaveDay
+          ? "วันลา"
+          : canClockIn
+            ? "เข้างาน"
+            : canClockOut
+              ? "ออกงาน"
+              : "เข้างานแล้ว";
+  const clockButtonTitle = !clockAction
+    ? hasClockOut
+      ? "วันนี้ลงเวลาเข้า–ออกงานครบแล้ว"
+      : todayRow?.isRestDay
+        ? "วันนี้เป็นวันหยุด"
+        : todayRow?.isLeaveDay
+          ? "วันนี้เป็นวันลา"
+          : "วันนี้ลงเวลาเข้างานแล้ว"
+    : !photoBase64
+      ? "ถ่ายรูปก่อน"
+      : clockAction === "clockIn"
+        ? "เข้างาน"
+        : "ออกงาน";
 
-  async function submit(action: "clockIn" | "clockOut") {
+  async function submit(
+    action: "clockIn" | "clockOut",
+    options?: {
+      confirmShiftMismatch?: boolean;
+      requestedShiftId?: string | null;
+    },
+  ) {
     if (!navigator.onLine) {
       setFeedback({
         kind: "error",
@@ -469,6 +535,12 @@ export default function MeAttendanceWorkspace() {
           longitude: location.longitude,
           accuracyMeters: location.accuracyMeters,
           workLocationId: location.workLocationId,
+          ...(options?.confirmShiftMismatch
+            ? {
+                confirmShiftMismatch: true,
+                requestedShiftId: options.requestedShiftId ?? undefined,
+              }
+            : {}),
         }),
       });
       if (!response.ok) {
@@ -476,8 +548,28 @@ export default function MeAttendanceWorkspace() {
         try {
           const body = (await response.json()) as {
             message?: string;
-            error?: { message?: string };
+            error?: {
+              message?: string;
+              details?: {
+                code?: string;
+                assignedShift?: ShiftHint | null;
+                suggestedShift?: ShiftHint | null;
+              };
+            };
           };
+          const details = body.error?.details;
+          if (
+            action === "clockIn" &&
+            details?.code === "SHIFT_MISMATCH" &&
+            details.assignedShift
+          ) {
+            setMismatchConfirm({
+              assigned: details.assignedShift,
+              suggested: details.suggestedShift ?? null,
+            });
+            setFeedback(null);
+            return;
+          }
           if (body.error?.message?.trim()) detail = body.error.message.trim();
           else if (body.message?.trim()) detail = body.message.trim();
         } catch {
@@ -486,7 +578,19 @@ export default function MeAttendanceWorkspace() {
         setFeedback({ kind: "error", message: detail });
         return;
       }
-      setFeedback({ kind: "success", message: "บันทึกลงเวลาเรียบร้อยแล้ว" });
+      const successBody = (await response.json().catch(() => ({}))) as {
+        shiftMismatchPending?: boolean;
+      };
+      setMismatchConfirm(null);
+      setFeedback({
+        kind: "success",
+        title: successBody.shiftMismatchPending
+          ? "เข้างานสำเร็จ"
+          : "บันทึกสำเร็จ",
+        message: successBody.shiftMismatchPending
+          ? "บันทึกเวลาเข้างานแล้ว และส่งคำขออนุมัติย้ายกะให้หัวหน้าพิจารณา"
+          : "บันทึกเวลาเรียบร้อยแล้ว",
+      });
       if (cameraRef.current) cameraRef.current.value = "";
       await applyPhoto(null);
       await load();
@@ -518,11 +622,6 @@ export default function MeAttendanceWorkspace() {
           คุณกำลังออฟไลน์ — ระบบจะไม่สร้างเวลาเข้างานหรือออกงานแทนคุณ
         </Alert>
       ) : null}
-      {isDev && insecureHttp ? (
-        <Alert kind="warning">
-          เปิดผ่าน HTTP บนมือถือ — ใช้ตำแหน่งจำลองเพื่อทดสอบลงเวลา
-        </Alert>
-      ) : null}
       <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
 
       <section className="hr-me-clock" aria-label="ลงเวลาวันนี้">
@@ -549,42 +648,25 @@ export default function MeAttendanceWorkspace() {
 
         <div className="hr-me-clock-punch">
           <div className="hr-me-clock-photo">
-            {photoPreview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={photoPreview} alt="ตัวอย่างรูปหลักฐาน" />
-            ) : (
-              <button
-                type="button"
-                className="hr-me-clock-photo-empty"
-                disabled={submitting}
-                onClick={() => cameraRef.current?.click()}
-              >
-                ถ่ายรูปหลักฐาน
-              </button>
-            )}
-            <div className="hr-me-clock-photo-actions">
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={submitting}
-                onClick={() => cameraRef.current?.click()}
-              >
-                {photoPreview ? "ถ่ายใหม่" : "ถ่ายรูป"}
-              </button>
+            <button
+              type="button"
+              className={
+                photoPreview
+                  ? "hr-me-clock-photo-frame"
+                  : "hr-me-clock-photo-empty"
+              }
+              disabled={submitting}
+              onClick={() => cameraRef.current?.click()}
+              aria-label="แตะที่นี่เพื่อถ่ายรูป"
+            >
               {photoPreview ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={submitting}
-                  onClick={() => {
-                    if (cameraRef.current) cameraRef.current.value = "";
-                    void applyPhoto(null);
-                  }}
-                >
-                  ล้าง
-                </button>
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoPreview} alt="ตัวอย่างรูปหลักฐาน" />
               ) : null}
-            </div>
+              <span className="hr-me-clock-photo-hint">
+                แตะที่นี่เพื่อถ่ายรูป
+              </span>
+            </button>
             <input
               id={cameraId}
               ref={cameraRef}
@@ -602,35 +684,14 @@ export default function MeAttendanceWorkspace() {
           <div className="hr-me-clock-actions">
             <button
               type="button"
-              className="btn btn-primary hr-me-clock-btn"
-              disabled={submitting || !photoBase64 || !canClockIn}
-              onClick={() => void submit("clockIn")}
-              title={
-                hasClockIn
-                  ? "วันนี้ลงเวลาเข้างานแล้ว"
-                  : !photoBase64
-                    ? "ถ่ายรูปก่อน"
-                    : "เข้างาน"
-              }
+              className={`btn hr-me-clock-btn${clockAction ? " btn-primary" : ""}`}
+              disabled={submitting || !clockAction || !photoBase64}
+              onClick={() => {
+                if (clockAction) void submit(clockAction);
+              }}
+              title={clockButtonTitle}
             >
-              {submitting ? "กำลังบันทึก…" : hasClockIn ? "เข้างานแล้ว" : "เข้างาน"}
-            </button>
-            <button
-              type="button"
-              className="btn hr-me-clock-btn"
-              disabled={submitting || !photoBase64 || !canClockOut}
-              onClick={() => void submit("clockOut")}
-              title={
-                hasClockOut
-                  ? "วันนี้ลงเวลาออกงานแล้ว"
-                  : !hasClockIn
-                    ? "ต้องเข้างานก่อน"
-                    : !photoBase64
-                      ? "ถ่ายรูปก่อน"
-                      : "ออกงาน"
-              }
-            >
-              {hasClockOut ? "ออกงานแล้ว" : "ออกงาน"}
+              {clockButtonLabel}
             </button>
           </div>
         </div>
@@ -672,8 +733,7 @@ export default function MeAttendanceWorkspace() {
           <h2>ประวัติ</h2>
           {schedulePeriod ? (
             <p>
-              {schedulePeriod.name} ·{" "}
-              {formatThaiDateRange(
+              {formatThaiDateRangeCompact(
                 schedulePeriod.periodStart,
                 schedulePeriod.periodEnd,
               )}
@@ -691,6 +751,12 @@ export default function MeAttendanceWorkspace() {
           <ul className="hr-me-clock-day-list">
             {historyDays.map((row) => {
               const off = row.isRestDay || row.isLeaveDay;
+              const sameYearAsPeriod =
+                !!schedulePeriod &&
+                row.workDate.slice(0, 4) ===
+                  schedulePeriod.periodStart.slice(0, 4) &&
+                schedulePeriod.periodStart.slice(0, 4) ===
+                  schedulePeriod.periodEnd.slice(0, 4);
               return (
                 <li
                   key={row.id}
@@ -701,7 +767,11 @@ export default function MeAttendanceWorkspace() {
                   }
                 >
                   <div className="hr-me-clock-day-main">
-                    <strong>{formatThaiDate(row.workDate)}</strong>
+                    <strong>
+                      {formatThaiDateCompact(row.workDate, "—", {
+                        omitYear: sameYearAsPeriod,
+                      })}
+                    </strong>
                     <span>{row.dutyLabel ?? (off ? "หยุด" : "—")}</span>
                   </div>
                   <div className="hr-me-clock-day-times">
@@ -713,8 +783,19 @@ export default function MeAttendanceWorkspace() {
                     </span>
                   </div>
                   {!off &&
-                  (row.lateLabel !== "—" || row.earlyLeaveLabel !== "—") ? (
+                  (row.lateLabel !== "—" ||
+                    row.earlyLeaveLabel !== "—" ||
+                    row.shiftMismatchStatus) ? (
                     <div className="hr-me-clock-day-flags">
+                      {row.shiftMismatchStatus === "PENDING" ? (
+                        <span className="badge">รออนุมัติย้ายกะ</span>
+                      ) : null}
+                      {row.shiftMismatchStatus === "REJECTED" ? (
+                        <span className="badge badge-inactive">ลงผิดกะ</span>
+                      ) : null}
+                      {row.shiftMismatchStatus === "APPROVED" ? (
+                        <span className="badge badge-active">ย้ายกะแล้ว</span>
+                      ) : null}
                       {row.lateLabel !== "—" ? (
                         <span className="badge badge-inactive">
                           สาย {row.lateLabel}
@@ -776,6 +857,7 @@ export default function MeAttendanceWorkspace() {
             <div className="hr-overlay-body">
               <form
                 className="hr-ot-form"
+                method="post"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void submitAdjust();
@@ -783,6 +865,10 @@ export default function MeAttendanceWorkspace() {
               >
                 <p className="muted" style={{ margin: 0 }}>
                   วันที่ {formatThaiDate(adjustDay.workDate)}
+                  {adjustDay.dutyLabel ? ` · ${adjustDay.dutyLabel}` : ""}
+                  {adjustDay.plannedClockIn && adjustDay.plannedClockOut
+                    ? ` (${adjustDay.plannedClockIn.slice(0, 5)}–${adjustDay.plannedClockOut.slice(0, 5)}${adjustDay.crossesMidnight ? " +1" : ""})`
+                    : ""}
                 </p>
                 <div className="hr-ot-form-times">
                   <label className="hr-shift-field">
@@ -830,6 +916,108 @@ export default function MeAttendanceWorkspace() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mismatchConfirm ? (
+        <div className="hr-overlay" role="presentation">
+          <button
+            type="button"
+            className="hr-overlay-backdrop"
+            aria-label="ยกเลิก"
+            onClick={() => !submitting && setMismatchConfirm(null)}
+          />
+          <div
+            className="hr-overlay-panel hr-mismatch-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={mismatchTitleId}
+          >
+            <div className="hr-mismatch-dialog-visual" aria-hidden="true">
+              <span className="hr-mismatch-dialog-ring" />
+              <svg
+                className="hr-mismatch-dialog-swap"
+                viewBox="0 0 64 64"
+                fill="none"
+              >
+                <path
+                  className="hr-mismatch-dialog-swap-a"
+                  d="M18 28h22l-7-7"
+                  stroke="currentColor"
+                  strokeWidth="3.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  className="hr-mismatch-dialog-swap-b"
+                  d="M46 36H24l7 7"
+                  stroke="currentColor"
+                  strokeWidth="3.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="hr-mismatch-dialog-copy">
+              <p className="hr-mismatch-dialog-kicker">ตรวจสอบกะก่อนเข้างาน</p>
+              <h2 id={mismatchTitleId}>เวลาเข้าไม่ตรงกับกะที่ถูกจัด</h2>
+              <p className="hr-mismatch-dialog-lead">
+                ระบบตรวจพบว่าคุณกำลังลงเวลาในช่วงกะอื่น
+                กรุณายืนยันหากต้องการเข้างานต่อ
+              </p>
+              <div className="hr-mismatch-dialog-shifts">
+                <div className="hr-mismatch-dialog-shift">
+                  <span>กะที่จัดไว้</span>
+                  <strong>{mismatchConfirm.assigned.name}</strong>
+                  <em>
+                    {mismatchConfirm.assigned.startTime}–
+                    {mismatchConfirm.assigned.endTime}
+                    {mismatchConfirm.assigned.crossesMidnight ? " (+1)" : ""}
+                  </em>
+                </div>
+                {mismatchConfirm.suggested ? (
+                  <div className="hr-mismatch-dialog-shift hr-mismatch-dialog-shift--suggest">
+                    <span>กะที่ตรงเวลานี้</span>
+                    <strong>{mismatchConfirm.suggested.name}</strong>
+                    <em>
+                      {mismatchConfirm.suggested.startTime}–
+                      {mismatchConfirm.suggested.endTime}
+                      {mismatchConfirm.suggested.crossesMidnight
+                        ? " (+1)"
+                        : ""}
+                    </em>
+                  </div>
+                ) : null}
+              </div>
+              <p className="hr-mismatch-dialog-note">
+                เมื่อยืนยัน ระบบจะบันทึกเข้างานทันที
+                และส่งคำขออนุมัติย้ายกะเฉพาะวันนี้ให้หัวหน้าพิจารณา
+              </p>
+            </div>
+            <div className="hr-mismatch-dialog-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={submitting}
+                onClick={() => setMismatchConfirm(null)}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={submitting || !mismatchConfirm.suggested}
+                onClick={() =>
+                  void submit("clockIn", {
+                    confirmShiftMismatch: true,
+                    requestedShiftId: mismatchConfirm.suggested?.id ?? null,
+                  })
+                }
+              >
+                {submitting ? "กำลังบันทึก…" : "ยืนยันเข้างาน"}
+              </button>
             </div>
           </div>
         </div>

@@ -1,0 +1,27 @@
+---
+description: HR lists/actions must respect shell branch filter (header) and membership allow-list
+alwaysApply: true
+---
+
+# HR branch scope (ห้ามแสดงข้ามสาขา)
+
+When building or changing HR list/detail/API in `goldensoft-hr`:
+
+## Rules
+
+1. **Header branch wins** — If the Customer App shell has a branch selected (`ctx.branchId`), show and mutate **only that branch’s employees/data**, even for OWNER/ADMIN.
+2. **“ทุกสาขา”** — Only when `ctx.branchId` is null may org-wide admins see all branches (still limited by `allowedBranchIds` when set).
+3. **Membership allow-list** — BRANCH_MANAGER / scoped roles use `ctx.allowedBranchIds`; never return other branches.
+4. **Reuse helpers** — Prefer `employeeBranchWhere` / `employeeOwnBranchWhere` from `src/lib/hr/services/shared.ts`. Do not invent a third filter style.
+5. **Destructive ops** — Calculate / delete / issue must **not wipe other branches** when a branch is selected (scope the `deleteMany` / create loop).
+6. **UI totals** — Counts and net totals on a page must match the filtered rows (never show org totals while listing one branch).
+
+## Do not
+
+- Load org-wide employee lists into a branch-filtered screen and hope the UI hides them
+- Use only `allowedBranchIds` and ignore `ctx.branchId` (OWNER bug: sees every branch while header shows one)
+- Skip branch filters on new modules (payroll, leave, OT, attendance, approvals, dashboard)
+
+## Quick check
+
+If the screenshot shows header **สาขา X** but rows from **สำนักงานใหญ่** (or another branch), the filter is wrong — fix the service query before shipping UI.

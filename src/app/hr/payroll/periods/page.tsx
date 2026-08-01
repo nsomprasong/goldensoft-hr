@@ -10,7 +10,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -40,35 +40,55 @@ export default async function PayrollPeriodsPage() {
       {periods.data.length === 0 ? (
         <p className="empty">ยังไม่มีงวดเงินเดือน</p>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>รอบจ่าย</th>
-                <th>เริ่มงวด</th>
-                <th>สิ้นงวด</th>
-                <th>วันจ่ายเงิน</th>
-                <th>สถานะ</th>
-                <th>รายละเอียด</th>
-              </tr>
-            </thead>
-            <tbody>
-              {periods.data.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.scheduleName}</td>
-                  <td className="nowrap">{formatThaiDate(row.periodStart)}</td>
-                  <td className="nowrap">{formatThaiDate(row.periodEnd)}</td>
-                  <td className="nowrap">{formatThaiDate(row.paymentDate)}</td>
-                  <td>
-                    <span className="badge">{row.statusNameTh}</span>
-                  </td>
-                  <td>
-                    <Link href={`/hr/payroll/periods/${row.id}`}>เปิดดู</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="hr-card-grid">
+          {periods.data.map((row) => (
+            <article key={row.id} className="card hr-entity-card">
+              <div className="hr-entity-card-top">
+                <div className="hr-entity-card-title-wrap">
+                  <h2 className="hr-entity-card-title">{row.scheduleName}</h2>
+                  <p className="hr-entity-card-subtitle">
+                    {formatThaiDateRange(row.periodStart, row.periodEnd)}
+                  </p>
+                </div>
+                <span
+                  className={
+                    row.statusCode === "LOCKED"
+                      ? "badge badge-inactive"
+                      : row.statusCode === "APPROVED" ||
+                          row.statusCode === "PAID"
+                        ? "badge badge-active"
+                        : "badge"
+                  }
+                >
+                  {row.statusNameTh}
+                </span>
+              </div>
+
+              <dl className="hr-entity-card-meta">
+                <div>
+                  <dt>วันเริ่มงวด</dt>
+                  <dd>{formatThaiDate(row.periodStart)}</dd>
+                </div>
+                <div>
+                  <dt>วันสิ้นงวด</dt>
+                  <dd>{formatThaiDate(row.periodEnd)}</dd>
+                </div>
+                <div>
+                  <dt>วันจ่ายเงิน</dt>
+                  <dd>{formatThaiDate(row.paymentDate)}</dd>
+                </div>
+              </dl>
+
+              <div className="hr-entity-card-actions">
+                <Link
+                  className="btn btn-sm"
+                  href={`/hr/payroll/periods/${row.id}`}
+                >
+                  เปิดดู
+                </Link>
+              </div>
+            </article>
+          ))}
         </div>
       )}
 
@@ -77,7 +97,7 @@ export default async function PayrollPeriodsPage() {
           disabled={!availability.available}
           schedules={schedules.data
             .filter((s) => s.isActive)
-            .map((s) => ({ id: s.id, label: `${s.code} · ${s.name}` }))}
+            .map((s) => ({ id: s.id, label: s.name }))}
         />
       ) : null}
     </HrShell>

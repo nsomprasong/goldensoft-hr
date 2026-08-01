@@ -14,6 +14,7 @@ type AttendanceRow = {
   photoUrl: string | null;
   statusName: string;
   statusCode: string;
+  shiftMismatchStatus?: string | null;
   clockInAt: string | null;
   clockOutAt: string | null;
   lateLabel: string;
@@ -126,43 +127,52 @@ export default function AttendanceDayWorkspace() {
           <p className="empty">ยังไม่มีข้อมูลเวลาทำงานในวันนี้</p>
         </section>
       ) : (
-        <div className="hr-card-grid" style={{ marginTop: "1rem" }}>
+        <div className="hr-card-grid hr-attendance-day-grid" style={{ marginTop: "1rem" }}>
           {rows.map((row) => (
-            <article key={row.id} className="card hr-entity-card">
+            <article key={row.id} className="card hr-entity-card hr-attendance-day-card">
               <div className="hr-entity-card-top">
                 <div className="hr-employee-card-head">
                   <EmployeeAvatar
                     displayName={row.displayName}
                     photoUrl={row.photoUrl}
-                    size="md"
+                    size="sm"
                   />
                   <div className="hr-entity-card-title-wrap">
                     <h2 className="hr-entity-card-title">{row.displayName}</h2>
-                    <p className="hr-entity-card-subtitle">{row.statusName}</p>
                   </div>
                 </div>
-                <span
-                  className={
-                    row.statusCode === "PRESENT" || row.statusCode === "INCOMPLETE"
-                      ? "badge badge-active"
-                      : "badge"
-                  }
-                >
-                  {row.statusName}
-                </span>
+                <div className="hr-me-clock-day-flags">
+                  <span
+                    className={
+                      row.statusCode === "PRESENT" ||
+                      row.statusCode === "INCOMPLETE"
+                        ? "badge badge-active"
+                        : "badge"
+                    }
+                  >
+                    {row.statusName}
+                  </span>
+                  {row.shiftMismatchStatus === "PENDING" ? (
+                    <span className="badge">รออนุมัติย้ายกะ</span>
+                  ) : null}
+                  {row.shiftMismatchStatus === "REJECTED" ||
+                  row.statusCode === "WRONG_SHIFT" ? (
+                    <span className="badge badge-inactive">ลงผิดกะ</span>
+                  ) : null}
+                </div>
               </div>
 
-              <dl className="hr-entity-card-meta">
+              <dl className="hr-entity-card-meta hr-attendance-day-meta">
                 <div>
-                  <dt>เวลาเข้า</dt>
+                  <dt>เข้า</dt>
                   <dd>{formatClockTime(row.clockInAt)}</dd>
                 </div>
                 <div>
-                  <dt>เวลาออก</dt>
+                  <dt>ออก</dt>
                   <dd>{formatClockTime(row.clockOutAt)}</dd>
                 </div>
                 <div>
-                  <dt>มาสาย</dt>
+                  <dt>สาย</dt>
                   <dd>{row.lateLabel}</dd>
                 </div>
                 <div>
@@ -182,7 +192,7 @@ export default function AttendanceDayWorkspace() {
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={row.clockInPhotoUrl} alt="" />
-                      <span>รูปเข้างาน</span>
+                      <span>เข้า</span>
                     </a>
                   ) : null}
                   {row.clockOutPhotoUrl ? (
@@ -194,7 +204,7 @@ export default function AttendanceDayWorkspace() {
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={row.clockOutPhotoUrl} alt="" />
-                      <span>รูปออกงาน</span>
+                      <span>ออก</span>
                     </a>
                   ) : null}
                 </div>

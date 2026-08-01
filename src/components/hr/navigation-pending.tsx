@@ -116,7 +116,12 @@ function NavigationPendingInner() {
       if (form.target && form.target !== "_self") return;
       const method = (form.getAttribute("method") ?? "get").toLowerCase();
       if (method !== "get") return;
-      startPending();
+      // SPA forms often omit method (defaults to GET) then preventDefault.
+      // Wait until handlers run — skip overlay when navigation was cancelled.
+      queueMicrotask(() => {
+        if (event.defaultPrevented) return;
+        startPending();
+      });
     };
 
     const onSignal = (event: Event) => {

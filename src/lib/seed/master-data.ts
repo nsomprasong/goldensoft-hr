@@ -269,6 +269,7 @@ export const ATTENDANCE_STATUSES: OperationMasterRow[] = [
   { code: "INCOMPLETE", name: "ลงเวลาไม่ครบ", sortOrder: 8 },
   { code: "MISSING_CLOCK_IN", name: "ไม่มีเวลาเข้างาน", sortOrder: 9 },
   { code: "MISSING_CLOCK_OUT", name: "ไม่มีเวลาออกงาน", sortOrder: 10 },
+  { code: "WRONG_SHIFT", name: "ลงผิดกะ", sortOrder: 11 },
 ];
 export const ATTENDANCE_EVENT_TYPES: OperationMasterRow[] = [
   { code: "CLOCK_IN", name: "ลงเวลาเข้า", sortOrder: 1 },
@@ -345,6 +346,7 @@ export const EARNING_TYPES: OperationMasterRow[] = [
 export const DEDUCTION_TYPES: OperationMasterRow[] = [
   { code: "TAX", name: "ภาษี" },
   { code: "SOCIAL_SECURITY", name: "ประกันสังคม" },
+  { code: "ADVANCE", name: "เบิกล่วงหน้า" },
   { code: "LOAN", name: "หักชำระเงินกู้" },
   { code: "ABSENCE", name: "หักขาดงาน" },
   { code: "OTHER", name: "รายการหักอื่น" },

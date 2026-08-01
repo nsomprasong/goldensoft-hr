@@ -1,6 +1,9 @@
+import { redirect } from "next/navigation";
+
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import SchedulesWorkspace from "@/components/hr/schedules-workspace";
 import HrShell from "@/components/hr-shell";
+import { schedulesHrefForBranch } from "@/lib/hr/branch-nav";
 import {
   combineAvailability,
   listOrganizationBranches,
@@ -8,7 +11,6 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +46,18 @@ export default async function SchedulesPage({
           ? [{ id: ctx.branchId, label: "สาขาปัจจุบัน" }]
           : [];
 
-  // Single-branch users: lock to that branch immediately.
-  if (!requestedBranchId && branches.length === 1) {
-    redirect(`/hr/schedules?branchId=${encodeURIComponent(branches[0]!.id)}`);
+  // Header branch is the source of truth (same as dashboard).
+  if (ctx.branchId) {
+    if (requestedBranchId !== ctx.branchId) {
+      redirect(schedulesHrefForBranch(ctx.branchId));
+    }
+  } else if (!requestedBranchId && branches.length === 1) {
+    redirect(schedulesHrefForBranch(branches[0]!.id));
   }
 
-  const selectedBranchId =
-    requestedBranchId && branches.some((b) => b.id === requestedBranchId)
+  const selectedBranchId = ctx.branchId
+    ? ctx.branchId
+    : requestedBranchId && branches.some((b) => b.id === requestedBranchId)
       ? requestedBranchId
       : "";
 
@@ -64,7 +71,8 @@ export default async function SchedulesPage({
 
   const availability = combineAvailability(branchesResult, periods);
   const selectedBranchLabel =
-    branches.find((b) => b.id === selectedBranchId)?.label ?? null;
+    branches.find((b) => b.id === selectedBranchId)?.label ??
+    (ctx.branch?.name ?? null);
 
   return (
     <HrShell ctx={ctx} active="schedules">
@@ -74,43 +82,48 @@ export default async function SchedulesPage({
           <p>
             {selectedBranchLabel
               ? `สาขา${selectedBranchLabel} — เลือกช่วงเวลา → เพิ่มกะ → จัดพนักงาน`
-              : "เลือกสาขาก่อน แล้วค่อยสร้างช่วงตารางและจัดพนักงาน"}
+              : "เลือกสาขาที่หัวเว็บก่อน แล้วค่อยสร้างช่วงตารางและจัดพนักงาน"}
           </p>
         </div>
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />
 
-      <form className="card" method="get" action="/hr/schedules">
-        <div className="filters">
-          <div className="field">
-            <label htmlFor="schedule-branchId">สาขา</label>
-            <select
-              id="schedule-branchId"
-              name="branchId"
-              defaultValue={selectedBranchId}
-              required
-            >
-              <option value="" disabled>
-                — เลือกสาขา —
-              </option>
-              {branches.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
+      {/* Only show in-page picker when header is "ทุกสาขา". */}
+      {!ctx.branchId ? (
+        <form className="card" method="get" action="/hr/schedules">
+          <div className="filters">
+            <div className="field">
+              <label htmlFor="schedule-branchId">สาขา</label>
+              <select
+                id="schedule-branchId"
+                name="branchId"
+                defaultValue={selectedBranchId}
+                required
+              >
+                <option value="" disabled>
+                  — เลือกสาขา —
                 </option>
-              ))}
-            </select>
+                {branches.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ alignSelf: "end" }}>
+              <button type="submit" className="btn btn-primary">
+                เปิดตารางสาขานี้
+              </button>
+            </div>
           </div>
-          <div className="field" style={{ alignSelf: "end" }}>
-            <button type="submit" className="btn btn-primary">
-              เปิดตารางสาขานี้
-            </button>
-          </div>
-        </div>
-      </form>
+        </form>
+      ) : null}
 
       {!selectedBranchId ? (
-        <p className="empty">กรุณาเลือกสาขาก่อนจึงจะดูหรือจัดตารางได้</p>
+        <p className="empty">
+          กรุณาเลือกสาขาที่หัวเว็บก่อนจึงจะดูหรือจัดตารางได้
+        </p>
       ) : (
         <SchedulesWorkspace
           periods={periods.data}

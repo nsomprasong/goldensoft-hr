@@ -8,6 +8,24 @@ import {
   assertPayrollMutable,
 } from "@/lib/hr/services/operation-guards";
 import { HrError } from "@/lib/hr/errors";
+import {
+  employeeBranchWhere,
+  employeeOwnBranchWhere,
+  type HrServiceContext,
+} from "@/lib/hr/services/shared";
+
+function ctx(partial: Partial<HrServiceContext>): HrServiceContext {
+  return {
+    organizationId: "org",
+    branchId: null,
+    permissions: [],
+    platformRoles: [],
+    contextMode: "membership",
+    allowedBranchIds: null,
+    actorAuthUserId: "actor",
+    ...partial,
+  };
+}
 
 test("operational mutations require an explicit confirmation", () => {
   assert.throws(() => assertConfirmed(false), HrError);
@@ -27,4 +45,23 @@ test("inaccurate and out-of-fence clock readings are rejected", () => {
 test("approved payroll snapshots cannot be recalculated", () => {
   assert.throws(() => assertPayrollMutable("APPROVED"), HrError);
   assert.doesNotThrow(() => assertPayrollMutable("REVIEW"));
+});
+
+test("header branch filters employees even for org-wide admins", () => {
+  assert.deepEqual(employeeBranchWhere(ctx({ branchId: "b1" })), {
+    employee: { branchId: "b1" },
+  });
+  assert.deepEqual(employeeOwnBranchWhere(ctx({ branchId: "b1" })), {
+    branchId: "b1",
+  });
+  assert.deepEqual(
+    employeeBranchWhere(
+      ctx({ branchId: null, allowedBranchIds: ["b2", "b3"] }),
+    ),
+    { employee: { branchId: { in: ["b2", "b3"] } } },
+  );
+  assert.deepEqual(
+    employeeBranchWhere(ctx({ branchId: null, allowedBranchIds: null })),
+    {},
+  );
 });

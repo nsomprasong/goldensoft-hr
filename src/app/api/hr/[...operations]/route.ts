@@ -3,20 +3,83 @@ import { hrOperationSchema } from "@/lib/hr/schemas";
 import {
   approvalInbox, assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, deleteCalendar, deleteHoliday, deleteSchedulePeriod, getSchedulePeriod, issuePayslips,
-  assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listWorkLocations,
-  markNotificationRead, payrollAction, report, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
+  assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listShiftMismatchRequests, listWorkLocations,
+  markNotificationRead, payrollAction, report, resolveSelfEmployee, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, reviewShiftMismatchRequest, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
   toCsv, updateSchedulePeriod, updateWorkLocation,
 } from "@/lib/hr/services/operations";
-
+import {
+  getPayrollRun,
+  getPayslip,
+  listOrgPayslips,
+  listPayrollRuns,
+  listSelfPayslips,
+} from "@/lib/hr/services/payroll-runs";
+import {
+  getPayrollDeductionSettings,
+  upsertPayrollDeductionSettings,
+} from "@/lib/hr/services/payroll-deduction-settings";
+import {
+  attachAdvanceTransferSlip,
+  cancelSalaryAdvance,
+  listAdvancePeriodOptions,
+  listMySalaryAdvances,
+  listPendingSalaryAdvances,
+  listSalaryAdvances,
+  reviewSalaryAdvance,
+  submitSalaryAdvance,
+} from "@/lib/hr/services/salary-advances";
 export const dynamic = "force-dynamic";
 type Params = { operations: string[] };
 
+async function slipFromForm(
+  form: FormData,
+): Promise<{ buffer: Buffer; originalName: string; contentType: string | null } | null> {
+  const file = form.get("transferSlip") ?? form.get("file");
+  if (!(file instanceof File) || file.size <= 0) return null;
+  return {
+    buffer: Buffer.from(await file.arrayBuffer()),
+    originalName: file.name || "transfer-slip.jpg",
+    contentType: file.type || null,
+  };
+}
+
 async function dispatch(request: Request, params: Params): Promise<Response> {
   const path = params.operations.join("/");
-  const body: any =
-    request.method === "GET" || request.method === "DELETE"
-      ? {}
-      : await parseJsonBody(request, hrOperationSchema);
+  const contentType = request.headers.get("content-type") ?? "";
+  const isAdvanceMultipart =
+    contentType.includes("multipart/form-data") &&
+    (path === "advances" || path.startsWith("advances/"));
+
+  let body: any = {};
+  let transferSlip: Awaited<ReturnType<typeof slipFromForm>> = null;
+  if (request.method !== "GET" && request.method !== "DELETE") {
+    if (isAdvanceMultipart) {
+      const form = await request.formData();
+      const autoRaw = String(form.get("autoApprove") ?? "");
+      body = {
+        action: String(form.get("action") ?? "") || undefined,
+        employeeId: String(form.get("employeeId") ?? "") || undefined,
+        amount: form.get("amount") != null && String(form.get("amount")) !== ""
+          ? Number(form.get("amount"))
+          : undefined,
+        advanceDate: String(form.get("advanceDate") ?? "") || undefined,
+        reason: String(form.get("reason") ?? "") || undefined,
+        installmentCount:
+          form.get("installmentCount") != null &&
+          String(form.get("installmentCount")) !== ""
+            ? Number(form.get("installmentCount"))
+            : undefined,
+        startPayrollPeriodId:
+          String(form.get("startPayrollPeriodId") ?? "") || undefined,
+        disbursementMode: String(form.get("disbursementMode") ?? "") || undefined,
+        autoApprove: autoRaw === "true" || autoRaw === "1",
+        reviewNote: String(form.get("reviewNote") ?? "") || undefined,
+      };
+      transferSlip = await slipFromForm(form);
+    } else {
+      body = await parseJsonBody(request, hrOperationSchema);
+    }
+  }
   const { service } = await requireHrApi(request);
   if (path === "work-locations") {
     if (request.method === "GET") return jsonResponse(await listWorkLocations(service, new URL(request.url).searchParams.get("branchId")));
@@ -111,14 +174,41 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     }
     return jsonResponse(await createAttendanceAdjustment(service, body), 201);
   }
+  if (path === "attendance/shift-mismatches") {
+    if (request.method === "GET") {
+      const params = new URL(request.url).searchParams;
+      return jsonResponse(
+        await listShiftMismatchRequests(service, {
+          status: params.get("status"),
+        }),
+      );
+    }
+    if (body.action === "approve" || body.action === "reject") {
+      return jsonResponse(
+        await reviewShiftMismatchRequest(
+          service,
+          body.id,
+          body.action === "approve",
+          body.reason,
+        ),
+      );
+    }
+    return jsonResponse(
+      { error: { message: "รองรับเฉพาะ approve / reject" } },
+      400,
+    );
+  }
   if (path === "leave/requests") {
     if (request.method === "GET") {
       const params = new URL(request.url).searchParams;
       const scopeRaw = params.get("scope");
+      const viewRaw = params.get("view");
       return jsonResponse(
         await listLeaveRequests(service, {
           status: params.get("status"),
           scope: scopeRaw === "self" || scopeRaw === "org" ? scopeRaw : null,
+          view:
+            viewRaw === "inbox" || viewRaw === "all" ? viewRaw : null,
         }),
       );
     }
@@ -174,10 +264,13 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     if (request.method === "GET") {
       const params = new URL(request.url).searchParams;
       const scopeRaw = params.get("scope");
+      const viewRaw = params.get("view");
       return jsonResponse(
         await listOvertimeRequests(service, {
           status: params.get("status"),
           scope: scopeRaw === "self" || scopeRaw === "org" ? scopeRaw : null,
+          view:
+            viewRaw === "inbox" || viewRaw === "all" ? viewRaw : null,
         }),
       );
     }
@@ -194,13 +287,98 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     return jsonResponse(await submitOvertime(service, body), 201);
   }
   if (path === "pay-items") return jsonResponse(request.method === "GET" ? await listPayItems(service, new URL(request.url).searchParams.get("employeeId") ?? undefined) : await saveRecurringPayItem(service, body, body.id));
-  if (path === "payroll/runs") return jsonResponse(request.method === "POST" ? await createPayrollRun(service, String(body.payrollPeriodId)) : []);
+  if (path === "advances/period-options") {
+    return jsonResponse(await listAdvancePeriodOptions(service));
+  }
+  if (path === "advances/me") {
+    if (request.method === "GET") {
+      const self = await resolveSelfEmployee(service);
+      if (!self) {
+        return jsonResponse(
+          { error: { code: "NOT_FOUND", message: "ไม่พบบัญชีพนักงาน" } },
+          404,
+        );
+      }
+      return jsonResponse(await listMySalaryAdvances(service, self.id));
+    }
+    return jsonResponse(
+      await submitSalaryAdvance(service, body, { selfOnly: true }),
+      201,
+    );
+  }
+  if (path === "advances/pending") {
+    return jsonResponse(await listPendingSalaryAdvances(service));
+  }
+  if (path === "advances") {
+    if (request.method === "GET") return jsonResponse(await listSalaryAdvances(service));
+    return jsonResponse(
+      await submitSalaryAdvance(service, {
+        ...body,
+        autoApprove: body.autoApprove ?? false,
+        transferSlip: transferSlip ?? undefined,
+      }),
+      201,
+    );
+  }
+  if (path.startsWith("advances/") && request.method === "POST") {
+    const advanceId = params.operations[1];
+    if (path.endsWith("/cancel")) {
+      return jsonResponse(await cancelSalaryAdvance(service, advanceId));
+    }
+    if (path.endsWith("/slip")) {
+      if (!transferSlip) {
+        return jsonResponse(
+          {
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "กรุณาแนบสลิปโอนเงิน",
+            },
+          },
+          400,
+        );
+      }
+      return jsonResponse(
+        await attachAdvanceTransferSlip(service, advanceId, transferSlip),
+      );
+    }
+    if (path.endsWith("/review") || body.action === "approve" || body.action === "reject") {
+      return jsonResponse(
+        await reviewSalaryAdvance(
+          service,
+          advanceId,
+          body.action === "approve" || path.endsWith("/approve"),
+          {
+            ...body,
+            transferSlip: transferSlip ?? undefined,
+          },
+        ),
+      );
+    }
+  }
+  if (path === "payroll/deduction-settings") {
+    if (request.method === "GET") return jsonResponse(await getPayrollDeductionSettings(service));
+    return jsonResponse(await upsertPayrollDeductionSettings(service, body));
+  }
+  if (path === "payroll/runs") {
+    if (request.method === "GET") return jsonResponse(await listPayrollRuns(service));
+    return jsonResponse(await createPayrollRun(service, String(body.payrollPeriodId)), 201);
+  }
   if (path.startsWith("payroll/runs/")) {
     const id = params.operations[2];
-    if (path.endsWith("/actions")) return jsonResponse(await payrollAction(service, id, body.action));
-    return jsonResponse(await issuePayslips(service, id));
+    if (path.endsWith("/actions")) return jsonResponse(await payrollAction(service, id, String(body.action)));
+    if (path.endsWith("/issue") || (request.method === "POST" && !path.endsWith("/actions"))) {
+      return jsonResponse(await issuePayslips(service, id));
+    }
+    if (request.method === "GET") return jsonResponse(await getPayrollRun(service, id));
+    return jsonResponse({ error: { code: "METHOD_NOT_ALLOWED", message: "ไม่รองรับคำขอนี้" } }, 405);
   }
-  if (path === "payslips") return jsonResponse(await selfService(service, "payslips"));
+  if (path === "payslips") {
+    if (request.method === "GET") return jsonResponse(await listOrgPayslips(service));
+  }
+  if (path === "payslips/self") return jsonResponse(await listSelfPayslips(service));
+  if (path.startsWith("payslips/") && params.operations[1] !== "self") {
+    return jsonResponse(await getPayslip(service, params.operations[1]));
+  }
   if (path === "approvals") return jsonResponse(await approvalInbox(service));
   if (path === "notifications") return jsonResponse(request.method === "POST" ? await createNotification(service, body) : await listNotifications(service));
   if (path.startsWith("notifications/")) return jsonResponse(await markNotificationRead(service, params.operations[1]));

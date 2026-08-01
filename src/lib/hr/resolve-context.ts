@@ -156,6 +156,9 @@ export async function resolveHrRequestContext(
   const hrPermissions = hrPermissionsForOrganizationRoles(
     contextMode === "platform_admin" ? ["OWNER"] : membershipRoles,
   );
+  const membershipBranchIds = Array.isArray(membership?.branches)
+    ? membership.branches.map((row) => row.id)
+    : null;
 
   return {
     authUserId: me.user.id,
@@ -172,6 +175,7 @@ export async function resolveHrRequestContext(
     branch: me.activeBranch,
     contextMode,
     membershipRoles,
+    membershipBranchIds,
     entitlements: {
       [HR_ENTITLEMENTS.access]: access,
       [HR_ENTITLEMENTS.employeeLimit]: employeeLimit,

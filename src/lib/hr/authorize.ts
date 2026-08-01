@@ -61,6 +61,25 @@ export function assertBranchInScope(
   }
 }
 
+/**
+ * When the shell header has a specific branch selected, operational records
+ * (schedules, etc.) must belong to that branch — even for org-wide admins.
+ * "ทุกสาขา" (null selection) skips this filter.
+ */
+export function assertMatchesSelectedBranch(
+  ctx: HrAccessContext,
+  recordBranchId: string | null | undefined,
+): void {
+  if (!ctx.branchId || !recordBranchId) return;
+  if (ctx.branchId === recordBranchId) return;
+  throw new HrError("BRANCH_OUT_OF_SCOPE", {
+    details: {
+      branchId: recordBranchId,
+      selectedBranchId: ctx.branchId,
+    },
+  });
+}
+
 /** Guard against records that leaked in from another tenant. */
 export function assertSameOrganization(
   ctx: HrAccessContext,

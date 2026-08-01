@@ -4,12 +4,24 @@
  * tables and must not silently discard operational fields.
  */
 import { prisma } from "@/lib/prisma";
-import { assertBranchInScope, assertHrPermission, hrCan } from "@/lib/hr/authorize";
+import {
+  assertBranchInScope,
+  assertHrPermission,
+  assertMatchesSelectedBranch,
+  hrCan,
+} from "@/lib/hr/authorize";
 import { nextCodeFromList } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { insideGeofence } from "@/lib/hr/geo";
 import { calculateAttendanceDay } from "@/lib/hr/attendance-calc";
 import { calculatePayroll } from "@/lib/hr/payroll-calc";
+import { loadDeductionRatesForOrg } from "@/lib/hr/services/payroll-deduction-settings";
+import {
+  loadAdvanceEffectsForPeriod,
+  loadLegacyApprovedAdvancesByEmployee,
+  markAdvanceEffectsApplied,
+  reopenAdvanceEffectsForRun,
+} from "@/lib/hr/services/salary-advances";
 import {
   attendanceEventPhotoPublicPath,
   decodePhotoBase64,
@@ -18,7 +30,11 @@ import {
 import { findOverlappingAssignments } from "@/lib/hr/schedule-conflicts";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import {
+  normalizePagination,
+  employeeBranchWhere,
+  employeeOwnBranchWhere,
   resolveBranchScope,
+  toPagedResponse,
   type HrServiceContext,
 } from "@/lib/hr/services/shared";
 import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
@@ -32,6 +48,11 @@ import {
   assertNoSelfApproval,
   assertPayrollMutable,
 } from "@/lib/hr/services/operation-guards";
+import {
+  evaluateShiftMismatch,
+  formatShiftHm,
+  type ShiftClockParts,
+} from "@/lib/hr/shift-window";
 
 export { assertConfirmed, assertNoSelfApproval, assertPayrollMutable } from "@/lib/hr/services/operation-guards";
 
@@ -39,6 +60,68 @@ type Db = typeof prisma & Record<string, any>;
 const db = prisma as Db;
 const date = (value: string | Date) => new Date(value);
 const actor = (ctx: HrServiceContext) => ctx.actorAuthUserId;
+
+/** Prisma where fragment: header branch + membership allow-list. */
+function employeeBranchScopeWhere(ctx: HrServiceContext) {
+  return employeeBranchWhere(ctx);
+}
+
+async function resolveActorDisplayName(ctx: HrServiceContext): Promise<string> {
+  const fromCtx = ctx.actorDisplayName?.trim();
+  if (fromCtx) return fromCtx;
+  const authUserId = actor(ctx);
+  if (!authUserId) return "ผู้อนุมัติ";
+  const emp = await db.employee.findFirst({
+    where: { organizationId: ctx.organizationId, authUserId },
+    select: { displayName: true, firstNameTh: true, lastNameTh: true },
+  });
+  return (
+    emp?.displayName?.trim() ||
+    `${emp?.firstNameTh ?? ""} ${emp?.lastNameTh ?? ""}`.trim() ||
+    "ผู้อนุมัติ"
+  );
+}
+
+/** Persist reviewer display name even when Prisma client is not yet regenerated. */
+async function stampReviewedByName(
+  table:
+    | "leave_requests"
+    | "overtime_requests"
+    | "attendance_adjustments"
+    | "shift_mismatch_requests",
+  id: string,
+  name: string,
+) {
+  try {
+    if (table === "leave_requests") {
+      await db.$executeRaw`
+        UPDATE hr.leave_requests
+        SET reviewed_by_name = ${name}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `;
+    } else if (table === "overtime_requests") {
+      await db.$executeRaw`
+        UPDATE hr.overtime_requests
+        SET reviewed_by_name = ${name}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `;
+    } else if (table === "attendance_adjustments") {
+      await db.$executeRaw`
+        UPDATE hr.attendance_adjustments
+        SET reviewed_by_name = ${name}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `;
+    } else {
+      await db.$executeRaw`
+        UPDATE hr.shift_mismatch_requests
+        SET reviewed_by_name = ${name}, updated_at = NOW()
+        WHERE id = ${id}::uuid
+      `;
+    }
+  } catch {
+    // Column may be missing on older DBs; id/auth user still recorded.
+  }
+}
 
 function requireIsoDate(value: unknown, label: string): Date {
   const raw = String(value ?? "").trim().slice(0, 10);
@@ -565,6 +648,7 @@ export async function getSchedulePeriod(ctx: HrServiceContext, id: string) {
   });
   if (!row) throw new HrError("NOT_FOUND");
   if (row.branchId) assertBranchInScope(ctx, row.branchId);
+  assertMatchesSelectedBranch(ctx, row.branchId);
 
   let periodShifts: unknown[] = [];
   try {
@@ -620,6 +704,7 @@ export async function getScheduleShiftBoard(
   if (!period) throw new HrError("NOT_FOUND");
   const periodBranchId = requirePeriodBranchId(period);
   assertBranchInScope(ctx, periodBranchId);
+  assertMatchesSelectedBranch(ctx, periodBranchId);
 
   const shift = await db.shift.findFirst({
     where: { id: shiftId, organizationId: ctx.organizationId },
@@ -1077,6 +1162,7 @@ async function changeShiftOnDates(
   const period = await owned("schedulePeriod", ctx, schedulePeriodId);
   const periodBranchId = requirePeriodBranchId(period);
   assertBranchInScope(ctx, periodBranchId);
+  assertMatchesSelectedBranch(ctx, periodBranchId);
   await assertEmployeesBelongToBranch(ctx, [employeeId], periodBranchId);
   await ensurePeriodShiftLink(schedulePeriodId, toShiftId);
 
@@ -1117,6 +1203,48 @@ async function changeShiftOnDates(
   return { ok: true, count: existing.length, action: "changeShift" };
 }
 
+/** Internal one-day move used by shift-mismatch approval (no header-branch gate). */
+async function applyApprovedShiftMismatchMove(input: {
+  organizationId: string;
+  schedulePeriodId: string;
+  employeeId: string;
+  fromShiftId: string;
+  toShiftId: string;
+  workDate: Date;
+}) {
+  await ensurePeriodShiftLink(input.schedulePeriodId, input.toShiftId);
+  const existing = await db.shiftAssignment.findMany({
+    where: {
+      schedulePeriodId: input.schedulePeriodId,
+      employeeId: input.employeeId,
+      shiftId: input.fromShiftId,
+      workDate: input.workDate,
+    },
+    select: { id: true, notes: true },
+  });
+  if (existing.length === 0) {
+    throw new HrError("NOT_FOUND", {
+      message: "ไม่พบกะของพนักงานในวันที่เลือก",
+    });
+  }
+  const fromShift = await db.shift.findFirst({
+    where: { id: input.fromShiftId, organizationId: input.organizationId },
+    select: { name: true },
+  });
+  const fromShiftNote = encodeFromShiftNote(fromShift?.name ?? "กะอื่น");
+  await db.$transaction(
+    existing.map((row: { id: string; notes: string | null }) =>
+      db.shiftAssignment.update({
+        where: { id: row.id },
+        data: {
+          shiftId: input.toShiftId,
+          notes: mergeScheduleNotes(row.notes, fromShiftNote),
+        },
+      }),
+    ),
+  );
+}
+
 /** คนอื่นทำงานแทนในวันที่เลือก (กะเดิม) */
 async function substituteOnDates(
   ctx: HrServiceContext,
@@ -1146,6 +1274,7 @@ async function substituteOnDates(
   const period = await owned("schedulePeriod", ctx, schedulePeriodId);
   const periodBranchId = requirePeriodBranchId(period);
   assertBranchInScope(ctx, periodBranchId);
+  assertMatchesSelectedBranch(ctx, periodBranchId);
   await assertEmployeesBelongToBranch(
     ctx,
     [employeeId, substituteEmployeeId],
@@ -1222,6 +1351,7 @@ export async function scheduleAction(ctx: HrServiceContext, id: string, input: a
   const period = await owned("schedulePeriod", ctx, id); const status = await db.schedulePeriodStatus.findUnique({ where: { id: period.statusId } });
   mutable(status?.code ?? "DRAFT"); assertConfirmed(input.confirm);
   if (period.branchId) assertBranchInScope(ctx, period.branchId);
+  assertMatchesSelectedBranch(ctx, period.branchId);
   if (input.action === "publish" || input.action === "unpublish" || input.action === "lock") {
     assertHrPermission(ctx, input.action === "publish" ? HR_PERMISSIONS.schedulePublish : HR_PERMISSIONS.scheduleManage);
     const code = input.action === "publish" ? "PUBLISHED" : input.action === "lock" ? "LOCKED" : "DRAFT";
@@ -1633,6 +1763,8 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
         ? dayRow.earlyLeaveMinutes
         : computed.earlyLeaveMinutes;
 
+    const plannedClockIn = formatShiftClock(assignment?.shift?.startTime);
+    const plannedClockOut = formatShiftClock(assignment?.shift?.endTime);
     return {
       workDate: day,
       workLocation: serializeWorkLocation(workLocation),
@@ -1646,6 +1778,9 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
                 dutyLabel: assignment?.shift?.name ?? "—",
                 isRestDay: Boolean(assignment?.isRestDay),
                 isLeaveDay: Boolean(assignment?.isLeaveDay),
+                plannedClockIn,
+                plannedClockOut,
+                crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
                 clockInAt: clockInAt ? clockInAt.toISOString() : null,
                 clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
                 lateMinutes,
@@ -1694,6 +1829,7 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
       clockOutAt: Date | null;
       lateMinutes: number | null;
       earlyLeaveMinutes: number | null;
+      shiftMismatchStatus?: string | null;
     }
   >();
   for (const row of dayRows as Array<{
@@ -1703,8 +1839,33 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
     clockOutAt: Date | null;
     lateMinutes: number | null;
     earlyLeaveMinutes: number | null;
+    shiftMismatchStatus?: string | null;
   }>) {
-    dayByIso.set(row.workDate.toISOString().slice(0, 10), row);
+    dayByIso.set(row.workDate.toISOString().slice(0, 10), {
+      ...row,
+      shiftMismatchStatus: row.shiftMismatchStatus ?? null,
+    });
+  }
+  // Fill mismatch flags even if Prisma client predates the column.
+  try {
+    const mismatchFlags = await db.$queryRaw<
+      Array<{ work_date: Date; shift_mismatch_status: string | null }>
+    >`
+      SELECT work_date, shift_mismatch_status
+      FROM hr.attendance_days
+      WHERE employee_id = ${employee.id}::uuid
+        AND work_date >= ${date(firstDay)}::date
+        AND work_date <= ${date(lastDay)}::date
+    `;
+    for (const flag of mismatchFlags) {
+      const iso = flag.work_date.toISOString().slice(0, 10);
+      const existing = dayByIso.get(iso);
+      if (existing) {
+        existing.shiftMismatchStatus = flag.shift_mismatch_status;
+      }
+    }
+  } catch {
+    // column not migrated yet
   }
 
   const eventsByDay = new Map<
@@ -1775,6 +1936,12 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
       dutyLabel,
       isRestDay: assignment.isRestDay,
       isLeaveDay: assignment.isLeaveDay,
+      plannedClockIn: formatShiftClock(assignment.shift?.startTime),
+      plannedClockOut: formatShiftClock(assignment.shift?.endTime),
+      crossesMidnight: assignment.shift?.crossesMidnight ?? false,
+      shiftMismatchStatus:
+        (dayRow as { shiftMismatchStatus?: string | null } | null)
+          ?.shiftMismatchStatus ?? null,
       clockInAt: clockInAt ? clockInAt.toISOString() : null,
       clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
       lateMinutes,
@@ -1790,6 +1957,13 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
     });
   }
 
+  const now = new Date();
+  const mismatchHint = await resolveClockShiftMismatch(
+    employee.id,
+    today,
+    now,
+  );
+
   return {
     workDate: today,
     workLocation: serializeWorkLocation(workLocation),
@@ -1801,6 +1975,12 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
       statusCode: currentPeriod.status.code,
       statusName: currentPeriod.status.name,
     },
+    shiftMismatchHint: mismatchHint.isMismatch
+      ? {
+          assignedShift: serializeShiftHint(mismatchHint.assigned),
+          suggestedShift: serializeShiftHint(mismatchHint.suggested),
+        }
+      : null,
     days,
   };
 }
@@ -1822,6 +2002,161 @@ function photoError(code: string): HrError {
     });
   }
   return new HrError("VALIDATION_ERROR", { message: "อัปโหลดรูปหลักฐานไม่สำเร็จ" });
+}
+
+function serializeShiftHint(shift: ShiftClockParts | null) {
+  if (!shift) return null;
+  return {
+    id: shift.id,
+    name: shift.name,
+    startTime: formatShiftHm(shift.startTime),
+    endTime: formatShiftHm(shift.endTime),
+    crossesMidnight: Boolean(shift.crossesMidnight),
+  };
+}
+
+async function createShiftMismatchRequestRow(data: {
+  organizationId: string;
+  employeeId: string;
+  workDate: Date;
+  schedulePeriodId: string;
+  fromShiftId: string;
+  toShiftId: string;
+  attendanceDayId: string | null;
+  attendanceEventId: string | null;
+  reason: string;
+  statusId: string;
+  requestedByAuthUserId: string;
+}) {
+  if (db.shiftMismatchRequest?.create) {
+    return db.shiftMismatchRequest.create({ data });
+  }
+  // Fallback before prisma generate picks up the new model.
+  await db.$executeRaw`
+    INSERT INTO hr.shift_mismatch_requests (
+      id, organization_id, employee_id, work_date, schedule_period_id,
+      from_shift_id, to_shift_id, attendance_day_id, attendance_event_id,
+      reason, status_id, requested_by_auth_user_id, created_at, updated_at
+    ) VALUES (
+      gen_random_uuid(),
+      ${data.organizationId}::uuid,
+      ${data.employeeId}::uuid,
+      ${data.workDate}::date,
+      ${data.schedulePeriodId}::uuid,
+      ${data.fromShiftId}::uuid,
+      ${data.toShiftId}::uuid,
+      ${data.attendanceDayId}::uuid,
+      ${data.attendanceEventId}::uuid,
+      ${data.reason},
+      ${data.statusId}::uuid,
+      ${data.requestedByAuthUserId}::uuid,
+      NOW(), NOW()
+    )
+  `;
+  return null;
+}
+
+async function hasPendingShiftMismatch(
+  organizationId: string,
+  employeeId: string,
+  workDate: Date,
+): Promise<boolean> {
+  if (db.shiftMismatchRequest?.findFirst) {
+    const row = await db.shiftMismatchRequest.findFirst({
+      where: {
+        organizationId,
+        employeeId,
+        workDate,
+        status: { code: "SUBMITTED" },
+      },
+      select: { id: true },
+    });
+    return Boolean(row);
+  }
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT r.id::text AS id
+    FROM hr.shift_mismatch_requests r
+    JOIN hr.leave_request_statuses s ON s.id = r.status_id
+    WHERE r.organization_id = ${organizationId}::uuid
+      AND r.employee_id = ${employeeId}::uuid
+      AND r.work_date = ${workDate}::date
+      AND s.code = 'SUBMITTED'
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+async function resolveClockShiftMismatch(
+  employeeId: string,
+  workDateIso: string,
+  occurredAt: Date,
+) {
+  const workDate = date(workDateIso);
+  const assignment = await db.shiftAssignment.findFirst({
+    where: { employeeId, workDate },
+    include: {
+      shift: {
+        select: {
+          id: true,
+          name: true,
+          startTime: true,
+          endTime: true,
+          crossesMidnight: true,
+        },
+      },
+    },
+    orderBy: { sequenceNo: "asc" },
+  });
+  if (
+    !assignment?.shift ||
+    assignment.isRestDay ||
+    assignment.isLeaveDay
+  ) {
+    return {
+      isMismatch: false,
+      assigned: null as ShiftClockParts | null,
+      suggested: null as ShiftClockParts | null,
+      schedulePeriodId: null as string | null,
+    };
+  }
+
+  const periodLinks = (await loadPeriodShiftRows(
+    assignment.schedulePeriodId,
+  ).catch(() => [])) as Array<{
+    shift?: {
+      id: string;
+      name: string;
+      startTime: Date;
+      endTime: Date;
+      crossesMidnight?: boolean;
+      isActive?: boolean;
+    };
+  }>;
+
+  const candidates: ShiftClockParts[] = [];
+  const seen = new Set<string>();
+  const pushShift = (shift: ShiftClockParts) => {
+    if (seen.has(shift.id)) return;
+    seen.add(shift.id);
+    candidates.push(shift);
+  };
+  pushShift(assignment.shift);
+  for (const link of periodLinks) {
+    if (!link.shift || link.shift.isActive === false) continue;
+    pushShift(link.shift);
+  }
+
+  const evaluated = evaluateShiftMismatch({
+    workDate: workDateIso,
+    occurredAt,
+    assigned: assignment.shift,
+    candidates,
+  });
+
+  return {
+    ...evaluated,
+    schedulePeriodId: assignment.schedulePeriodId as string,
+  };
 }
 
 export async function clock(ctx: HrServiceContext, input: any) {
@@ -1938,6 +2273,65 @@ export async function clock(ctx: HrServiceContext, input: any) {
     });
   }
 
+  let mismatchForRequest: {
+    schedulePeriodId: string;
+    fromShiftId: string;
+    toShiftId: string;
+    assignedName: string;
+    suggestedName: string;
+  } | null = null;
+  if (type.code === "CLOCK_IN") {
+    const mismatch = await resolveClockShiftMismatch(
+      employee.id,
+      day,
+      occurredAt,
+    );
+    if (mismatch.isMismatch && mismatch.assigned && mismatch.schedulePeriodId) {
+      const confirmed =
+        input.confirmShiftMismatch === true ||
+        input.confirmShiftMismatch === "true";
+      const requestedShiftId =
+        typeof input.requestedShiftId === "string"
+          ? input.requestedShiftId.trim()
+          : "";
+      const toShiftId = requestedShiftId || mismatch.suggested?.id || "";
+      if (!confirmed) {
+        throw new HrError("VALIDATION_ERROR", {
+          message:
+            "เวลาเข้างานไม่ตรงกับกะที่ถูกจัด — กรุณายืนยันเพื่อลงเวลาและขออนุมัติย้ายกะ",
+          details: {
+            code: "SHIFT_MISMATCH",
+            assignedShift: serializeShiftHint(mismatch.assigned),
+            suggestedShift: serializeShiftHint(mismatch.suggested),
+          },
+        });
+      }
+      if (!toShiftId) {
+        throw new HrError("VALIDATION_ERROR", {
+          message: "ไม่พบกะที่แนะนำสำหรับเวลานี้ — ติดต่อหัวหน้าเพื่อจัดกะก่อน",
+          details: {
+            code: "SHIFT_MISMATCH_NO_SUGGESTION",
+            assignedShift: serializeShiftHint(mismatch.assigned),
+          },
+        });
+      }
+      const toShift = await db.shift.findFirst({
+        where: { id: toShiftId, organizationId: ctx.organizationId },
+        select: { id: true, name: true },
+      });
+      if (!toShift) {
+        throw new HrError("NOT_FOUND", { message: "ไม่พบกะที่ขอเปลี่ยน" });
+      }
+      mismatchForRequest = {
+        schedulePeriodId: mismatch.schedulePeriodId,
+        fromShiftId: mismatch.assigned.id,
+        toShiftId: toShift.id,
+        assignedName: mismatch.assigned.name,
+        suggestedName: toShift.name,
+      };
+    }
+  }
+
   const created = await db.attendanceEvent.create({ data: { organizationId: ctx.organizationId, branchId: employee.branchId, employeeId: employee.id, eventTypeId: type.id, occurredAt, latitude: input.latitude ?? null, longitude: input.longitude ?? null, workLocationId: location.id, geofenceDistanceMeters: distance, idempotencyKey, source: "WEB" } });
 
   let photoUrl = attendanceEventPhotoPublicPath(created.id);
@@ -1989,7 +2383,7 @@ export async function clock(ctx: HrServiceContext, input: any) {
     graceEarlyLeaveMinutes: assignment?.shift?.graceEarlyLeaveMinutes ?? 0,
     crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
   });
-  await db.attendanceDay.upsert({
+  const dayRow = await db.attendanceDay.upsert({
     where: { employeeId_workDate: { employeeId: employee.id, workDate } },
     create: {
       organizationId: ctx.organizationId,
@@ -2013,7 +2407,43 @@ export async function clock(ctx: HrServiceContext, input: any) {
     },
   });
 
-  return { ...created, photoUrl };
+  if (mismatchForRequest) {
+    await db.$executeRaw`
+      UPDATE hr.attendance_days
+      SET shift_mismatch_status = 'PENDING', updated_at = NOW()
+      WHERE id = ${dayRow.id}::uuid
+    `.catch(() => undefined);
+  }
+
+  if (mismatchForRequest && actor(ctx)) {
+    const submitted = await master("leaveRequestStatus", "SUBMITTED");
+    const existingPending = await hasPendingShiftMismatch(
+      ctx.organizationId,
+      employee.id,
+      workDate,
+    );
+    if (!existingPending) {
+      await createShiftMismatchRequestRow({
+        organizationId: ctx.organizationId,
+        employeeId: employee.id,
+        workDate,
+        schedulePeriodId: mismatchForRequest.schedulePeriodId,
+        fromShiftId: mismatchForRequest.fromShiftId,
+        toShiftId: mismatchForRequest.toShiftId,
+        attendanceDayId: dayRow.id,
+        attendanceEventId: created.id,
+        reason: `ลงเวลาผิดกะ — จาก${mismatchForRequest.assignedName} เป็น${mismatchForRequest.suggestedName}`,
+        statusId: submitted.id,
+        requestedByAuthUserId: actor(ctx)!,
+      });
+    }
+  }
+
+  return {
+    ...created,
+    photoUrl,
+    shiftMismatchPending: Boolean(mismatchForRequest),
+  };
 }
 
 export async function listAttendanceDays(ctx: HrServiceContext, input: any = {}) {
@@ -2112,6 +2542,7 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
         clockOutAt: Date | null;
         lateMinutes: number;
         earlyLeaveMinutes: number;
+        shiftMismatchStatus?: string | null;
         employee: {
           firstNameTh: string;
           lastNameTh: string;
@@ -2132,6 +2563,7 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
           photoUrl: row.employee.photoUrl,
           statusCode: row.status.code,
           statusName: row.status.name,
+          shiftMismatchStatus: row.shiftMismatchStatus ?? null,
           clockInAt: row.clockInAt ? row.clockInAt.toISOString() : null,
           clockOutAt: row.clockOutAt ? row.clockOutAt.toISOString() : null,
           lateMinutes: row.lateMinutes,
@@ -2275,7 +2707,9 @@ export async function listAttendanceAdjustments(
   return db.attendanceAdjustment.findMany({
     where: {
       organizationId: ctx.organizationId,
-      ...(self ? { employeeId: self.id } : {}),
+      ...(self
+        ? { employeeId: self.id }
+        : employeeBranchScopeWhere(ctx)),
       ...(statusCode ? { status: { code: statusCode } } : {}),
     },
     include: {
@@ -2387,7 +2821,7 @@ export async function reviewAttendanceAdjustment(
   const row = await db.attendanceAdjustment.findFirst({
     where: { id, organizationId: ctx.organizationId },
     include: {
-      employee: { select: { authUserId: true } },
+      employee: { select: { authUserId: true, branchId: true } },
       status: { select: { code: true } },
     },
   });
@@ -2397,6 +2831,7 @@ export async function reviewAttendanceAdjustment(
       message: "คำขอนี้ไม่อยู่ในสถานะรออนุมัติ",
     });
   }
+  assertBranchInScope(ctx, row.employee?.branchId);
   assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
 
   if (approve) {
@@ -2407,7 +2842,8 @@ export async function reviewAttendanceAdjustment(
     "leaveRequestStatus",
     approve ? "APPROVED" : "REJECTED",
   );
-  return db.attendanceAdjustment.update({
+  const reviewedByName = await resolveActorDisplayName(ctx);
+  const updated = await db.attendanceAdjustment.update({
     where: { id },
     data: {
       statusId: status.id,
@@ -2420,6 +2856,8 @@ export async function reviewAttendanceAdjustment(
       status: { select: { id: true, code: true, name: true } },
     },
   });
+  await stampReviewedByName("attendance_adjustments", id, reviewedByName);
+  return { ...updated, reviewedByName };
 }
 
 const leaveEmployeeSelect = {
@@ -2842,9 +3280,47 @@ async function clearLeaveScheduleEffects(
   });
 }
 
+/** Bangkok calendar "today" as UTC date-only (for Prisma `@db.Date` compare). */
+export function bangkokTodayUtcDate(at = new Date()): Date {
+  const iso = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+  return new Date(`${iso}T00:00:00.000Z`);
+}
+
+const DECIDED_LEAVE_STATUSES = ["APPROVED", "REJECTED", "CANCELLED"] as const;
+
+function pendingFirstBySubmitted<
+  T extends {
+    status?: { code?: string | null } | null;
+    submittedAt?: Date | string | null;
+    createdAt?: Date | string | null;
+  },
+>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const aPending = a.status?.code === "SUBMITTED" ? 0 : 1;
+    const bPending = b.status?.code === "SUBMITTED" ? 0 : 1;
+    if (aPending !== bPending) return aPending - bPending;
+    const aAt = new Date(a.submittedAt ?? a.createdAt ?? 0).getTime();
+    const bAt = new Date(b.submittedAt ?? b.createdAt ?? 0).getTime();
+    return bAt - aAt;
+  });
+}
+
 export async function listLeaveRequests(
   ctx: HrServiceContext,
-  input: { status?: string | null; scope?: "self" | "org" | null } = {},
+  input: {
+    status?: string | null;
+    scope?: "self" | "org" | null;
+    /**
+     * `inbox` = pending + decided whose leave endDate is still today or later.
+     * `all` = no date window (explicit status still applies).
+     */
+    view?: "inbox" | "all" | null;
+  } = {},
 ) {
   assertHrPermission(ctx, [
     HR_PERMISSIONS.leaveRead,
@@ -2852,16 +3328,34 @@ export async function listLeaveRequests(
     HR_PERMISSIONS.leaveManage,
   ]);
   const statusCode = input.status?.trim() || null;
+  const view =
+    input.view ??
+    (statusCode || input.scope === "self" ? "all" : "inbox");
   const canSeeOrg =
     hrCan(ctx, HR_PERMISSIONS.leaveManage) ||
     hrCan(ctx, HR_PERMISSIONS.leaveRead);
   const selfOnly = input.scope === "self" || !canSeeOrg;
   const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  const today = bangkokTodayUtcDate();
+  const inboxWhere =
+    view === "inbox"
+      ? {
+          OR: [
+            { status: { code: "SUBMITTED" } },
+            {
+              status: { code: { in: [...DECIDED_LEAVE_STATUSES] } },
+              endDate: { gte: today },
+            },
+          ],
+        }
+      : {};
   const rows = await db.leaveRequest.findMany({
     where: {
       organizationId: ctx.organizationId,
-      ...(self ? { employeeId: self.id } : {}),
-      ...(statusCode ? { status: { code: statusCode } } : {}),
+      ...(self
+        ? { employeeId: self.id }
+        : employeeBranchScopeWhere(ctx)),
+      ...(statusCode ? { status: { code: statusCode } } : inboxWhere),
     },
     include: {
       employee: { select: leaveEmployeeSelect },
@@ -2869,9 +3363,60 @@ export async function listLeaveRequests(
       leaveType: { select: { id: true, code: true, name: true } },
       status: { select: { id: true, code: true, name: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
   });
-  return enrichLeaveRowsWithShifts(rows);
+  const enriched = await enrichLeaveRowsWithShifts(rows);
+  return pendingFirstBySubmitted(enriched);
+}
+
+export async function listLeaveHistory(
+  ctx: HrServiceContext,
+  input: {
+    page?: number;
+    pageSize?: number;
+    scope?: "self" | "org" | null;
+  } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.leaveRead,
+    HR_PERMISSIONS.leaveSelf,
+    HR_PERMISSIONS.leaveManage,
+  ]);
+  const pagination = normalizePagination({
+    page: input.page,
+    pageSize: input.pageSize ?? 10,
+  });
+  const canSeeOrg =
+    hrCan(ctx, HR_PERMISSIONS.leaveManage) ||
+    hrCan(ctx, HR_PERMISSIONS.leaveRead);
+  const selfOnly = input.scope === "self" || !canSeeOrg;
+  const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  const today = bangkokTodayUtcDate();
+  const where = {
+    organizationId: ctx.organizationId,
+    ...(self
+      ? { employeeId: self.id }
+      : employeeBranchScopeWhere(ctx)),
+    status: { code: { in: [...DECIDED_LEAVE_STATUSES] } },
+    endDate: { lt: today },
+  };
+  const [total, rows] = await Promise.all([
+    db.leaveRequest.count({ where }),
+    db.leaveRequest.findMany({
+      where,
+      include: {
+        employee: { select: leaveEmployeeSelect },
+        coverEmployee: { select: leaveEmployeeSelect },
+        leaveType: { select: { id: true, code: true, name: true } },
+        status: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: [{ endDate: "desc" }, { reviewedAt: "desc" }, { createdAt: "desc" }],
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  const enriched = await enrichLeaveRowsWithShifts(rows);
+  return toPagedResponse({ rows: enriched, total }, pagination);
 }
 
 /**
@@ -3146,9 +3691,16 @@ export async function assignLeaveCover(
   return enriched;
 }
 
+const DECIDED_OT_STATUSES = ["APPROVED", "REJECTED", "CANCELLED"] as const;
+
 export async function listOvertimeRequests(
   ctx: HrServiceContext,
-  input: { status?: string | null; scope?: "self" | "org" | null } = {},
+  input: {
+    status?: string | null;
+    scope?: "self" | "org" | null;
+    /** `inbox` = pending + decided whose workDate is still today or later. */
+    view?: "inbox" | "all" | null;
+  } = {},
 ) {
   assertHrPermission(ctx, [
     HR_PERMISSIONS.overtimeRead,
@@ -3156,16 +3708,34 @@ export async function listOvertimeRequests(
     HR_PERMISSIONS.overtimeManage,
   ]);
   const statusCode = input.status?.trim() || null;
+  const view =
+    input.view ??
+    (statusCode || input.scope === "self" ? "all" : "inbox");
   const canSeeOrg =
     hrCan(ctx, HR_PERMISSIONS.overtimeManage) ||
     hrCan(ctx, HR_PERMISSIONS.overtimeRead);
   const selfOnly = input.scope === "self" || !canSeeOrg;
   const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
-  return db.overtimeRequest.findMany({
+  const today = bangkokTodayUtcDate();
+  const inboxWhere =
+    view === "inbox"
+      ? {
+          OR: [
+            { status: { code: "SUBMITTED" } },
+            {
+              status: { code: { in: [...DECIDED_OT_STATUSES] } },
+              workDate: { gte: today },
+            },
+          ],
+        }
+      : {};
+  const rows = await db.overtimeRequest.findMany({
     where: {
       organizationId: ctx.organizationId,
-      ...(self ? { employeeId: self.id } : {}),
-      ...(statusCode ? { status: { code: statusCode } } : {}),
+      ...(self
+        ? { employeeId: self.id }
+        : employeeBranchScopeWhere(ctx)),
+      ...(statusCode ? { status: { code: statusCode } } : inboxWhere),
     },
     include: {
       employee: {
@@ -3181,6 +3751,62 @@ export async function listOvertimeRequests(
     },
     orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
   });
+  return pendingFirstBySubmitted(rows);
+}
+
+export async function listOvertimeHistory(
+  ctx: HrServiceContext,
+  input: {
+    page?: number;
+    pageSize?: number;
+    scope?: "self" | "org" | null;
+  } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.overtimeRead,
+    HR_PERMISSIONS.overtimeSelf,
+    HR_PERMISSIONS.overtimeManage,
+  ]);
+  const pagination = normalizePagination({
+    page: input.page,
+    pageSize: input.pageSize ?? 10,
+  });
+  const canSeeOrg =
+    hrCan(ctx, HR_PERMISSIONS.overtimeManage) ||
+    hrCan(ctx, HR_PERMISSIONS.overtimeRead);
+  const selfOnly = input.scope === "self" || !canSeeOrg;
+  const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  const today = bangkokTodayUtcDate();
+  const where = {
+    organizationId: ctx.organizationId,
+    ...(self
+      ? { employeeId: self.id }
+      : employeeBranchScopeWhere(ctx)),
+    status: { code: { in: [...DECIDED_OT_STATUSES] } },
+    workDate: { lt: today },
+  };
+  const [total, rows] = await Promise.all([
+    db.overtimeRequest.count({ where }),
+    db.overtimeRequest.findMany({
+      where,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            displayName: true,
+            employeeCode: true,
+            photoUrl: true,
+            branchId: true,
+          },
+        },
+        status: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: [{ workDate: "desc" }, { reviewedAt: "desc" }, { createdAt: "desc" }],
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+  return toPagedResponse({ rows, total }, pagination);
 }
 
 export async function submitLeave(ctx: HrServiceContext, input: any) {
@@ -3335,6 +3961,7 @@ export async function reviewLeave(
     },
   });
   if (!row) throw new HrError("NOT_FOUND");
+  assertBranchInScope(ctx, row.employee?.branchId);
   assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
   const status = await master(
     "leaveRequestStatus",
@@ -3365,7 +3992,8 @@ export async function reviewLeave(
     await reverseLeaveUsageIfAny(row.id);
   }
 
-  return db.leaveRequest.update({
+  const reviewedByName = await resolveActorDisplayName(ctx);
+  const updated = await db.leaveRequest.update({
     where: { id },
     data: {
       statusId: status.id,
@@ -3383,6 +4011,8 @@ export async function reviewLeave(
       status: { select: { id: true, code: true, name: true } },
     },
   });
+  await stampReviewedByName("leave_requests", id, reviewedByName);
+  return { ...updated, reviewedByName };
 }
 export async function submitOvertime(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, [
@@ -3449,12 +4079,14 @@ export async function reviewOvertime(ctx: HrServiceContext, id: string, approve:
   assertHrPermission(ctx, HR_PERMISSIONS.overtimeApprove);
   const row = await db.overtimeRequest.findFirst({
     where: { id, organizationId: ctx.organizationId },
-    include: { employee: { select: { authUserId: true } } },
+    include: { employee: { select: { authUserId: true, branchId: true } } },
   });
   if (!row) throw new HrError("NOT_FOUND");
+  assertBranchInScope(ctx, row.employee?.branchId ?? row.branchId);
   assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
   const status = await master("overtimeRequestStatus", approve ? "APPROVED" : "REJECTED");
-  return db.overtimeRequest.update({
+  const reviewedByName = await resolveActorDisplayName(ctx);
+  const updated = await db.overtimeRequest.update({
     where: { id },
     data: {
       statusId: status.id,
@@ -3464,6 +4096,8 @@ export async function reviewOvertime(ctx: HrServiceContext, id: string, approve:
       ...(approve ? { approvedMinutes: row.requestedMinutes } : {}),
     },
   });
+  await stampReviewedByName("overtime_requests", id, reviewedByName);
+  return { ...updated, reviewedByName };
 }
 
 export async function createPayrollRun(ctx: HrServiceContext, payrollPeriodId: string) {
@@ -3475,19 +4109,155 @@ export async function payrollAction(ctx: HrServiceContext, id: string, action: s
   const run = await owned("payrollRun", ctx, id); const status = await db.payrollPeriodStatus.findUnique({ where: { id: run.statusId } });
   if (action === "calculate") {
     assertHrPermission(ctx, HR_PERMISSIONS.payrollCalculate); assertPayrollMutable(status?.code ?? "");
-    const employees = await db.employee.findMany({ where: { organizationId: ctx.organizationId, isActive: true }, include: { compensations: { where: { isCurrent: true }, include: { wageType: true } } } });
-    const review = await master("payrollPeriodStatus", "REVIEW");
-    await db.$transaction(async (tx: any) => { await tx.payrollRunEmployee.deleteMany({ where: { payrollRunId: id } }); for (const employee of employees) { const compensation = employee.compensations[0]; if (!compensation) continue; const calc = calculatePayroll({ wageType: compensation.wageType.code as "DAILY" | "MONTHLY" | "HOURLY", wageAmount: Number(compensation.amount) }); await tx.payrollRunEmployee.create({ data: { payrollRunId: id, employeeId: employee.id, grossEarnings: calc.gross, totalDeductions: calc.deductions, netPay: calc.net, statusId: review.id, calculatedAt: new Date(), items: { create: calc.lines.map(line => ({ sourceType: "CALCULATED", description: line.description, amount: line.amount })) } } }); } });
+    const [
+      employees,
+      deductionRates,
+      baseEarn,
+      advancePayoutEarn,
+      taxDed,
+      ssoDed,
+      advanceDed,
+      review,
+    ] = await Promise.all([
+      db.employee.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          isActive: true,
+          ...employeeOwnBranchWhere(ctx),
+        },
+        include: {
+          compensations: {
+            where: { isCurrent: true },
+            include: { wageType: true },
+            take: 1,
+          },
+        },
+      }),
+      loadDeductionRatesForOrg(ctx.organizationId),
+      master("earningType", "BASE_SALARY"),
+      master("earningType", "ADVANCE_PAYOUT").catch(() => null),
+      master("deductionType", "TAX"),
+      master("deductionType", "SOCIAL_SECURITY"),
+      master("deductionType", "ADVANCE").catch(() =>
+        master("deductionType", "LOAN"),
+      ),
+      master("payrollPeriodStatus", "REVIEW"),
+    ]);
+    const employeeIds = employees.map((e: { id: string }) => e.id);
+    if (employeeIds.length > 0) {
+      await reopenAdvanceEffectsForRun(id, employeeIds);
+    }
+    const periodId = run.payrollPeriodId as string;
+    const [{ deductionsByEmployee, creditsByEmployee }, legacyByEmployee] =
+      await Promise.all([
+        loadAdvanceEffectsForPeriod(
+          ctx.organizationId,
+          periodId,
+          employeeIds,
+        ),
+        loadLegacyApprovedAdvancesByEmployee(ctx.organizationId, employeeIds),
+      ]);
+    const installmentIds: string[] = [];
+    const creditedAdvanceIds: string[] = [];
+    const legacyAdvanceIds: string[] = [];
+    await db.$transaction(async (tx: any) => {
+      // Never wipe other branches when header has a branch selected.
+      await tx.payrollRunEmployee.deleteMany({
+        where: { payrollRunId: id, ...employeeBranchWhere(ctx) },
+      });
+      for (const employee of employees) {
+        const compensation = employee.compensations[0];
+        if (!compensation) continue;
+        const installmentRows = deductionsByEmployee.get(employee.id) ?? [];
+        const creditRows = creditsByEmployee.get(employee.id) ?? [];
+        const legacyRows = legacyByEmployee.get(employee.id) ?? [];
+        const advanceTotal =
+          installmentRows.reduce((s, a) => s + a.amount, 0) +
+          legacyRows.reduce((s, a) => s + a.amount, 0);
+        const creditTotal = creditRows.reduce((s, a) => s + a.amount, 0);
+        for (const row of installmentRows) installmentIds.push(row.installmentId);
+        for (const row of creditRows) creditedAdvanceIds.push(row.advanceId);
+        for (const row of legacyRows) legacyAdvanceIds.push(row.id);
+        const calc = calculatePayroll({
+          wageType: compensation.wageType.code as "DAILY" | "MONTHLY" | "HOURLY",
+          wageAmount: Number(compensation.amount),
+          deductionRates,
+          earnings:
+            creditTotal > 0
+              ? [
+                  {
+                    code: "ADVANCE_PAYOUT",
+                    amount: creditTotal,
+                    description: "โอนเบิกล่วงหน้า (พร้อมเงินเดือน)",
+                  },
+                ]
+              : undefined,
+          deductions:
+            advanceTotal > 0
+              ? [
+                  {
+                    code: "ADVANCE",
+                    amount: advanceTotal,
+                    description: "หักเบิกล่วงหน้า",
+                  },
+                ]
+              : undefined,
+        });
+        await tx.payrollRunEmployee.create({
+          data: {
+            payrollRunId: id,
+            employeeId: employee.id,
+            grossEarnings: calc.gross,
+            totalDeductions: calc.deductions,
+            netPay: calc.net,
+            statusId: review.id,
+            calculatedAt: new Date(),
+            items: {
+              create: calc.lines.map((line: { kind: string; code: string; description: string; amount: number }) => ({
+                sourceType: "CALCULATED",
+                description: line.description,
+                amount: line.amount,
+                earningTypeId:
+                  line.kind === "EARNING"
+                    ? line.code === "BASE_PAY"
+                      ? baseEarn.id
+                      : line.code === "ADVANCE_PAYOUT"
+                        ? advancePayoutEarn?.id ?? null
+                        : null
+                    : null,
+                deductionTypeId:
+                  line.kind === "DEDUCTION"
+                    ? line.code === "TAX"
+                      ? taxDed.id
+                      : line.code === "SOCIAL_SECURITY"
+                        ? ssoDed.id
+                        : line.code === "ADVANCE"
+                          ? advanceDed.id
+                          : null
+                    : null,
+              })),
+            },
+          },
+        });
+      }
+    });
+    await markAdvanceEffectsApplied({
+      payrollRunId: id,
+      installmentIds,
+      creditedAdvanceIds,
+      legacyAdvanceIds,
+    });
     return db.payrollRun.update({ where: { id }, data: { statusId: review.id, completedAt: new Date() } });
   }
   const requirements: Record<string, any> = { review: HR_PERMISSIONS.payrollReview, approve: HR_PERMISSIONS.payrollApprove, markPaid: HR_PERMISSIONS.payrollMarkPaid, lock: HR_PERMISSIONS.payrollLock };
+  if (!requirements[action]) throw new HrError("VALIDATION_ERROR", { message: "ไม่รู้จักคำสั่งประมวลผล" });
   assertHrPermission(ctx, requirements[action]); const code = action === "markPaid" ? "PAID" : action === "lock" ? "LOCKED" : action === "approve" ? "APPROVED" : "REVIEW"; const next = await master("payrollPeriodStatus", code);
   return db.payrollRun.update({ where: { id }, data: { statusId: next.id, ...(action === "approve" ? { approvedAt: new Date(), approvedByAuthUserId: actor(ctx) } : {}) } });
 }
 export async function issuePayslips(ctx: HrServiceContext, runId: string) {
-  assertHrPermission(ctx, HR_PERMISSIONS.payslipRead); const run = await owned("payrollRun", ctx, runId); const status = await db.payrollPeriodStatus.findUnique({ where: { id: run.statusId } }); if (!["APPROVED", "PAID", "LOCKED"].includes(status?.code ?? "")) throw new HrError("INVALID_STATUS_TRANSITION");
-  const rows = await db.payrollRunEmployee.findMany({ where: { payrollRunId: runId }, include: { items: true } });
-  await db.$transaction(rows.map((row: any) => db.payslip.upsert({ where: { payrollRunEmployeeId: row.id }, create: { payrollRunEmployeeId: row.id, employeeId: row.employeeId, issuedAt: new Date(), issuedByAuthUserId: actor(ctx), grossEarnings: row.grossEarnings, totalDeductions: row.totalDeductions, netPay: row.netPay, snapshot: { employeeId: row.employeeId, items: row.items, gross: row.grossEarnings, deductions: row.totalDeductions, net: row.netPay } }, update: {} }))); return { count: rows.length };
+  assertHrPermission(ctx, [HR_PERMISSIONS.payslipRead, HR_PERMISSIONS.payrollApprove]); const run = await owned("payrollRun", ctx, runId); const status = await db.payrollPeriodStatus.findUnique({ where: { id: run.statusId } }); if (!["APPROVED", "PAID", "LOCKED"].includes(status?.code ?? "")) throw new HrError("INVALID_STATUS_TRANSITION");
+  const rows = await db.payrollRunEmployee.findMany({ where: { payrollRunId: runId, ...employeeBranchWhere(ctx) }, include: { items: true, employee: { select: { displayName: true } } } });
+  await db.$transaction(rows.map((row: any) => db.payslip.upsert({ where: { payrollRunEmployeeId: row.id }, create: { payrollRunEmployeeId: row.id, employeeId: row.employeeId, issuedAt: new Date(), issuedByAuthUserId: actor(ctx), grossEarnings: row.grossEarnings, totalDeductions: row.totalDeductions, netPay: row.netPay, snapshot: { employeeId: row.employeeId, displayName: row.employee?.displayName, items: row.items, gross: row.grossEarnings, deductions: row.totalDeductions, net: row.netPay } }, update: { issuedAt: new Date(), issuedByAuthUserId: actor(ctx) } }))); return { count: rows.length };
 }
 
 export async function createNotification(ctx: HrServiceContext, input: any) {
@@ -3504,6 +4274,12 @@ export async function markNotificationRead(ctx: HrServiceContext, id: string) {
 }
 export async function report(ctx: HrServiceContext, kind: string, input: any = {}) {
   assertHrPermission(ctx, HR_PERMISSIONS.reportRead);
+  if (kind === "advances") {
+    const { reportSalaryAdvances } = await import(
+      "@/lib/hr/services/salary-advances"
+    );
+    return reportSalaryAdvances(ctx);
+  }
   const map: Record<string, string> = { attendance: "attendanceDay", leave: "leaveRequest", overtime: "overtimeRequest", payroll: "payrollRun", headcount: "employee" };
   const model = map[kind]; if (!model) throw new HrError("NOT_FOUND");
   const rows = await db[model].findMany({ where: { organizationId: ctx.organizationId, ...(input.from ? { createdAt: { gte: date(input.from), lte: date(input.to ?? input.from) } } : {}) } });
@@ -3531,11 +4307,326 @@ export async function saveRecurringPayItem(ctx: HrServiceContext, input: any, id
   const data = { ...input, effectiveFrom: start, effectiveTo: end, createdByAuthUserId: actor(ctx) };
   return id ? db.employeeRecurringPayItem.update({ where: { id }, data }) : db.employeeRecurringPayItem.create({ data });
 }
+async function listShiftMismatchRequestsRaw(
+  organizationId: string,
+  statusCode: string,
+) {
+  return db.$queryRaw<
+    Array<{
+      id: string;
+      employee_id: string;
+      work_date: Date;
+      reason: string;
+      status_id: string;
+      status_code: string;
+      status_name: string;
+      employee_code: string;
+      display_name: string;
+      photo_url: string | null;
+      from_shift_id: string;
+      from_shift_name: string;
+      from_start: Date;
+      from_end: Date;
+      to_shift_id: string;
+      to_shift_name: string;
+      to_start: Date;
+      to_end: Date;
+    }>
+  >`
+    SELECT
+      r.id::text AS id,
+      r.employee_id::text AS employee_id,
+      r.work_date,
+      r.reason,
+      r.status_id::text AS status_id,
+      s.code AS status_code,
+      s.name AS status_name,
+      e.employee_code,
+      e.display_name,
+      e.photo_url,
+      fs.id::text AS from_shift_id,
+      fs.name AS from_shift_name,
+      fs.start_time AS from_start,
+      fs.end_time AS from_end,
+      ts.id::text AS to_shift_id,
+      ts.name AS to_shift_name,
+      ts.start_time AS to_start,
+      ts.end_time AS to_end
+    FROM hr.shift_mismatch_requests r
+    JOIN hr.leave_request_statuses s ON s.id = r.status_id
+    JOIN hr.employees e ON e.id = r.employee_id
+    JOIN hr.shifts fs ON fs.id = r.from_shift_id
+    JOIN hr.shifts ts ON ts.id = r.to_shift_id
+    WHERE r.organization_id = ${organizationId}::uuid
+      AND s.code = ${statusCode}
+    ORDER BY r.work_date DESC, r.created_at DESC
+  `.then((rows: Array<any>) =>
+    rows.map((row) => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      workDate: row.work_date,
+      reason: row.reason,
+      employee: {
+        id: row.employee_id,
+        employeeCode: row.employee_code,
+        displayName: row.display_name,
+        photoUrl: row.photo_url,
+      },
+      fromShift: {
+        id: row.from_shift_id,
+        name: row.from_shift_name,
+        startTime: row.from_start,
+        endTime: row.from_end,
+      },
+      toShift: {
+        id: row.to_shift_id,
+        name: row.to_shift_name,
+        startTime: row.to_start,
+        endTime: row.to_end,
+      },
+      status: {
+        id: row.status_id,
+        code: row.status_code,
+        name: row.status_name,
+      },
+    })),
+  );
+}
+
+export async function listShiftMismatchRequests(
+  ctx: HrServiceContext,
+  input: { status?: string | null } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceManage,
+    HR_PERMISSIONS.approvalManage,
+    HR_PERMISSIONS.approvalRead,
+  ]);
+  const statusCode = input.status?.trim() || "SUBMITTED";
+  if (!db.shiftMismatchRequest?.findMany) {
+    return listShiftMismatchRequestsRaw(ctx.organizationId, statusCode);
+  }
+  return db.shiftMismatchRequest.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      status: { code: statusCode },
+      ...employeeBranchScopeWhere(ctx),
+    },
+    include: {
+      employee: { select: adjustmentEmployeeSelect },
+      fromShift: {
+        select: { id: true, name: true, startTime: true, endTime: true },
+      },
+      toShift: {
+        select: { id: true, name: true, startTime: true, endTime: true },
+      },
+      status: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function reviewShiftMismatchRequest(
+  ctx: HrServiceContext,
+  id: string,
+  approve: boolean,
+  note?: string,
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceManage,
+    HR_PERMISSIONS.approvalManage,
+  ]);
+  let row: any = null;
+  if (db.shiftMismatchRequest?.findFirst) {
+    row = await db.shiftMismatchRequest.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      include: {
+        employee: { select: { authUserId: true, id: true } },
+        status: { select: { code: true } },
+        fromShift: { select: { id: true, name: true } },
+        toShift: {
+          select: {
+            id: true,
+            name: true,
+            startTime: true,
+            endTime: true,
+            graceLateMinutes: true,
+            graceEarlyLeaveMinutes: true,
+            crossesMidnight: true,
+          },
+        },
+      },
+    });
+  } else {
+    const rows = await db.$queryRaw<Array<any>>`
+      SELECT
+        r.*,
+        s.code AS status_code,
+        e.auth_user_id AS employee_auth_user_id,
+        ts.start_time AS to_start,
+        ts.end_time AS to_end,
+        ts.grace_late_minutes AS to_grace_late,
+        ts.grace_early_leave_minutes AS to_grace_early,
+        ts.crosses_midnight AS to_crosses
+      FROM hr.shift_mismatch_requests r
+      JOIN hr.leave_request_statuses s ON s.id = r.status_id
+      JOIN hr.employees e ON e.id = r.employee_id
+      JOIN hr.shifts ts ON ts.id = r.to_shift_id
+      WHERE r.id = ${id}::uuid
+        AND r.organization_id = ${ctx.organizationId}::uuid
+      LIMIT 1
+    `;
+    const raw = rows[0];
+    if (raw) {
+      row = {
+        id: raw.id,
+        employeeId: raw.employee_id,
+        workDate: raw.work_date,
+        schedulePeriodId: raw.schedule_period_id,
+        fromShiftId: raw.from_shift_id,
+        toShiftId: raw.to_shift_id,
+        status: { code: raw.status_code },
+        employee: { authUserId: raw.employee_auth_user_id, id: raw.employee_id },
+        toShift: {
+          id: raw.to_shift_id,
+          startTime: raw.to_start,
+          endTime: raw.to_end,
+          graceLateMinutes: raw.to_grace_late,
+          graceEarlyLeaveMinutes: raw.to_grace_early,
+          crossesMidnight: raw.to_crosses,
+        },
+      };
+    }
+  }
+  if (!row) throw new HrError("NOT_FOUND");
+  if (row.status?.code !== "SUBMITTED") {
+    throw new HrError("INVALID_STATUS_TRANSITION", {
+      message: "คำขอนี้ไม่อยู่ในสถานะรออนุมัติ",
+    });
+  }
+  assertBranchInScope(ctx, row.employee?.branchId);
+  assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
+
+  const workDateIso = row.workDate.toISOString().slice(0, 10);
+  const reviewedByName = await resolveActorDisplayName(ctx);
+
+  if (approve) {
+    await applyApprovedShiftMismatchMove({
+      organizationId: ctx.organizationId,
+      schedulePeriodId: row.schedulePeriodId,
+      employeeId: row.employeeId,
+      fromShiftId: row.fromShiftId,
+      toShiftId: row.toShiftId,
+      workDate: row.workDate,
+    });
+
+    const day = await db.attendanceDay.findUnique({
+      where: {
+        employeeId_workDate: {
+          employeeId: row.employeeId,
+          workDate: row.workDate,
+        },
+      },
+    });
+    if (day) {
+      const metrics = computeLateEarlyMinutes({
+        workDate: workDateIso,
+        clockInAt: day.clockInAt,
+        clockOutAt: day.clockOutAt,
+        startTime: row.toShift?.startTime ?? null,
+        endTime: row.toShift?.endTime ?? null,
+        graceLateMinutes: row.toShift?.graceLateMinutes ?? 0,
+        graceEarlyLeaveMinutes: row.toShift?.graceEarlyLeaveMinutes ?? 0,
+        crossesMidnight: row.toShift?.crossesMidnight ?? false,
+      });
+      let statusCode = "INCOMPLETE";
+      if (day.clockInAt && day.clockOutAt) {
+        statusCode = metrics.lateMinutes > 0 ? "LATE" : "PRESENT";
+      }
+      const nextStatus = await master("attendanceStatus", statusCode);
+      await db.attendanceDay.update({
+        where: { id: day.id },
+        data: {
+          statusId: nextStatus.id,
+          lateMinutes: metrics.lateMinutes,
+          earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+        },
+      });
+      await db.$executeRaw`
+        UPDATE hr.attendance_days
+        SET shift_mismatch_status = 'APPROVED', updated_at = NOW()
+        WHERE id = ${day.id}::uuid
+      `.catch(() => undefined);
+    }
+  } else {
+    const wrong = await master("attendanceStatus", "WRONG_SHIFT");
+    await db.attendanceDay.updateMany({
+      where: {
+        employeeId: row.employeeId,
+        workDate: row.workDate,
+      },
+      data: {
+        statusId: wrong.id,
+      },
+    });
+    await db.$executeRaw`
+      UPDATE hr.attendance_days
+      SET shift_mismatch_status = 'REJECTED', updated_at = NOW()
+      WHERE employee_id = ${row.employeeId}::uuid
+        AND work_date = ${row.workDate}::date
+    `.catch(() => undefined);
+  }
+
+  const status = await master(
+    "leaveRequestStatus",
+    approve ? "APPROVED" : "REJECTED",
+  );
+  if (db.shiftMismatchRequest?.update) {
+    const updated = await db.shiftMismatchRequest.update({
+      where: { id },
+      data: {
+        statusId: status.id,
+        reviewedAt: new Date(),
+        reviewedByAuthUserId: actor(ctx),
+        reviewNote: note?.trim() || null,
+      },
+      include: {
+        employee: { select: adjustmentEmployeeSelect },
+        fromShift: {
+          select: { id: true, name: true, startTime: true, endTime: true },
+        },
+        toShift: {
+          select: { id: true, name: true, startTime: true, endTime: true },
+        },
+        status: { select: { id: true, code: true, name: true } },
+      },
+    });
+    await stampReviewedByName("shift_mismatch_requests", id, reviewedByName);
+    return { ...updated, reviewedByName };
+  }
+  await db.$executeRaw`
+    UPDATE hr.shift_mismatch_requests
+    SET status_id = ${status.id}::uuid,
+        reviewed_at = NOW(),
+        reviewed_by_auth_user_id = ${actor(ctx)}::uuid,
+        reviewed_by_name = ${reviewedByName},
+        review_note = ${note?.trim() || null},
+        updated_at = NOW()
+    WHERE id = ${id}::uuid
+  `;
+  const listed = await listShiftMismatchRequestsRaw(
+    ctx.organizationId,
+    approve ? "APPROVED" : "REJECTED",
+  );
+  return listed.find((item: { id: string }) => item.id === id) ?? { id, ok: true };
+}
+
 export async function approvalInbox(ctx: HrServiceContext) {
   assertHrPermission(ctx, [
     HR_PERMISSIONS.approvalRead,
     HR_PERMISSIONS.leaveApprove,
     HR_PERMISSIONS.overtimeApprove,
+    HR_PERMISSIONS.advanceApprove,
   ]);
   const employeeSelect = {
     id: true,
@@ -3544,9 +4635,35 @@ export async function approvalInbox(ctx: HrServiceContext) {
     photoUrl: true,
     authUserId: true,
   };
-  const [leaveRows, overtime, adjustments] = await Promise.all([
+  const branchScope = employeeBranchScopeWhere(ctx);
+  const today = bangkokTodayUtcDate();
+  /** Pending always; decided stay visible until the event/leave date passes. */
+  const leaveInboxWhere = {
+    OR: [
+      { status: { code: "SUBMITTED" } },
+      {
+        status: { code: { in: [...DECIDED_LEAVE_STATUSES] } },
+        endDate: { gte: today },
+      },
+    ],
+  };
+  const workDateInboxWhere = {
+    OR: [
+      { status: { code: "SUBMITTED" } },
+      {
+        status: { code: { in: [...DECIDED_OT_STATUSES] } },
+        workDate: { gte: today },
+      },
+    ],
+  };
+  const [leaveRows, overtimeRows, adjustments, shiftMismatches, advanceRows] =
+    await Promise.all([
     db.leaveRequest.findMany({
-      where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } },
+      where: {
+        organizationId: ctx.organizationId,
+        ...leaveInboxWhere,
+        ...branchScope,
+      },
       include: {
         employee: { select: { ...employeeSelect, ...leaveEmployeeSelect } },
         coverEmployee: { select: leaveEmployeeSelect },
@@ -3556,7 +4673,11 @@ export async function approvalInbox(ctx: HrServiceContext) {
       orderBy: { submittedAt: "desc" },
     }),
     db.overtimeRequest.findMany({
-      where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } },
+      where: {
+        organizationId: ctx.organizationId,
+        ...workDateInboxWhere,
+        ...branchScope,
+      },
       include: {
         employee: { select: employeeSelect },
         status: { select: { code: true, name: true } },
@@ -3566,7 +4687,8 @@ export async function approvalInbox(ctx: HrServiceContext) {
     db.attendanceAdjustment.findMany({
       where: {
         organizationId: ctx.organizationId,
-        status: { code: "SUBMITTED" },
+        ...workDateInboxWhere,
+        ...branchScope,
       },
       include: {
         employee: { select: adjustmentEmployeeSelect },
@@ -3574,9 +4696,50 @@ export async function approvalInbox(ctx: HrServiceContext) {
       },
       orderBy: { createdAt: "desc" },
     }),
+    db.shiftMismatchRequest?.findMany
+      ? db.shiftMismatchRequest.findMany({
+          where: {
+            organizationId: ctx.organizationId,
+            ...workDateInboxWhere,
+            ...branchScope,
+          },
+          include: {
+            employee: { select: adjustmentEmployeeSelect },
+            fromShift: {
+              select: { id: true, name: true, startTime: true, endTime: true },
+            },
+            toShift: {
+              select: { id: true, name: true, startTime: true, endTime: true },
+            },
+            status: { select: { id: true, code: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : listShiftMismatchRequestsRaw(ctx.organizationId, "SUBMITTED").then(
+          (rows) => {
+            if (ctx.allowedBranchIds == null) return rows;
+            const allowed = new Set(ctx.allowedBranchIds);
+            return rows.filter((row: { employee?: { branchId?: string | null } }) =>
+              row.employee?.branchId
+                ? allowed.has(row.employee.branchId)
+                : false,
+            );
+          },
+        ),
+    import("@/lib/hr/services/salary-advances").then(({ listPendingSalaryAdvances }) =>
+      listPendingSalaryAdvances(ctx).then((rows) =>
+        rows.filter((row) => row.status === "SUBMITTED"),
+      ),
+    ).catch(() => []),
   ]);
   const leave = await enrichLeaveRowsWithShifts(leaveRows);
-  return { leave, overtime, attendanceAdjustments: adjustments };
+  return {
+    leave: pendingFirstBySubmitted(leave),
+    overtime: pendingFirstBySubmitted(overtimeRows),
+    attendanceAdjustments: pendingFirstBySubmitted(adjustments),
+    shiftMismatches: pendingFirstBySubmitted(shiftMismatches),
+    advances: advanceRows,
+  };
 }
 export async function resolveSelfEmployee(ctx: HrServiceContext, platformUserId?: string | null) {
   const employee = await db.employee.findFirst({ where: { organizationId: ctx.organizationId, OR: [{ platformUserId: platformUserId ?? undefined }, { authUserId: actor(ctx) ?? undefined }] } });

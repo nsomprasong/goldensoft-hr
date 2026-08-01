@@ -15,7 +15,11 @@ import type {
   MasterRecord,
 } from "@/lib/hr/repository/types";
 import { listCompensations } from "@/lib/hr/services/compensations";
-import { getHrDashboard } from "@/lib/hr/services/dashboard";
+import {
+  getHrDashboard,
+  listApprovalHistory as listApprovalHistoryService,
+  type DashboardDecisionItem,
+} from "@/lib/hr/services/dashboard";
 import { listDepartments as listDepartmentsService } from "@/lib/hr/services/departments";
 import {
   getEmployee as getEmployeeService,
@@ -23,11 +27,33 @@ import {
 } from "@/lib/hr/services/employees";
 import { listOvertimeRules as listOvertimeRulesService } from "@/lib/hr/services/overtime-rules";
 import {
+  getPayrollDeductionSettings as getPayrollDeductionSettingsService,
+  type PayrollDeductionSettingsRow,
+} from "@/lib/hr/services/payroll-deduction-settings";
+import {
   getPayrollPeriod as getPayrollPeriodService,
   listPayrollPeriods as listPayrollPeriodsService,
 } from "@/lib/hr/services/payroll-periods";
+import {
+  getPayrollRun as getPayrollRunService,
+  getPayslip as getPayslipService,
+  listOrgPayslips as listOrgPayslipsService,
+  listPayrollRuns as listPayrollRunsService,
+  listPayslipPeriodOptions as listPayslipPeriodOptionsService,
+  listSelfPayslips as listSelfPayslipsService,
+  resolveDefaultPayslipPeriodId,
+  type PayrollRunDetail,
+  type PayrollRunListItem,
+  type PayslipDetail,
+  type PayslipListItem,
+  type PayslipPeriodOption,
+} from "@/lib/hr/services/payroll-runs";
 import { listPayrollSchedules as listPayrollSchedulesService } from "@/lib/hr/services/payroll-schedules";
 import { listPositions as listPositionsService } from "@/lib/hr/services/positions";
+import {
+  listSalaryAdvances as listSalaryAdvancesService,
+  type SalaryAdvanceRow,
+} from "@/lib/hr/services/salary-advances";
 import { listShifts as listShiftsService } from "@/lib/hr/services/shifts";
 import {
   getSchedulePeriod as getSchedulePeriodService,
@@ -43,13 +69,16 @@ import {
   listAttendanceAdjustments as listAttendanceAdjustmentsService,
   listLeaveBalances as listLeaveBalancesService,
   listLeaveCoverCandidates as listLeaveCoverCandidatesService,
+  listLeaveHistory as listLeaveHistoryService,
   listLeaveRequests as listLeaveRequestsService,
+  listOvertimeHistory as listOvertimeHistoryService,
   listOvertimeRequests as listOvertimeRequestsService,
   listWorkLocations as listWorkLocationsService,
 } from "@/lib/hr/services/operations";
 import {
   toHrServiceContext,
   type HrServiceContext,
+  type PagedResponse,
 } from "@/lib/hr/services/shared";
 import type { HrRequestContext } from "@/lib/platform/types";
 
@@ -89,6 +118,14 @@ async function safeRead<T>(
   } catch (error) {
     if (error instanceof HrError) {
       if (error.code === "NOT_FOUND") return ok(fallback);
+      // Surface so schedule pages can redirect when header branch changes.
+      if (error.code === "BRANCH_OUT_OF_SCOPE") {
+        return {
+          data: fallback,
+          available: true,
+          message: "BRANCH_OUT_OF_SCOPE",
+        };
+      }
       return { data: fallback, available: false, message: error.message };
     }
     if (process.env.NODE_ENV !== "production") {
@@ -213,7 +250,22 @@ export type HrDashboardInboxItem = {
   kind: "leave" | "overtime" | "attendance_adjustment";
   label: string;
   employeeName: string;
+  branchId: string | null;
+  branchName: string;
   submittedAt: string | null;
+  href: string;
+};
+
+export type HrDashboardDecisionItem = {
+  id: string;
+  kind: "leave" | "overtime" | "attendance_adjustment" | "shift_mismatch";
+  label: string;
+  employeeName: string;
+  branchId: string | null;
+  branchName: string;
+  decision: "APPROVED" | "REJECTED";
+  reviewedByName: string;
+  reviewedAt: string | null;
   href: string;
 };
 
@@ -226,6 +278,7 @@ export type HrDashboard = {
   currentPeriod: PayrollPeriodRow | null;
   actions: HrDashboardActions;
   recentInbox: HrDashboardInboxItem[];
+  recentDecisions: HrDashboardDecisionItem[];
 };
 
 const EMPTY_ACTIONS: HrDashboardActions = {
@@ -248,6 +301,7 @@ const EMPTY_DASHBOARD: HrDashboard = {
   currentPeriod: null,
   actions: EMPTY_ACTIONS,
   recentInbox: [],
+  recentDecisions: [],
 };
 
 export async function loadHrDashboard(
@@ -263,6 +317,35 @@ export async function loadHrDashboard(
     const branchNameById = new Map(
       branches.data.map((row) => [row.id, row.label]),
     );
+    const resolveBranchName = (branchId: string | null | undefined) => {
+      if (!branchId) return "ไม่ระบุสาขา";
+      return (
+        branchNameById.get(branchId) ??
+        (ctx.branch?.id === branchId ? ctx.branch.name : null) ??
+        "ไม่ระบุสาขา"
+      );
+    };
+    const withBranchLabel = <
+      T extends { branchId: string | null; branchName?: string },
+    >(
+      row: T,
+    ): T & { branchName: string } => ({
+      ...row,
+      branchName: resolveBranchName(row.branchId),
+    });
+    const byBranchThenDate = <
+      T extends { branchName: string; submittedAt?: string | null; reviewedAt?: string | null },
+    >(
+      a: T,
+      b: T,
+      dateKey: "submittedAt" | "reviewedAt",
+    ) => {
+      const branchCmp = a.branchName.localeCompare(b.branchName, "th");
+      if (branchCmp !== 0) return branchCmp;
+      const aDate = (dateKey === "submittedAt" ? a.submittedAt : a.reviewedAt) ?? "";
+      const bDate = (dateKey === "submittedAt" ? b.submittedAt : b.reviewedAt) ?? "";
+      return bDate.localeCompare(aDate);
+    };
 
     let currentPeriod: PayrollPeriodRow | null = null;
     if (summary.currentOpenPeriod) {
@@ -280,6 +363,13 @@ export async function loadHrDashboard(
         new Map(statuses.map((s) => [s.id, s])),
       );
     }
+
+    const recentInbox = summary.recentInbox
+      .map(withBranchLabel)
+      .sort((a, b) => byBranchThenDate(a, b, "submittedAt"));
+    const recentDecisions = summary.recentDecisions
+      .map(withBranchLabel)
+      .sort((a, b) => byBranchThenDate(a, b, "reviewedAt"));
 
     return {
       branchId: summary.branchId,
@@ -301,8 +391,54 @@ export async function loadHrDashboard(
       activeShifts: summary.activeShifts,
       currentPeriod,
       actions: summary.actions,
-      recentInbox: summary.recentInbox,
+      recentInbox,
+      recentDecisions,
     };
+  });
+}
+
+export async function listApprovalHistory(
+  ctx: HrRequestContext,
+  input: {
+    page?: number;
+    pageSize?: number;
+    branchId?: string | null;
+  } = {},
+): Promise<HrDataResult<PagedResponse<HrDashboardDecisionItem>>> {
+  const empty: PagedResponse<HrDashboardDecisionItem> = {
+    rows: [],
+    total: 0,
+    page: 1,
+    pageSize: 20,
+    pageCount: 1,
+  };
+  return safeRead(empty, async () => {
+    const [page, branches] = await Promise.all([
+      listApprovalHistoryService(serviceContext(ctx), input),
+      listOrganizationBranches(ctx),
+    ]);
+    const branchNameById = new Map(
+      branches.data.map((row) => [row.id, row.label]),
+    );
+    const resolveBranchName = (branchId: string | null | undefined) => {
+      if (!branchId) return "ไม่ระบุสาขา";
+      return (
+        branchNameById.get(branchId) ??
+        (ctx.branch?.id === branchId ? ctx.branch.name : null) ??
+        "ไม่ระบุสาขา"
+      );
+    };
+    const rows = page.rows
+      .map((row: DashboardDecisionItem) => ({
+        ...row,
+        branchName: resolveBranchName(row.branchId),
+      }))
+      .sort((a, b) => {
+        const branchCmp = a.branchName.localeCompare(b.branchName, "th");
+        if (branchCmp !== 0) return branchCmp;
+        return (b.reviewedAt ?? "").localeCompare(a.reviewedAt ?? "");
+      });
+    return { ...page, rows };
   });
 }
 
@@ -837,6 +973,109 @@ export async function getPayrollPeriod(
   });
 }
 
+export type {
+  PayrollDeductionSettingsRow,
+  PayrollRunDetail,
+  PayrollRunListItem,
+  PayslipDetail,
+  PayslipListItem,
+  PayslipPeriodOption,
+};
+
+export { resolveDefaultPayslipPeriodId };
+
+export async function listPayrollRuns(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<PayrollRunListItem[]>> {
+  return safeRead<PayrollRunListItem[]>([], async () =>
+    listPayrollRunsService(serviceContext(ctx)),
+  );
+}
+
+export async function getPayrollRun(
+  ctx: HrRequestContext,
+  id: string,
+): Promise<HrDataResult<PayrollRunDetail | null>> {
+  return safeRead<PayrollRunDetail | null>(null, async () =>
+    getPayrollRunService(serviceContext(ctx), id),
+  );
+}
+
+export async function listOrgPayslips(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<PayslipListItem[]>> {
+  return safeRead<PayslipListItem[]>([], async () =>
+    listOrgPayslipsService(serviceContext(ctx)),
+  );
+}
+
+export async function listPayslipPeriodOptions(
+  ctx: HrRequestContext,
+  options: { employeeId?: string | null } = {},
+): Promise<HrDataResult<PayslipPeriodOption[]>> {
+  return safeRead<PayslipPeriodOption[]>([], async () =>
+    listPayslipPeriodOptionsService(serviceContext(ctx), options),
+  );
+}
+
+export async function listSelfPayslips(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<PayslipListItem[]>> {
+  return safeRead<PayslipListItem[]>([], async () =>
+    listSelfPayslipsService(serviceContext(ctx)),
+  );
+}
+
+export async function getPayslip(
+  ctx: HrRequestContext,
+  id: string,
+): Promise<HrDataResult<PayslipDetail | null>> {
+  return safeRead<PayslipDetail | null>(null, async () =>
+    getPayslipService(serviceContext(ctx), id),
+  );
+}
+
+export async function getPayrollDeductionSettings(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<PayrollDeductionSettingsRow | null>> {
+  return safeRead<PayrollDeductionSettingsRow | null>(null, async () =>
+    getPayrollDeductionSettingsService(serviceContext(ctx)),
+  );
+}
+
+export type { SalaryAdvanceRow };
+
+export async function listSalaryAdvances(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<SalaryAdvanceRow[]>> {
+  return safeRead([], async () =>
+    listSalaryAdvancesService(serviceContext(ctx)),
+  );
+}
+
+export async function listMySalaryAdvances(
+  ctx: HrRequestContext,
+  employeeId: string,
+): Promise<HrDataResult<SalaryAdvanceRow[]>> {
+  const { listMySalaryAdvances: listMine } = await import(
+    "@/lib/hr/services/salary-advances"
+  );
+  return safeRead([], async () => listMine(serviceContext(ctx), employeeId));
+}
+
+export async function listAdvancePeriodOptions(
+  ctx: HrRequestContext,
+): Promise<
+  HrDataResult<
+    import("@/lib/hr/services/salary-advances").AdvancePeriodOption[]
+  >
+> {
+  const { listAdvancePeriodOptions: listOptions } = await import(
+    "@/lib/hr/services/salary-advances"
+  );
+  return safeRead([], async () => listOptions(serviceContext(ctx)));
+}
+
 // ─── Schedule periods ─────────────────────────────────────────────────────
 
 export type SchedulePeriodRow = {
@@ -1229,6 +1468,8 @@ export type LeaveRequestRow = {
   reason: string | null;
   coverEmployeeId: string | null;
   coverEmployeeName: string | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
   scheduledShifts: LeaveScheduledShift[];
 };
 
@@ -1250,8 +1491,13 @@ function mapLeaveRequestRow(row: {
   coverEmployee?: {
     displayName?: string | null;
   } | null;
+  submittedAt?: Date | string | null;
+  reviewedAt?: Date | string | null;
+  createdAt?: Date | string | null;
   scheduledShifts?: LeaveScheduledShift[];
 }): LeaveRequestRow {
+  const submitted =
+    row.submittedAt ?? row.createdAt ?? null;
   return {
     id: row.id,
     employeeId: row.employeeId,
@@ -1267,6 +1513,18 @@ function mapLeaveRequestRow(row: {
     reason: row.reason ?? null,
     coverEmployeeId: row.coverEmployeeId ?? null,
     coverEmployeeName: row.coverEmployee?.displayName ?? null,
+    submittedAt:
+      submitted instanceof Date
+        ? submitted.toISOString()
+        : typeof submitted === "string"
+          ? submitted
+          : null,
+    reviewedAt:
+      row.reviewedAt instanceof Date
+        ? row.reviewedAt.toISOString()
+        : typeof row.reviewedAt === "string"
+          ? row.reviewedAt
+          : null,
     scheduledShifts: Array.isArray(row.scheduledShifts)
       ? row.scheduledShifts
       : [],
@@ -1287,6 +1545,7 @@ export type OvertimeRequestRow = {
   requestedMinutes: number;
   approvedMinutes: number | null;
   reason: string | null;
+  submittedAt: string | null;
 };
 
 export type LeaveBalanceRow = {
@@ -1316,12 +1575,87 @@ export type AttendanceAdjustmentRow = {
   reason: string;
 };
 
+export type ShiftMismatchRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  photoUrl: string | null;
+  statusCode: string;
+  statusName: string;
+  workDate: string;
+  fromShiftName: string;
+  toShiftName: string;
+  fromTimeLabel: string;
+  toTimeLabel: string;
+  reason: string;
+};
+
 export type ApprovalInboxData = {
   leave: LeaveRequestRow[];
   overtime: OvertimeRequestRow[];
   attendanceAdjustments: AttendanceAdjustmentRow[];
   attendanceAdjustmentCount: number;
+  shiftMismatches: ShiftMismatchRow[];
+  shiftMismatchCount: number;
+  advances: import("@/lib/hr/services/salary-advances").SalaryAdvanceRow[];
 };
+
+function formatShiftTimeLabel(start?: Date | string | null, end?: Date | string | null) {
+  const fmt = (value: Date | string | null | undefined) => {
+    if (!value) return "—";
+    if (typeof value === "string") return value.slice(0, 5);
+    const hh = String(value.getUTCHours()).padStart(2, "0");
+    const mm = String(value.getUTCMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  };
+  return `${fmt(start)}–${fmt(end)}`;
+}
+
+function mapShiftMismatchRow(row: {
+  id: string;
+  employeeId: string;
+  workDate: Date | string;
+  reason: string;
+  employee?: {
+    employeeCode?: string | null;
+    displayName?: string | null;
+    photoUrl?: string | null;
+  } | null;
+  fromShift?: {
+    name?: string | null;
+    startTime?: Date | string | null;
+    endTime?: Date | string | null;
+  } | null;
+  toShift?: {
+    name?: string | null;
+    startTime?: Date | string | null;
+    endTime?: Date | string | null;
+  } | null;
+  status?: { code?: string | null; name?: string | null } | null;
+}): ShiftMismatchRow {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    employeeCode: row.employee?.employeeCode ?? "—",
+    employeeName: row.employee?.displayName ?? "—",
+    photoUrl: row.employee?.photoUrl ?? null,
+    statusCode: row.status?.code ?? "—",
+    statusName: row.status?.name ?? row.status?.code ?? "—",
+    workDate: isoDate(row.workDate) ?? "",
+    fromShiftName: row.fromShift?.name ?? "—",
+    toShiftName: row.toShift?.name ?? "—",
+    fromTimeLabel: formatShiftTimeLabel(
+      row.fromShift?.startTime,
+      row.fromShift?.endTime,
+    ),
+    toTimeLabel: formatShiftTimeLabel(
+      row.toShift?.startTime,
+      row.toShift?.endTime,
+    ),
+    reason: row.reason,
+  };
+}
 
 function mapAttendanceAdjustmentRow(row: {
   id: string;
@@ -1365,12 +1699,37 @@ function mapAttendanceAdjustmentRow(row: {
 export async function listLeaveRequests(
   ctx: HrRequestContext,
   status?: string | null,
+  options?: { view?: "inbox" | "all" | null },
 ): Promise<HrDataResult<LeaveRequestRow[]>> {
   return safeRead<LeaveRequestRow[]>([], async () => {
     const rows = await listLeaveRequestsService(serviceContext(ctx), {
       status: status ?? null,
+      view: options?.view ?? (status ? "all" : "inbox"),
     });
     return rows.map((row) => mapLeaveRequestRow(row));
+  });
+}
+
+export async function listLeaveHistory(
+  ctx: HrRequestContext,
+  input: { page?: number; pageSize?: number } = {},
+): Promise<HrDataResult<PagedResponse<LeaveRequestRow>>> {
+  const empty: PagedResponse<LeaveRequestRow> = {
+    rows: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+    pageCount: 1,
+  };
+  return safeRead(empty, async () => {
+    const page = await listLeaveHistoryService(serviceContext(ctx), {
+      page: input.page,
+      pageSize: input.pageSize ?? 10,
+    });
+    return {
+      ...page,
+      rows: page.rows.map((row) => mapLeaveRequestRow(row)),
+    };
   });
 }
 
@@ -1395,35 +1754,88 @@ export async function listLeaveCoverCandidates(
   });
 }
 
+function mapOvertimeRequestRow(row: {
+  id: string;
+  employeeId: string;
+  employee?: {
+    employeeCode?: string | null;
+    displayName?: string | null;
+    photoUrl?: string | null;
+  } | null;
+  status?: { code?: string | null; name?: string | null } | null;
+  workDate: Date | string;
+  startAt: Date | string;
+  endAt: Date | string;
+  requestedMinutes: number;
+  approvedMinutes?: number | null;
+  reason?: string | null;
+  submittedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+}): OvertimeRequestRow {
+  const submitted = row.submittedAt ?? row.createdAt ?? null;
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    employeeCode: row.employee?.employeeCode ?? "—",
+    employeeName: row.employee?.displayName ?? "—",
+    photoUrl: row.employee?.photoUrl ?? null,
+    statusCode: row.status?.code ?? "—",
+    statusName: row.status?.name ?? row.status?.code ?? "—",
+    workDate: isoDate(row.workDate) ?? "",
+    startAt:
+      row.startAt instanceof Date
+        ? row.startAt.toISOString()
+        : String(row.startAt ?? ""),
+    endAt:
+      row.endAt instanceof Date
+        ? row.endAt.toISOString()
+        : String(row.endAt ?? ""),
+    requestedMinutes: row.requestedMinutes,
+    approvedMinutes: row.approvedMinutes ?? null,
+    reason: row.reason ?? null,
+    submittedAt:
+      submitted instanceof Date
+        ? submitted.toISOString()
+        : typeof submitted === "string"
+          ? submitted
+          : null,
+  };
+}
+
 export async function listOvertimeRequests(
   ctx: HrRequestContext,
   status?: string | null,
+  options?: { view?: "inbox" | "all" | null },
 ): Promise<HrDataResult<OvertimeRequestRow[]>> {
   return safeRead<OvertimeRequestRow[]>([], async () => {
     const rows = await listOvertimeRequestsService(serviceContext(ctx), {
       status: status ?? null,
+      view: options?.view ?? (status ? "all" : "inbox"),
     });
-    return rows.map((row) => ({
-      id: row.id,
-      employeeId: row.employeeId,
-      employeeCode: row.employee?.employeeCode ?? "—",
-      employeeName: row.employee?.displayName ?? "—",
-      photoUrl: row.employee?.photoUrl ?? null,
-      statusCode: row.status?.code ?? "—",
-      statusName: row.status?.name ?? row.status?.code ?? "—",
-      workDate: isoDate(row.workDate) ?? "",
-      startAt:
-        row.startAt instanceof Date
-          ? row.startAt.toISOString()
-          : String(row.startAt ?? ""),
-      endAt:
-        row.endAt instanceof Date
-          ? row.endAt.toISOString()
-          : String(row.endAt ?? ""),
-      requestedMinutes: row.requestedMinutes,
-      approvedMinutes: row.approvedMinutes ?? null,
-      reason: row.reason ?? null,
-    }));
+    return rows.map((row) => mapOvertimeRequestRow(row));
+  });
+}
+
+export async function listOvertimeHistory(
+  ctx: HrRequestContext,
+  input: { page?: number; pageSize?: number } = {},
+): Promise<HrDataResult<PagedResponse<OvertimeRequestRow>>> {
+  const empty: PagedResponse<OvertimeRequestRow> = {
+    rows: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+    pageCount: 1,
+  };
+  return safeRead(empty, async () => {
+    const page = await listOvertimeHistoryService(serviceContext(ctx), {
+      page: input.page,
+      pageSize: input.pageSize ?? 10,
+    });
+    return {
+      ...page,
+      rows: page.rows.map((row) => mapOvertimeRequestRow(row)),
+    };
   });
 }
 
@@ -1456,37 +1868,26 @@ export async function getApprovalInbox(
       overtime: [],
       attendanceAdjustments: [],
       attendanceAdjustmentCount: 0,
+      shiftMismatches: [],
+      shiftMismatchCount: 0,
+      advances: [],
     },
     async () => {
       const inbox = await approvalInboxService(serviceContext(ctx));
       const attendanceAdjustments = inbox.attendanceAdjustments.map((row) =>
         mapAttendanceAdjustmentRow(row),
       );
+      const shiftMismatches = (inbox.shiftMismatches ?? []).map((row) =>
+        mapShiftMismatchRow(row),
+      );
       return {
         leave: inbox.leave.map((row) => mapLeaveRequestRow(row)),
-        overtime: inbox.overtime.map((row) => ({
-          id: row.id,
-          employeeId: row.employeeId,
-          employeeCode: row.employee?.employeeCode ?? "—",
-          employeeName: row.employee?.displayName ?? "—",
-          photoUrl: row.employee?.photoUrl ?? null,
-          statusCode: row.status?.code ?? "SUBMITTED",
-          statusName: row.status?.name ?? "รออนุมัติ",
-          workDate: isoDate(row.workDate) ?? "",
-          startAt:
-            row.startAt instanceof Date
-              ? row.startAt.toISOString()
-              : String(row.startAt ?? ""),
-          endAt:
-            row.endAt instanceof Date
-              ? row.endAt.toISOString()
-              : String(row.endAt ?? ""),
-          requestedMinutes: row.requestedMinutes,
-          approvedMinutes: row.approvedMinutes ?? null,
-          reason: row.reason ?? null,
-        })),
+        overtime: inbox.overtime.map((row) => mapOvertimeRequestRow(row)),
         attendanceAdjustments,
         attendanceAdjustmentCount: attendanceAdjustments.length,
+        shiftMismatches,
+        shiftMismatchCount: shiftMismatches.length,
+        advances: inbox.advances ?? [],
       };
     },
   );

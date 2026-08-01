@@ -356,6 +356,7 @@ export default function MeOvertimeWorkspace() {
             <div className="hr-overlay-body">
               <form
                 className="hr-ot-form"
+                method="post"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void submitOvertime();

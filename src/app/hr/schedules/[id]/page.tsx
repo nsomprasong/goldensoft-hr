@@ -1,7 +1,10 @@
+import { redirect } from "next/navigation";
+
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import DeleteSchedulePeriodButton from "@/components/hr/delete-schedule-period-button";
 import ScheduleDetailWorkspace from "@/components/hr/schedule-detail-workspace";
 import HrShell from "@/components/hr-shell";
+import { schedulesHrefForBranch } from "@/lib/hr/branch-nav";
 import {
   getSchedulePeriod,
   listOrganizationBranches,
@@ -30,14 +33,24 @@ export default async function ScheduleDetailPage({
   const canManage = canHr(ctx, HR_PERMISSIONS.scheduleManage);
   const canPublish = canHr(ctx, HR_PERMISSIONS.schedulePublish);
   const locked = period?.statusCode === "LOCKED";
-  const unavailable = result.message || options.message;
+
+  if (
+    result.message === "BRANCH_OUT_OF_SCOPE" ||
+    (ctx.branchId &&
+      period?.branchId &&
+      period.branchId !== ctx.branchId)
+  ) {
+    redirect(schedulesHrefForBranch(ctx.branchId));
+  }
+
+  const unavailable =
+    (result.message !== "BRANCH_OUT_OF_SCOPE" ? result.message : null) ||
+    options.message;
   const branchLabel =
     (period?.branchId &&
       branches.data.find((row) => row.id === period.branchId)?.label) ||
     null;
-  const backHref = period?.branchId
-    ? `/hr/schedules?branchId=${encodeURIComponent(period.branchId)}`
-    : "/hr/schedules";
+  const backHref = schedulesHrefForBranch(period?.branchId ?? ctx.branchId);
 
   const statusClass =
     period?.statusCode === "PUBLISHED"

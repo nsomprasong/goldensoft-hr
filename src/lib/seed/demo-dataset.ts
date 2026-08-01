@@ -1769,6 +1769,11 @@ export async function cleanupDevelopmentDemo(
   await db.attendanceAdjustment.deleteMany({
     where: { employee: employeeFilter },
   });
+  if (db.shiftMismatchRequest?.deleteMany) {
+    await db.shiftMismatchRequest.deleteMany({
+      where: { employee: employeeFilter },
+    });
+  }
   await db.attendanceEvent.deleteMany({ where: { employee: employeeFilter } });
   await db.attendanceDay.deleteMany({ where: { employee: employeeFilter } });
   await db.shiftAssignment.deleteMany({

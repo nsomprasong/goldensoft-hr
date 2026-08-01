@@ -98,6 +98,9 @@ export function mockEntitledHrUser(options?: {
             organizationStatus: "ACTIVE",
             roles: options?.organizationRoles ?? ["ADMIN"],
             branchCount: branchId ? 1 : 0,
+            branches: branchId
+              ? [{ id: branchId, name: "สาขาหลัก", code: "HQ" }]
+              : [],
           },
         ],
     activeOrganization: { id: organizationId, name: "Demo Org" },

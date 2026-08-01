@@ -38,4 +38,26 @@ describe("HR 100% pure calculations", () => {
     assert.equal(hourly.gross, 1100);
     assert.equal(hourly.lines.filter((line) => line.isLegalPlaceholder).every((line) => line.amount === 0), true);
   });
+
+  it("applies configurable tax and SSO rates (Phase 4 / 2B)", () => {
+    const result = calculatePayroll({
+      wageType: "MONTHLY",
+      wageAmount: 20_000,
+      deductionRates: {
+        taxEnabled: true,
+        taxRatePercent: 3,
+        socialSecurityEnabled: true,
+        socialSecurityRatePercent: 5,
+        socialSecurityMaxAmount: 750,
+      },
+    });
+    assert.equal(result.gross, 20_000);
+    assert.equal(result.deductions, 600 + 750);
+    assert.equal(result.net, 18_650);
+    assert.equal(
+      result.lines.find((line) => line.code === "TAX")?.isLegalPlaceholder,
+      undefined,
+    );
+  });
 });
+

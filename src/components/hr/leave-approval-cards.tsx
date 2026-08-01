@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
@@ -17,6 +17,23 @@ function statusClass(code: string): string {
   if (code === "APPROVED") return "badge badge-active";
   if (code === "REJECTED" || code === "CANCELLED") return "badge badge-inactive";
   return "badge";
+}
+
+function formatSubmittedAt(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(iso));
+  } catch {
+    return "—";
+  }
 }
 
 function shiftSummary(row: LeaveRequestRow): string {
@@ -60,6 +77,9 @@ export default function LeaveApprovalCards({
   const [loadingCandidates, setLoadingCandidates] = useState<
     Record<string, boolean>
   >({});
+  const [coverOpenById, setCoverOpenById] = useState<Record<string, boolean>>(
+    {},
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadCandidates = useCallback(async (leaveRequestId: string) => {
@@ -87,14 +107,13 @@ export default function LeaveApprovalCards({
     }
   }, []);
 
-  useEffect(() => {
-    if (!canApprove) return;
-    for (const row of rows) {
-      if (row.statusCode === "SUBMITTED" || row.statusCode === "APPROVED") {
-        void loadCandidates(row.id);
-      }
+  function toggleCover(row: LeaveRequestRow) {
+    const nextOpen = !coverOpenById[row.id];
+    setCoverOpenById((prev) => ({ ...prev, [row.id]: nextOpen }));
+    if (nextOpen && candidatesByLeave[row.id] === undefined) {
+      void loadCandidates(row.id);
     }
-  }, [canApprove, rows, loadCandidates]);
+  }
 
   async function postAction(
     body: Record<string, unknown>,
@@ -109,19 +128,23 @@ export default function LeaveApprovalCards({
       credentials: "same-origin",
       body: JSON.stringify(body),
     });
-    if (!response.ok) {
-      let detail = "ดำเนินการไม่สำเร็จ";
-      try {
-        const payload = (await response.json()) as {
-          error?: { message?: string };
-        };
-        if (payload.error?.message?.trim()) detail = payload.error.message.trim();
-      } catch {
-        // keep fallback
-      }
-      throw new Error(detail);
+    let payload: {
+      error?: { message?: string };
+      reviewedByName?: string | null;
+    } = {};
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      // empty body
     }
-    setFeedback({ kind: "success", message: successMessage });
+    if (!response.ok) {
+      throw new Error(payload.error?.message?.trim() || "ดำเนินการไม่สำเร็จ");
+    }
+    const by = payload.reviewedByName?.trim();
+    setFeedback({
+      kind: "success",
+      message: by ? `${successMessage} โดย ${by}` : successMessage,
+    });
     router.refresh();
   }
 
@@ -197,104 +220,131 @@ export default function LeaveApprovalCards({
           const candidates = candidatesByLeave[row.id] ?? [];
           const loading = loadingCandidates[row.id];
           const pending = row.statusCode === "SUBMITTED";
-          const showCover =
+          const showCoverToggle =
             canApprove && (pending || row.statusCode === "APPROVED");
+          const coverOpen = Boolean(coverOpenById[row.id]);
+          const coverSummary = row.coverEmployeeName
+            ? `คนแทน: ${row.coverEmployeeName}`
+            : "ยังไม่ระบุคนแทน";
+
           return (
             <li key={row.id} className="hr-leave-approval-item">
-              <div className="hr-ot-approval-row">
-                <div className="hr-ot-approval-main">
-                  <div className="hr-ot-approval-person">
-                    <EmployeeAvatar
-                      displayName={row.employeeName}
-                      photoUrl={row.photoUrl}
-                      size="sm"
-                    />
-                    <div className="hr-leave-request-main">
-                      <strong>{row.employeeName}</strong>
-                      <span>
-                        {row.leaveTypeName} ·{" "}
-                        {formatThaiDateRange(row.startDate, row.endDate)} ·{" "}
-                        {row.requestedAmount} วัน
+              <div className="hr-leave-approval-head">
+                <div className="hr-ot-approval-person">
+                  <EmployeeAvatar
+                    displayName={row.employeeName}
+                    photoUrl={row.photoUrl}
+                    size="sm"
+                  />
+                  <div className="hr-leave-request-main">
+                    <strong>{row.employeeName}</strong>
+                    <span>
+                      {row.leaveTypeName} ·{" "}
+                      {formatThaiDateRange(row.startDate, row.endDate)} ·{" "}
+                      {row.requestedAmount} วัน
+                    </span>
+                    <span className="hr-leave-request-submitted">
+                      ยื่นเมื่อ {formatSubmittedAt(row.submittedAt)}
+                    </span>
+                    {row.reason?.trim() ? (
+                      <span className="hr-leave-request-reason">
+                        {row.reason.trim()}
                       </span>
-                      {row.reason?.trim() ? (
-                        <span className="hr-leave-request-reason">
-                          {row.reason.trim()}
-                        </span>
-                      ) : null}
-                      <span>{shiftSummary(row)}</span>
-                      {row.coverEmployeeName ? (
-                        <span>คนแทน: {row.coverEmployeeName}</span>
-                      ) : null}
-                    </div>
+                    ) : null}
+                    <span className="hr-leave-request-shift">
+                      {shiftSummary(row)}
+                    </span>
                   </div>
                 </div>
-                <div className="hr-ot-approval-side">
-                  <span className={statusClass(row.statusCode)}>
-                    {row.statusName}
-                  </span>
-                  {canApprove && pending ? (
-                    <div className="hr-ot-approval-actions">
+                <span
+                  className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
+                >
+                  {row.statusName}
+                </span>
+              </div>
+
+              {canApprove && pending ? (
+                <div className="hr-leave-approval-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy}
+                    onClick={() => void review(row, "approve")}
+                  >
+                    อนุมัติ
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    disabled={busy}
+                    onClick={() => void review(row, "reject")}
+                  >
+                    ไม่อนุมัติ
+                  </button>
+                </div>
+              ) : null}
+
+              {showCoverToggle ? (
+                <div className="hr-leave-cover-panel">
+                  <button
+                    type="button"
+                    className="hr-leave-cover-toggle"
+                    aria-expanded={coverOpen}
+                    onClick={() => toggleCover(row)}
+                  >
+                    <span>
+                      คนทำงานแทน
+                      <span className="hr-leave-cover-toggle-hint">
+                        {coverSummary}
+                      </span>
+                    </span>
+                    <span aria-hidden="true">{coverOpen ? "▾" : "▸"}</span>
+                  </button>
+
+                  {coverOpen ? (
+                    <div className="hr-leave-cover-block">
+                      <label className="field">
+                        <select
+                          aria-label="เลือกคนทำงานแทนจากกะอื่น"
+                          value={coverById[row.id] ?? ""}
+                          disabled={busy || loading}
+                          onChange={(event) =>
+                            setCoverById((prev) => ({
+                              ...prev,
+                              [row.id]: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">— ไม่ระบุ —</option>
+                          {candidates.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>
+                              {candidateLabel(candidate)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {loading ? (
+                        <p className="muted" style={{ margin: 0 }}>
+                          กำลังโหลดคนจากกะอื่น…
+                        </p>
+                      ) : candidates.length === 0 ? (
+                        <p className="muted" style={{ margin: 0 }}>
+                          ไม่มีพนักงานกะอื่นในวันที่ลา
+                        </p>
+                      ) : null}
                       <button
                         type="button"
-                        className="btn btn-sm btn-primary"
-                        disabled={busy}
-                        onClick={() => void review(row, "approve")}
+                        className="btn btn-sm"
+                        disabled={busy || loading}
+                        onClick={() => void saveCover(row)}
                       >
-                        อนุมัติ
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        disabled={busy}
-                        onClick={() => void review(row, "reject")}
-                      >
-                        ไม่อนุมัติ
+                        {busy ? "กำลังบันทึก…" : "บันทึกคนแทน / ย้ายกะ"}
                       </button>
                     </div>
                   ) : null}
                 </div>
-              </div>
-
-              {showCover ? (
-                <div className="hr-leave-cover-block">
-                  <label className="field">
-                    <span>คนทำงานแทน (จากกะอื่น)</span>
-                    <select
-                      value={coverById[row.id] ?? ""}
-                      disabled={busy || loading}
-                      onChange={(event) =>
-                        setCoverById((prev) => ({
-                          ...prev,
-                          [row.id]: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">— ไม่ระบุ —</option>
-                      {candidates.map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {candidateLabel(candidate)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {loading ? (
-                    <p className="muted" style={{ margin: 0 }}>
-                      กำลังโหลดคนจากกะอื่น…
-                    </p>
-                  ) : candidates.length === 0 ? (
-                    <p className="muted" style={{ margin: 0 }}>
-                      ไม่มีพนักงานกะอื่นในวันที่ลา
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={busy || loading}
-                    onClick={() => void saveCover(row)}
-                  >
-                    {busy ? "กำลังบันทึก…" : "บันทึกคนแทน / ย้ายกะ"}
-                  </button>
-                </div>
+              ) : row.coverEmployeeName ? (
+                <p className="hr-leave-cover-readonly muted">{coverSummary}</p>
               ) : null}
             </li>
           );

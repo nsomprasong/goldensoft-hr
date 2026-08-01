@@ -107,7 +107,8 @@ export type HrApiSession = {
 
 /**
  * Branch allow-list for the caller. Tenant administrators see the whole
- * organization; everyone else is pinned to their active branch.
+ * organization; everyone else is limited to Platform membership SELECTED
+ * branches, optionally narrowed by the shell's active branch.
  */
 export function resolveAllowedBranchIds(
   ctx: HrRequestContext,
@@ -115,6 +116,15 @@ export function resolveAllowedBranchIds(
   if (ctx.contextMode === "platform_admin") return null;
   const roles = ctx.membershipRoles.map((role) => role.toUpperCase());
   if (roles.includes("OWNER") || roles.includes("ADMIN")) return null;
+
+  const scoped = ctx.membershipBranchIds;
+  if (Array.isArray(scoped) && scoped.length > 0) {
+    if (ctx.branchId) {
+      return scoped.includes(ctx.branchId) ? [ctx.branchId] : [];
+    }
+    return [...scoped];
+  }
+
   return ctx.branchId ? [ctx.branchId] : [];
 }
 

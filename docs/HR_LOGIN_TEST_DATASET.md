@@ -71,7 +71,7 @@ npm run seed:login-test:cleanup
 | EMP-0003 | `plukpraew.hq.supervisor@example.com` | วิชัย ขยันงาน | EMPLOYEE | HQ | self-service HQ |
 | EMP-0004 | `plukpraew.hq.staff1@example.com` | นภา สุขใจ | EMPLOYEE | HQ | ลาป่วยรออนุมัติ |
 | EMP-0005 | `plukpraew.hq.staff2@example.com` | ประยุทธ์ มั่นคง | EMPLOYEE | HQ | payroll หัก TAX/SSO |
-| EMP-0006 | `plukpraew.b1.manager@example.com` | ศิริพร ยิ้มแย้ม | EMPLOYEE | BRANCH01 | พนักงานสาขา |
+| EMP-0006 | `plukpraew.b1.manager@example.com` | ศิริพร ยิ้มแย้ม | **BRANCH_MANAGER** | BRANCH01 | ผู้ดูแลสาขา — อนุมัติในสาขา |
 | EMP-0007 | `plukpraew.b1.staff1@example.com` | อนุชา ตรงเวลา | EMPLOYEE | BRANCH01 | มาสาย / ขาดงาน / ขอปรับเวลาเข้ารออนุมัติ |
 | EMP-0008 | `plukpraew.hq.newhire@example.com` | จิราภรณ์ ใหม่งาน | EMPLOYEE | HQ | ทดลองงาน |
 | EMP-0009 | `plukpraew.hq.resigned@example.com` | ธนา ลาออกแล้ว | EMPLOYEE | HQ | สถานะลาออก |
@@ -82,7 +82,8 @@ npm run seed:login-test:cleanup
 1. **สมชาย** (`plukpraew.owner@example.com`) — เข้า HR จัดการพนักงาน / อนุมัติลา-OT  
 2. **นภา** (`plukpraew.hq.staff1@example.com`) — มุมพนักงาน self-service  
    (เมนู: ลงเวลา / ตารางงาน / การลา / OT / สลิป — บทบาท EMPLOYEE)
-3. **ศิริพร** (`plukpraew.b1.manager@example.com`) — สังกัดสาขา BRANCH01  
+3. **ศิริพร** (`plukpraew.b1.manager@example.com`) — ผู้ดูแลสาขา BRANCH01  
+   (เมนู: รายการรออนุมัติ — เห็นเฉพาะคำขอของสาขาตน; OWNER/ADMIN เห็นทั้งองค์กร)
 
 ---
 
@@ -104,8 +105,24 @@ HR
     ├─ Department / Position / Compensation / Avatar
     ├─ ShiftAssignment + AttendanceDay/Event
     ├─ LeaveRequest / OvertimeRequest / Notification
-    └─ PayrollRun (+ TAX/SSO สำหรับ EMP-0005)
+    ├─ PayrollDeductionSettings (ภาษี 3% / SSO 5% เพดาน 750)
+    ├─ PayrollRun งวดแรก = อนุมัติแล้ว + ออกสลิปทุกคน (EMP-0005 ภาษี 5%)
+    └─ PayrollRun งวดถัดไป = ร่าง (สำหรับทดสอบคำนวณ)
 ```
+
+### Payroll / สลิป (Phase 4)
+
+| หน้า | บัญชีทดสอบ | สิ่งที่ควรเห็น |
+|------|------------|----------------|
+| `/hr/settings/payroll-deductions` | owner | อัตราภาษี 3% + SSO 5% เพดาน 750 |
+| `/hr/payroll/runs` | owner | รอบอนุมัติแล้ว + รอบร่าง |
+| `/hr/payslips` | owner | สลิปออกแล้วหลายใบ (ชื่อคน + ยอดสุทธิ) |
+| `/hr/me/payslips` | `plukpraew.hq.staff1@example.com` | สลิปของนภา |
+| `/hr/me/payslips` | `plukpraew.hq.staff2@example.com` | สลิปประยุทธ์ (หักภาษีสูงกว่า) |
+| `/hr/advances` | owner | แผนหักหลายงวด + คำขอรออนุมัติ |
+| `/hr/me/advances` | พนักงาน (เช่น staff1) | ส่งคำขอเบิกของตนเอง |
+| `/hr/approvals?tab=advance` | owner / branch manager | อนุมัติ + เลือกเงินสดหรือโอนพร้อมเงินเดือน |
+| `/hr/reports` | owner | สรุปเบิกล่วงหน้า รอหัก/หักแล้ว |
 
 ---
 

@@ -50,6 +50,7 @@ function createRecordingPrisma(calls: Call[]) {
     leaveRequest: model("leaveRequest"),
     overtimeRequest: model("overtimeRequest"),
     attendanceAdjustment: model("attendanceAdjustment"),
+    shiftMismatchRequest: model("shiftMismatchRequest"),
     notification: model("notification"),
     notificationOutbox: model("notificationOutbox"),
     attendanceEvent: model("attendanceEvent"),

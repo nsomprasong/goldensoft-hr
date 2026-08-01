@@ -6,9 +6,12 @@
  *
  * See docs/HR_LOGIN_TEST_DATASET.md
  */
+import { randomUUID } from "node:crypto";
+
 import type { PrismaClient } from "@prisma/client";
 
 import { saveDemoAvatarSvg } from "@/lib/hr/employee-photos";
+import { calculatePayroll } from "@/lib/hr/payroll-calc";
 import { generateSemimonthlyPeriods } from "@/lib/hr/payroll-rules";
 
 export const LOGIN_TEST_ORG_CODE = "TEST-PLUKPRAEW";
@@ -339,6 +342,16 @@ export async function seedLoginTestHr(
   const payFrequencyId = await requireMasterId(prisma, "payFrequency", "SEMIMONTHLY");
   const overtimeRateTypeId = await requireMasterId(prisma, "overtimeRateType", "NORMAL_DAY");
   const draftStatusId = await requireMasterId(prisma, "payrollPeriodStatus", "DRAFT");
+  const approvedStatusId = await requireMasterId(
+    prisma,
+    "payrollPeriodStatus",
+    "APPROVED",
+  );
+  const reviewStatusId = await requireMasterId(
+    prisma,
+    "payrollPeriodStatus",
+    "REVIEW",
+  );
 
   const deptOps = await prisma.department.upsert({
     where: { organizationId_code: { organizationId, code: `${prefix}OPS` } },
@@ -1270,107 +1283,397 @@ export async function seedLoginTestHr(
     }
   }
 
-  const payPeriod = await db.payrollPeriod.findFirst({
+  // Phase 4: org tax/SSO rates (2B estimates) + approved run with issued payslips.
+  const deductionRates = {
+    taxEnabled: true,
+    taxRatePercent: 3,
+    socialSecurityEnabled: true,
+    socialSecurityRatePercent: 5,
+    socialSecurityMaxAmount: 750,
+  };
+  await prisma.$executeRaw`
+    INSERT INTO hr.payroll_deduction_settings (
+      id, organization_id, tax_enabled, tax_rate_percent,
+      social_security_enabled, social_security_rate_percent,
+      social_security_max_amount, updated_by_auth_user_id
+    ) VALUES (
+      gen_random_uuid(),
+      ${organizationId}::uuid,
+      ${deductionRates.taxEnabled},
+      ${deductionRates.taxRatePercent},
+      ${deductionRates.socialSecurityEnabled},
+      ${deductionRates.socialSecurityRatePercent},
+      ${deductionRates.socialSecurityMaxAmount},
+      ${actorId}::uuid
+    )
+    ON CONFLICT (organization_id) DO UPDATE SET
+      tax_enabled = EXCLUDED.tax_enabled,
+      tax_rate_percent = EXCLUDED.tax_rate_percent,
+      social_security_enabled = EXCLUDED.social_security_enabled,
+      social_security_rate_percent = EXCLUDED.social_security_rate_percent,
+      social_security_max_amount = EXCLUDED.social_security_max_amount,
+      updated_by_auth_user_id = EXCLUDED.updated_by_auth_user_id,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  const payPeriods = await db.payrollPeriod.findMany({
     where: { organizationId, payrollScheduleId: payrollSchedule.id },
     orderBy: { periodStart: "asc" },
   });
-  if (payPeriod) {
+  const issuedPeriod = payPeriods[0];
+  const draftPeriod = payPeriods[1] ?? payPeriods[0];
+
+  if (issuedPeriod) {
     const run = await db.payrollRun.upsert({
       where: {
         payrollPeriodId_runNumber: {
-          payrollPeriodId: payPeriod.id,
+          payrollPeriodId: issuedPeriod.id,
           runNumber: 1,
         },
       },
-      update: {},
+      update: {
+        statusId: approvedStatusId,
+        completedAt: demoStart,
+        approvedAt: demoStart,
+        approvedByAuthUserId: actorId,
+      },
       create: {
         organizationId,
-        payrollPeriodId: payPeriod.id,
+        payrollPeriodId: issuedPeriod.id,
         runNumber: 1,
-        statusId: draftStatusId,
+        statusId: approvedStatusId,
+        startedAt: demoStart,
+        completedAt: demoStart,
+        approvedAt: demoStart,
+        approvedByAuthUserId: actorId,
         createdByAuthUserId: actorId,
       },
     });
+
     for (const person of LOGIN_TEST_ROSTER) {
       if (person.status === "RESIGNED") continue;
       const emp = byKey(person.key);
-      const tax = person.key === "hq-staff-2" ? 1_200 : 0;
-      const sso = person.key === "hq-staff-2" ? 750 : 0;
-      const gross = person.amount;
-      const net = gross - tax - sso;
+      const wageType =
+        person.wageType === "DAILY"
+          ? "DAILY"
+          : person.wageType === "HOURLY"
+            ? "HOURLY"
+            : "MONTHLY";
+      // EMP-0005 shows higher tax showcase; others use org rates on full wage.
+      const calc = calculatePayroll({
+        wageType,
+        wageAmount: person.amount,
+        workedDays: wageType === "DAILY" ? 13 : undefined,
+        deductionRates:
+          person.key === "hq-staff-2"
+            ? { ...deductionRates, taxRatePercent: 5 }
+            : deductionRates,
+      });
       const runEmp = await db.payrollRunEmployee.upsert({
         where: {
           payrollRunId_employeeId: { payrollRunId: run.id, employeeId: emp.id },
         },
         update: {
-          grossEarnings: gross,
-          totalDeductions: tax + sso,
-          netPay: net,
+          grossEarnings: calc.gross,
+          totalDeductions: calc.deductions,
+          netPay: calc.net,
+          statusId: reviewStatusId,
+          calculatedAt: demoStart,
         },
         create: {
           payrollRunId: run.id,
           employeeId: emp.id,
-          grossEarnings: gross,
-          totalDeductions: tax + sso,
-          netPay: net,
-          statusId: draftStatusId,
+          grossEarnings: calc.gross,
+          totalDeductions: calc.deductions,
+          netPay: calc.net,
+          statusId: reviewStatusId,
           calculatedAt: demoStart,
         },
       });
-      const earn = await db.payrollRunItem.findFirst({
-        where: {
-          payrollRunEmployeeId: runEmp.id,
-          sourceType: "LOGIN_TEST_EARN",
-        },
+
+      await db.payrollRunItem.deleteMany({
+        where: { payrollRunEmployeeId: runEmp.id },
       });
-      if (!earn) {
+      for (const line of calc.lines) {
+        if (line.amount <= 0 && line.isLegalPlaceholder) continue;
         await db.payrollRunItem.create({
           data: {
             payrollRunEmployeeId: runEmp.id,
-            earningTypeId: baseSalaryId,
-            sourceType: "LOGIN_TEST_EARN",
-            description: "ค่าจ้าง",
-            quantity: 1,
-            rate: gross,
-            amount: gross,
+            earningTypeId:
+              line.kind === "EARNING" && line.code === "BASE_PAY"
+                ? baseSalaryId
+                : null,
+            deductionTypeId:
+              line.code === "TAX"
+                ? taxId
+                : line.code === "SOCIAL_SECURITY"
+                  ? ssoId
+                  : null,
+            sourceType: "LOGIN_TEST",
+            description: line.description,
+            amount: line.amount,
           },
         });
       }
-      if (tax > 0) {
-        const taxLine = await db.payrollRunItem.findFirst({
+
+      await db.payslip.upsert({
+        where: { payrollRunEmployeeId: runEmp.id },
+        update: {
+          issuedAt: demoStart,
+          issuedByAuthUserId: actorId,
+          grossEarnings: calc.gross,
+          totalDeductions: calc.deductions,
+          netPay: calc.net,
+          snapshot: {
+            displayName: person.displayName,
+            items: calc.lines,
+            gross: calc.gross,
+            deductions: calc.deductions,
+            net: calc.net,
+          },
+        },
+        create: {
+          payrollRunEmployeeId: runEmp.id,
+          employeeId: emp.id,
+          issuedAt: demoStart,
+          issuedByAuthUserId: actorId,
+          grossEarnings: calc.gross,
+          totalDeductions: calc.deductions,
+          netPay: calc.net,
+          snapshot: {
+            displayName: person.displayName,
+            items: calc.lines,
+            gross: calc.gross,
+            deductions: calc.deductions,
+            net: calc.net,
+          },
+        },
+      });
+    }
+  }
+
+  if (draftPeriod && draftPeriod.id !== issuedPeriod?.id) {
+    await db.payrollRun.upsert({
+      where: {
+        payrollPeriodId_runNumber: {
+          payrollPeriodId: draftPeriod.id,
+          runNumber: 1,
+        },
+      },
+      update: { statusId: draftStatusId },
+      create: {
+        organizationId,
+        payrollPeriodId: draftPeriod.id,
+        runNumber: 1,
+        statusId: draftStatusId,
+        createdByAuthUserId: actorId,
+      },
+    });
+  }
+
+  // Advances: open installment plan (BRANCH01), deducted plan on issued run (HQ),
+  // plus one SUBMITTED request for approval inbox.
+  const advanceEmpB1 = byKey("b1-staff-1");
+  const advanceEmpHq = byKey("hq-staff-1");
+  const advanceEmpSubmit = byKey("hq-staff-2");
+  const openPeriodId =
+    issuedPeriod?.id ??
+    (await db.payrollPeriod.findFirst({
+      where: { organizationId },
+      orderBy: { periodStart: "asc" },
+      select: { id: true },
+    }))?.id ??
+    null;
+
+  await prisma.$executeRaw`
+    DELETE FROM hr.salary_advance_installments
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  await prisma.$executeRaw`
+    DELETE FROM hr.salary_advances
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+
+  if (openPeriodId) {
+    const openAdvanceId = randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO hr.salary_advances (
+        id, organization_id, employee_id, amount, advance_date, reason, status,
+        installment_count, start_payroll_period_id, disbursement_mode,
+        submitted_at, created_by_auth_user_id, approved_by_auth_user_id, approved_at
+      ) VALUES (
+        ${openAdvanceId}::uuid,
+        ${organizationId}::uuid,
+        ${advanceEmpB1.id}::uuid,
+        1500,
+        ${demoStart}::date,
+        'เบิกฉุกเฉิน (ทดสอบ)',
+        'APPROVED',
+        2,
+        ${openPeriodId}::uuid,
+        'CASH_ALREADY',
+        ${demoStart},
+        ${actorId}::uuid,
+        ${actorId}::uuid,
+        ${demoStart}
+      )
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO hr.salary_advance_installments (
+        id, organization_id, salary_advance_id, sequence, amount, payroll_period_id, status
+      )
+      SELECT
+        gen_random_uuid(),
+        ${organizationId}::uuid,
+        ${openAdvanceId}::uuid,
+        1,
+        750,
+        ${openPeriodId}::uuid,
+        'PENDING'
+    `;
+    // Second installment: next period after start if present, else same period remainder stays on first only.
+    const nextPeriod = await db.payrollPeriod.findFirst({
+      where: {
+        organizationId,
+        periodStart: { gt: issuedPeriod?.periodStart ?? new Date(demoStart) },
+      },
+      orderBy: { periodStart: "asc" },
+      select: { id: true },
+    });
+    if (nextPeriod) {
+      await prisma.$executeRaw`
+        INSERT INTO hr.salary_advance_installments (
+          id, organization_id, salary_advance_id, sequence, amount, payroll_period_id, status
+        ) VALUES (
+          gen_random_uuid(),
+          ${organizationId}::uuid,
+          ${openAdvanceId}::uuid,
+          2,
+          750,
+          ${nextPeriod.id}::uuid,
+          'PENDING'
+        )
+      `;
+    } else {
+      await prisma.$executeRaw`
+        UPDATE hr.salary_advances
+        SET installment_count = 1, amount = 1500
+        WHERE id = ${openAdvanceId}::uuid
+      `;
+      await prisma.$executeRaw`
+        UPDATE hr.salary_advance_installments
+        SET amount = 1500
+        WHERE salary_advance_id = ${openAdvanceId}::uuid AND sequence = 1
+      `;
+    }
+
+    const submittedId = randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO hr.salary_advances (
+        id, organization_id, employee_id, amount, advance_date, reason, status,
+        installment_count, start_payroll_period_id, disbursement_mode,
+        submitted_at, created_by_auth_user_id
+      ) VALUES (
+        ${submittedId}::uuid,
+        ${organizationId}::uuid,
+        ${advanceEmpSubmit.id}::uuid,
+        3000,
+        ${demoStart}::date,
+        'ขอเบิกเพื่ออนุมัติ (ทดสอบ)',
+        'SUBMITTED',
+        3,
+        ${openPeriodId}::uuid,
+        'WITH_SALARY',
+        ${demoStart},
+        ${actorId}::uuid
+      )
+    `;
+  }
+
+  if (issuedPeriod) {
+    const issuedRun = await db.payrollRun.findFirst({
+      where: { payrollPeriodId: issuedPeriod.id, runNumber: 1 },
+    });
+    if (issuedRun) {
+      const deductedAdvanceId = randomUUID();
+      await prisma.$executeRaw`
+        INSERT INTO hr.salary_advances (
+          id, organization_id, employee_id, amount, advance_date, reason, status,
+          installment_count, start_payroll_period_id, disbursement_mode,
+          deducted_payroll_run_id, deducted_at, submitted_at,
+          created_by_auth_user_id, approved_by_auth_user_id, approved_at
+        ) VALUES (
+          ${deductedAdvanceId}::uuid,
+          ${organizationId}::uuid,
+          ${advanceEmpHq.id}::uuid,
+          2000,
+          ${demoStart}::date,
+          'เบิกค่าใช้จ่าย (ทดสอบ)',
+          'DEDUCTED',
+          1,
+          ${issuedPeriod.id}::uuid,
+          'CASH_ALREADY',
+          ${issuedRun.id}::uuid,
+          ${demoStart},
+          ${demoStart},
+          ${actorId}::uuid,
+          ${actorId}::uuid,
+          ${demoStart}
+        )
+      `;
+      await prisma.$executeRaw`
+        INSERT INTO hr.salary_advance_installments (
+          id, organization_id, salary_advance_id, sequence, amount,
+          payroll_period_id, status, deducted_payroll_run_id, deducted_at
+        ) VALUES (
+          gen_random_uuid(),
+          ${organizationId}::uuid,
+          ${deductedAdvanceId}::uuid,
+          1,
+          2000,
+          ${issuedPeriod.id}::uuid,
+          'DEDUCTED',
+          ${issuedRun.id}::uuid,
+          ${demoStart}
+        )
+      `;
+      // Reflect deducted advance on นภา's issued run line if missing.
+      const napaRunEmp = await db.payrollRunEmployee.findFirst({
+        where: { payrollRunId: issuedRun.id, employeeId: advanceEmpHq.id },
+      });
+      if (napaRunEmp) {
+        const existingAdv = await db.payrollRunItem.findFirst({
           where: {
-            payrollRunEmployeeId: runEmp.id,
-            sourceType: "LOGIN_TEST_TAX",
+            payrollRunEmployeeId: napaRunEmp.id,
+            sourceType: "LOGIN_TEST_ADVANCE",
           },
         });
-        if (!taxLine) {
+        if (!existingAdv) {
+          const advanceTypeId = await requireMasterId(
+            prisma,
+            "deductionType",
+            "ADVANCE",
+          ).catch(() =>
+            requireMasterId(prisma, "deductionType", "LOAN"),
+          );
           await db.payrollRunItem.create({
             data: {
-              payrollRunEmployeeId: runEmp.id,
-              deductionTypeId: taxId,
-              sourceType: "LOGIN_TEST_TAX",
-              description: "หักภาษี",
-              amount: tax,
+              payrollRunEmployeeId: napaRunEmp.id,
+              deductionTypeId: advanceTypeId,
+              sourceType: "LOGIN_TEST_ADVANCE",
+              description: "หักเบิกล่วงหน้า",
+              amount: 2000,
             },
           });
-        }
-      }
-      if (sso > 0) {
-        const ssoLine = await db.payrollRunItem.findFirst({
-          where: {
-            payrollRunEmployeeId: runEmp.id,
-            sourceType: "LOGIN_TEST_SSO",
-          },
-        });
-        if (!ssoLine) {
-          await db.payrollRunItem.create({
-            data: {
-              payrollRunEmployeeId: runEmp.id,
-              deductionTypeId: ssoId,
-              sourceType: "LOGIN_TEST_SSO",
-              description: "หักประกันสังคม",
-              amount: sso,
-            },
+          const newDed = Number(napaRunEmp.totalDeductions) + 2000;
+          const newNet = Number(napaRunEmp.grossEarnings) - newDed;
+          await db.payrollRunEmployee.update({
+            where: { id: napaRunEmp.id },
+            data: { totalDeductions: newDed, netPay: newNet },
+          });
+          await db.payslip.updateMany({
+            where: { payrollRunEmployeeId: napaRunEmp.id },
+            data: { totalDeductions: newDed, netPay: newNet },
           });
         }
       }
@@ -1453,6 +1756,18 @@ export async function cleanupLoginTestHr(
       },
     },
   });
+  await prisma.$executeRaw`
+    DELETE FROM hr.salary_advance_installments
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  await prisma.$executeRaw`
+    DELETE FROM hr.salary_advances
+    WHERE organization_id = ${organizationId}::uuid
+  `;
+  await prisma.$executeRaw`
+    DELETE FROM hr.payroll_deduction_settings
+    WHERE organization_id = ${organizationId}::uuid
+  `;
   await db.leaveBalanceTransaction.deleteMany({
     where: { employeeLeaveBalance: { employee: employeeFilter } },
   });
@@ -1461,6 +1776,11 @@ export async function cleanupLoginTestHr(
   });
   await db.leaveRequest.deleteMany({ where: { employee: employeeFilter } });
   await db.overtimeRequest.deleteMany({ where: { employee: employeeFilter } });
+  if (db.shiftMismatchRequest?.deleteMany) {
+    await db.shiftMismatchRequest.deleteMany({
+      where: { employee: employeeFilter },
+    });
+  }
   await db.attendanceAdjustment.deleteMany({
     where: { employee: employeeFilter },
   });
