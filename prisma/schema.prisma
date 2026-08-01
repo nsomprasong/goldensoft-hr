@@ -1408,7 +1408,7 @@ model SalaryAdvanceInstallment {
   @@schema("hr")
 }
 
-/// Tenant-configurable tax / SSO rates for Phase 4 (2B) estimates — not legal-grade.
+/// Tenant-configurable tax / SSO / late / absence rates for payroll estimates.
 model PayrollDeductionSettings {
   id                          String   @id @default(uuid()) @db.Uuid
   organizationId              String   @unique @map("organization_id") @db.Uuid
@@ -1417,6 +1417,14 @@ model PayrollDeductionSettings {
   socialSecurityEnabled       Boolean  @default(true) @map("social_security_enabled")
   socialSecurityRatePercent   Decimal  @default(5) @map("social_security_rate_percent") @db.Decimal(8, 4)
   socialSecurityMaxAmount     Decimal  @default(750) @map("social_security_max_amount") @db.Decimal(14, 2)
+  /// When true, sum attendance late minutes into a LATE deduction line.
+  lateDeductionEnabled        Boolean  @default(true) @map("late_deduction_enabled")
+  /// Baht per late minute. 0 = derive from daily wage ÷ 8 ÷ 60.
+  lateBahtPerMinute           Decimal  @default(0) @map("late_baht_per_minute") @db.Decimal(14, 4)
+  /// When true, count ABSENT attendance days into an ABSENCE deduction line.
+  absenceDeductionEnabled     Boolean  @default(true) @map("absence_deduction_enabled")
+  /// Baht per absent day. 0 = one day wage (monthly ÷ 30, daily as-is, hourly × 8).
+  absenceBahtPerDay           Decimal  @default(0) @map("absence_baht_per_day") @db.Decimal(14, 2)
   updatedByAuthUserId         String?  @map("updated_by_auth_user_id") @db.Uuid
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

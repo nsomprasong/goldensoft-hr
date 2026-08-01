@@ -56,9 +56,19 @@ export type PayrollRunEmployeeRow = {
   branchName: string | null;
   /** รายรับรวม */
   earnings: number;
+  /** ค่าจ้างฐาน */
+  baseEarnings: number;
+  overtime: number;
+  /** จ่ายเบิกล่วงหน้า (WITH_SALARY) — แยกจากค่าจ้าง */
+  advancePayout: number;
+  /** รายได้อื่น (ยังไม่แยกประเภท) */
+  otherEarnings: number;
   tax: number;
   socialSecurity: number;
+  /** หักเบิกล่วงหน้า */
   advance: number;
+  late: number;
+  absence: number;
   otherDeductions: number;
   grossEarnings: number;
   totalDeductions: number;
@@ -88,25 +98,58 @@ function summarizeItems(
     amount: number;
     kind: "EARNING" | "DEDUCTION";
     code: string | null;
+    description?: string | null;
   }>,
 ) {
-  let earnings = 0;
+  let baseEarnings = 0;
+  let overtime = 0;
+  let advancePayout = 0;
+  let otherEarnings = 0;
   let tax = 0;
   let socialSecurity = 0;
   let advance = 0;
+  let late = 0;
+  let absence = 0;
   let otherDeductions = 0;
   for (const item of items) {
+    const code = (item.code ?? "").toUpperCase();
+    const desc = (item.description ?? "").toLowerCase();
     if (item.kind === "EARNING") {
-      earnings += item.amount;
+      if (code === "OVERTIME" || desc.includes("ล่วงเวลา")) {
+        overtime += item.amount;
+      } else if (
+        code === "ADVANCE_PAYOUT" ||
+        desc.includes("เบิกล่วงหน้า") ||
+        desc.includes("จ่ายเบิก")
+      ) {
+        advancePayout += item.amount;
+      } else if (code === "BASE_PAY" || code === "BASE_SALARY") {
+        baseEarnings += item.amount;
+      } else {
+        otherEarnings += item.amount;
+      }
       continue;
     }
-    const code = (item.code ?? "").toUpperCase();
     if (code === "TAX") tax += item.amount;
     else if (code === "SOCIAL_SECURITY") socialSecurity += item.amount;
     else if (code === "ADVANCE" || code === "LOAN") advance += item.amount;
+    else if (code === "LATE" || desc.includes("หักสาย")) late += item.amount;
+    else if (code === "ABSENCE" || desc.includes("ขาดงาน")) absence += item.amount;
     else otherDeductions += item.amount;
   }
-  return { earnings, tax, socialSecurity, advance, otherDeductions };
+  return {
+    baseEarnings,
+    overtime,
+    advancePayout,
+    otherEarnings,
+    earnings: baseEarnings + overtime + advancePayout + otherEarnings,
+    tax,
+    socialSecurity,
+    advance,
+    late,
+    absence,
+    otherDeductions,
+  };
 }
 
 export type PayslipListItem = {
@@ -245,6 +288,9 @@ export async function getPayrollRun(
       };
     });
     const breakdown = summarizeItems(items);
+    const earnings = breakdown.earnings || money(emp.grossEarnings);
+    const knownEarn =
+      breakdown.overtime + breakdown.advancePayout + breakdown.otherEarnings;
     return {
       id: emp.id,
       employeeId: emp.employeeId,
@@ -253,10 +299,17 @@ export async function getPayrollRun(
       branchName: emp.employee.branchId
         ? (branchNameById.get(emp.employee.branchId) ?? null)
         : null,
-      earnings: breakdown.earnings || money(emp.grossEarnings),
+      earnings,
+      baseEarnings:
+        breakdown.baseEarnings || Math.max(0, earnings - knownEarn),
+      overtime: breakdown.overtime,
+      advancePayout: breakdown.advancePayout,
+      otherEarnings: breakdown.otherEarnings,
       tax: breakdown.tax,
       socialSecurity: breakdown.socialSecurity,
       advance: breakdown.advance,
+      late: breakdown.late,
+      absence: breakdown.absence,
       otherDeductions: breakdown.otherDeductions,
       grossEarnings: money(emp.grossEarnings),
       totalDeductions: money(emp.totalDeductions),

@@ -78,7 +78,7 @@ export default async function SchedulesPage({
     <HrShell ctx={ctx} active="schedules">
       <div className="hr-page-head">
         <div>
-          <h1>ตารางกะงาน</h1>
+          <h1>ตารางงาน</h1>
           <p>
             {selectedBranchLabel
               ? `สาขา${selectedBranchLabel} — เลือกช่วงเวลา → เพิ่มกะ → จัดพนักงาน`

@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 
-import Alert from "@/components/hr/alert";
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import { submitHrJson } from "@/components/hr/form-utils";
 import PublishScheduleButton from "@/components/hr/publish-schedule-button";
 import type { ScheduleComposerOption } from "@/components/hr/schedule-composer";
-import type { SchedulePeriodShiftRow } from "@/lib/hr/data";
+import ScheduleOverlapPanel from "@/components/hr/schedule-overlap-panel";
+import type {
+  OverlappingSchedulePeriod,
+  SchedulePeriodShiftRow,
+} from "@/lib/hr/data";
+import { signalNavigationPending } from "@/lib/navigation-pending";
 import { formatThaiDateRange } from "@/lib/hr/thai-date";
 
 function parseShiftOption(label: string): { name: string; time: string | null } {
@@ -26,6 +33,7 @@ export default function ScheduleDetailWorkspace({
   canManage,
   canPublish,
   periodShifts,
+  overlappingPeriods = [],
   shifts,
   available,
 }: {
@@ -39,6 +47,7 @@ export default function ScheduleDetailWorkspace({
   canManage: boolean;
   canPublish: boolean;
   periodShifts: SchedulePeriodShiftRow[];
+  overlappingPeriods?: OverlappingSchedulePeriod[];
   shifts: ScheduleComposerOption[];
   available: boolean;
 }) {
@@ -48,10 +57,9 @@ export default function ScheduleDetailWorkspace({
   const [shiftId, setShiftId] = useState("");
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    kind: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
+  const [pendingRemove, setPendingRemove] =
+    useState<SchedulePeriodShiftRow | null>(null);
 
   const usedShiftIds = useMemo(
     () => new Set(periodShifts.map((s) => s.shiftId)),
@@ -89,11 +97,11 @@ export default function ScheduleDetailWorkspace({
   async function addShift(event: React.FormEvent) {
     event.preventDefault();
     if (!shiftId) {
-      setFeedback({ kind: "error", text: "เลือกกะที่จะใช้ในช่วงนี้" });
+      setFeedback({ kind: "error", message: "เลือกกะที่จะใช้ในช่วงนี้" });
       return;
     }
     setSaving(true);
-    setFeedback(null);
+    setFeedback({ kind: "info", message: "กำลังเพิ่มกะ…" });
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
       "POST",
@@ -102,23 +110,32 @@ export default function ScheduleDetailWorkspace({
     );
     setSaving(false);
     if (!result.ok) {
-      setFeedback({ kind: "error", text: result.message });
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
+    setFeedback({ kind: "success", message: result.message });
     setAdding(false);
+    signalNavigationPending("กำลังเปิดจัดพนักงาน");
     router.push(`/hr/schedules/${scheduleId}/shifts/${shiftId}`);
     router.refresh();
   }
 
-  async function removeShift(row: SchedulePeriodShiftRow) {
-    if (
-      !window.confirm(
-        `ลบกะ “${row.name}” ออกจากช่วงนี้หรือไม่?\nพนักงานที่อยู่ในกะนี้จะถูกลบออกจากตารางด้วย`,
-      )
-    ) {
-      return;
-    }
+  function askRemoveShift(row: SchedulePeriodShiftRow) {
+    setPendingRemove(row);
+    setFeedback({
+      kind: "warning",
+      title: "ยืนยันการลบ",
+      message: `ลบกะ “${row.name}” ออกจากช่วงนี้หรือไม่? พนักงานที่อยู่ในกะนี้จะถูกลบออกจากตารางด้วย`,
+      confirmLabel: "ลบ",
+    });
+  }
+
+  async function confirmRemoveShift() {
+    const row = pendingRemove;
+    setPendingRemove(null);
+    if (!row) return;
     setRemovingId(row.shiftId);
+    setFeedback({ kind: "info", message: "กำลังลบ…" });
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
       "POST",
@@ -127,14 +144,24 @@ export default function ScheduleDetailWorkspace({
     );
     setRemovingId(null);
     if (!result.ok) {
-      window.alert(result.message);
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
+    setFeedback({ kind: "success", message: result.message });
     router.refresh();
   }
 
   return (
     <>
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => {
+          setFeedback(null);
+          setPendingRemove(null);
+        }}
+        onConfirm={pendingRemove ? confirmRemoveShift : undefined}
+      />
+
       {canPublish ? (
         <div className="hr-schedule-toolbar">
           <PublishScheduleButton
@@ -149,6 +176,13 @@ export default function ScheduleDetailWorkspace({
           ) : null}
         </div>
       ) : null}
+
+      <ScheduleOverlapPanel
+        periods={overlappingPeriods}
+        canManage={canManage}
+        available={available}
+        currentScheduleId={scheduleId}
+      />
 
       <section className="hr-schedule-shifts" aria-label="กะในช่วงนี้">
         <div className="hr-schedule-shifts-head">
@@ -208,7 +242,7 @@ export default function ScheduleDetailWorkspace({
                     <button
                       type="button"
                       className="btn btn-sm btn-danger"
-                      onClick={() => removeShift(row)}
+                      onClick={() => askRemoveShift(row)}
                       disabled={!available || removingId === row.shiftId}
                     >
                       {removingId === row.shiftId ? "กำลังลบ…" : "ลบ"}
@@ -275,10 +309,6 @@ export default function ScheduleDetailWorkspace({
                 <p className="hr-add-shift-lead">
                   เลือกกะที่จะเปิดในช่วงนี้ แล้วไปจัดพนักงานต่อได้ทันที
                 </p>
-
-                {feedback ? (
-                  <Alert kind={feedback.kind}>{feedback.text}</Alert>
-                ) : null}
 
                 {availableShifts.length === 0 ? (
                   <div className="hr-add-shift-empty">

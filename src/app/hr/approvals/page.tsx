@@ -3,13 +3,22 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import AdjustmentApprovalList from "@/components/hr/adjustment-approval-list";
 import AdvanceApprovalList from "@/components/hr/advance-approval-list";
+import ApprovalFocus from "@/components/hr/approval-focus";
 import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
 import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
 import ShiftMismatchApprovalList from "@/components/hr/shift-mismatch-approval-list";
 import HrShell from "@/components/hr-shell";
-import { getApprovalInbox } from "@/lib/hr/data";
+import {
+  getApprovalInbox,
+  getFocusedApprovalItem,
+  type LeaveRequestRow,
+  type OvertimeRequestRow,
+} from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
+import { markNotifyFromQuery } from "@/lib/hr/mark-notify-from-query";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import type { SalaryAdvanceRow } from "@/lib/hr/services/salary-advances";
+import { toHrServiceContext } from "@/lib/hr/services/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +74,15 @@ function resolveTab(
   );
 }
 
+function prependUniqueById<T extends { id: string }>(
+  focus: T | null | undefined,
+  rows: T[],
+): T[] {
+  if (!focus) return rows;
+  if (rows.some((row) => row.id === focus.id)) return rows;
+  return [focus, ...rows];
+}
+
 export default async function ApprovalsPage({
   searchParams,
 }: {
@@ -80,6 +98,7 @@ export default async function ApprovalsPage({
     ],
   });
   const params = await searchParams;
+  await markNotifyFromQuery(toHrServiceContext(ctx), single(params, "notify"));
   const canLeave = canHr(ctx, HR_PERMISSIONS.leaveApprove);
   const canOt = canHr(ctx, HR_PERMISSIONS.overtimeApprove);
   const canAdvance = canHr(ctx, [
@@ -91,10 +110,64 @@ export default async function ApprovalsPage({
     HR_PERMISSIONS.approvalManage,
   ]);
   const inbox = await getApprovalInbox(ctx);
+  const focusId = single(params, "focus").trim();
+  const requestedTab = single(params, "tab");
+  const tabHint: ApprovalTab | "" =
+    requestedTab === "leave" ||
+    requestedTab === "ot" ||
+    requestedTab === "adjust" ||
+    requestedTab === "mismatch" ||
+    requestedTab === "advance"
+      ? requestedTab
+      : "";
+
+  let leaveRows = inbox.data.leave;
+  let otRows = inbox.data.overtime;
+  let advanceRows = inbox.data.advances;
+  let focusMissing = false;
+  let focusPinned = false;
+
+  if (focusId && (tabHint === "leave" || tabHint === "")) {
+    const focused = await getFocusedApprovalItem(ctx, "leave", focusId);
+    if (focused.data) {
+      leaveRows = prependUniqueById(
+        focused.data as LeaveRequestRow,
+        leaveRows,
+      );
+      focusPinned = !inbox.data.leave.some((row) => row.id === focusId);
+    } else if (tabHint === "leave") {
+      focusMissing = true;
+    }
+  }
+  if (focusId && tabHint === "ot") {
+    const focused = await getFocusedApprovalItem(ctx, "ot", focusId);
+    if (focused.data) {
+      otRows = prependUniqueById(
+        focused.data as OvertimeRequestRow,
+        otRows,
+      );
+      focusPinned = !inbox.data.overtime.some((row) => row.id === focusId);
+    } else {
+      focusMissing = true;
+    }
+  }
+  if (focusId && tabHint === "advance") {
+    const focused = await getFocusedApprovalItem(ctx, "advance", focusId);
+    if (focused.data) {
+      advanceRows = prependUniqueById(
+        focused.data as SalaryAdvanceRow,
+        advanceRows,
+      );
+      focusPinned = !inbox.data.advances.some((row) => row.id === focusId);
+    } else {
+      focusMissing = true;
+    }
+  }
+
   const counts: Record<ApprovalTab, TabCounts> = {
-    leave: summarize(inbox.data.leave),
-    ot: summarize(inbox.data.overtime),
-    advance: summarizeAdvances(inbox.data.advances),
+    leave: summarize(leaveRows),
+    ot: summarize(otRows),
+    advance: summarizeAdvances(advanceRows),
     adjust: summarize(inbox.data.attendanceAdjustments),
     mismatch: summarize(inbox.data.shiftMismatches),
   };
@@ -110,7 +183,7 @@ export default async function ApprovalsPage({
     counts.advance.total +
     counts.adjust.total +
     counts.mismatch.total;
-  const tab = resolveTab(single(params, "tab"), counts);
+  const tab = resolveTab(requestedTab, counts);
 
   const tabs: Array<{
     id: ApprovalTab;
@@ -152,6 +225,7 @@ export default async function ApprovalsPage({
 
   return (
     <HrShell ctx={ctx}>
+      <ApprovalFocus focusId={focusId || null} />
       <DatabaseUnavailableNotice message={inbox.message} />
 
       <header className="hr-schedule-hero hr-leave-hero">
@@ -165,6 +239,19 @@ export default async function ApprovalsPage({
           </Link>
         </p>
       </header>
+
+      {focusMissing ? (
+        <p className="hr-approval-focus-banner" role="status">
+          ไม่พบคำขอจากแจ้งเตือนนี้ — อาจถูกอนุมัติ ยกเลิก
+          หรือลบไปแล้ว{" "}
+          <Link href="/hr/approvals/history">ดูประวัติ</Link>
+        </p>
+      ) : null}
+      {focusPinned && !focusMissing ? (
+        <p className="hr-approval-focus-banner" role="status">
+          แสดงคำขอจากแจ้งเตือนไว้ด้านบน (อาจอยู่นอกสาขา/คิวปกติที่เลือกอยู่)
+        </p>
+      ) : null}
 
       <nav className="tabs hr-approvals-tabs" aria-label="ประเภทคำขออนุมัติ">
         {tabs.map((item) => {
@@ -199,8 +286,9 @@ export default async function ApprovalsPage({
       {tab === "leave" ? (
         <section className="hr-ot-requests" aria-label="คำขอลา">
           <LeaveApprovalCards
-            rows={inbox.data.leave}
+            rows={leaveRows}
             canApprove={canLeave}
+            focusId={focusId || null}
             emptyMessage="ไม่มีคำขอลารออนุมัติ หรือผลที่วันลายังไม่ผ่าน"
           />
         </section>
@@ -208,10 +296,11 @@ export default async function ApprovalsPage({
 
       {tab === "ot" ? (
         <OvertimeApprovalList
-          rows={inbox.data.overtime}
+          rows={otRows}
           canApprove={canOt}
           showHero={false}
           sectionTitle="คำขอ OT"
+          focusId={focusId || null}
           emptyMessage="ไม่มีคำขอ OT รออนุมัติ หรือผลที่วัน OT ยังไม่ผ่าน"
         />
       ) : null}
@@ -219,8 +308,9 @@ export default async function ApprovalsPage({
       {tab === "advance" ? (
         <section aria-label="คำขอเบิกล่วงหน้า">
           <AdvanceApprovalList
-            rows={inbox.data.advances}
+            rows={advanceRows}
             canApprove={canAdvance}
+            focusId={focusId || null}
           />
         </section>
       ) : null}

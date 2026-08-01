@@ -4,14 +4,38 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
+/** Preset modes kept for callers that still use จ–ศ / ทุกวัน. */
 export type ScheduleDayMode = "weekdays" | "all";
+
+export const WEEKDAY_WORK_DAYS = [1, 2, 3, 4, 5] as const;
+export const ALL_WORK_DAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+export type WorkDaysInput = ScheduleDayMode | readonly number[];
+
+export function resolveWorkDays(workDays: WorkDaysInput): number[] {
+  if (typeof workDays === "string") {
+    return workDays === "all" ? [...ALL_WORK_DAYS] : [...WEEKDAY_WORK_DAYS];
+  }
+  const cleaned = [
+    ...new Set(
+      workDays.filter(
+        (d): d is number =>
+          typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6,
+      ),
+    ),
+  ].sort((a, b) => a - b);
+  return cleaned;
+}
 
 export function expandWorkDates(
   periodStart: string,
   periodEnd: string,
-  dayMode: ScheduleDayMode,
+  workDays: WorkDaysInput = "weekdays",
 ): string[] {
   if (!periodStart || !periodEnd || periodEnd < periodStart) return [];
+  const allowed = new Set(resolveWorkDays(workDays));
+  if (allowed.size === 0) return [];
+
   const out: string[] = [];
   const [ys, ms, ds] = periodStart.split("-").map(Number);
   const [ye, me, de] = periodEnd.split("-").map(Number);
@@ -21,7 +45,7 @@ export function expandWorkDates(
   const last = new Date(Date.UTC(ye, me - 1, de));
   while (cursor.getTime() <= last.getTime()) {
     const dow = cursor.getUTCDay(); // 0 Sun … 6 Sat
-    if (dayMode === "all" || (dow >= 1 && dow <= 5)) {
+    if (allowed.has(dow)) {
       out.push(
         `${cursor.getUTCFullYear()}-${pad2(cursor.getUTCMonth() + 1)}-${pad2(cursor.getUTCDate())}`,
       );
@@ -29,6 +53,17 @@ export function expandWorkDates(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
+}
+
+/** Inclusive date-range overlap (ISO `YYYY-MM-DD`). */
+export function dateRangesOverlap(
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string,
+): boolean {
+  if (!aStart || !aEnd || !bStart || !bEnd) return false;
+  return aStart <= bEnd && bStart <= aEnd;
 }
 
 /** Next `count` calendar days starting at `startIso` (inclusive), clamped to period. */

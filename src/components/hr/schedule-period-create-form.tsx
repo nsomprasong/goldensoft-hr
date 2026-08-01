@@ -3,11 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import Alert from "@/components/hr/alert";
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import Field, { fieldProps } from "@/components/hr/field";
 import { submitHrJson, type FieldErrors } from "@/components/hr/form-utils";
 import ThaiDateInput from "@/components/hr/thai-date-input";
+import { findOverlappingPeriods } from "@/lib/hr/schedule-period-overlap";
+import { signalNavigationPending } from "@/lib/navigation-pending";
 import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
+
+type ExistingPeriod = {
+  id: string;
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+};
 
 type PeriodPreset = "week" | "month" | "custom";
 
@@ -61,12 +72,14 @@ const PRESETS: Array<{
 export default function SchedulePeriodCreateForm({
   branchId,
   branchLabel,
+  existingPeriods = [],
   disabled = false,
   onDone,
   onCancel,
 }: {
   branchId: string;
   branchLabel?: string;
+  existingPeriods?: ExistingPeriod[];
   disabled?: boolean;
   onDone?: (scheduleId: string) => void;
   onCancel?: () => void;
@@ -77,14 +90,21 @@ export default function SchedulePeriodCreateForm({
   const [periodEnd, setPeriodEnd] = useState(week.end);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [feedback, setFeedback] = useState<{
-    kind: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
+  const [awaitingOverlapConfirm, setAwaitingOverlapConfirm] = useState(false);
 
   const days = useMemo(
     () => dayCount(periodStart, periodEnd),
     [periodStart, periodEnd],
+  );
+
+  const overlapping = useMemo(
+    () =>
+      findOverlappingPeriods(
+        { id: "__new__", name: "", periodStart, periodEnd },
+        existingPeriods,
+      ),
+    [existingPeriods, periodStart, periodEnd],
   );
 
   function applyPreset(next: PeriodPreset) {
@@ -100,26 +120,10 @@ export default function SchedulePeriodCreateForm({
     }
   }
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setFeedback(null);
-    const next: FieldErrors = {};
-    if (!branchId) next.branchId = "เลือกสาขา";
-    if (!periodStart) next.periodStart = "เลือกวันเริ่ม";
-    if (!periodEnd) next.periodEnd = "เลือกวันสิ้นสุด";
-    if (periodStart && periodEnd && periodEnd < periodStart) {
-      next.periodEnd = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
-    }
-    setErrors(next);
-    if (Object.keys(next).length > 0) {
-      setFeedback({
-        kind: "error",
-        text: !branchId ? "กรุณาเลือกสาขาก่อน" : "กรุณาเลือกช่วงวันให้ครบ",
-      });
-      return;
-    }
-
+  async function createPeriod() {
+    setAwaitingOverlapConfirm(false);
     setSaving(true);
+    setFeedback({ kind: "info", message: "กำลังสร้างช่วงตาราง…" });
     const created = await submitHrJson(
       "/api/hr/schedules",
       "POST",
@@ -133,20 +137,63 @@ export default function SchedulePeriodCreateForm({
     );
     setSaving(false);
     if (!created.ok) {
-      setFeedback({ kind: "error", text: created.message });
+      setFeedback({ kind: "error", message: created.message });
       return;
     }
     const id = (created.data as { id?: string } | null)?.id;
     if (!id) {
-      setFeedback({ kind: "error", text: "สร้างแล้ว แต่ไม่พบรหัสช่วงตาราง" });
+      setFeedback({
+        kind: "error",
+        message: "สร้างแล้ว แต่ไม่พบรหัสช่วงตาราง",
+      });
       return;
     }
+    const successMessage =
+      overlapping.length > 0
+        ? `${created.message} — มี ${overlapping.length} ช่วงทับกัน ให้จัดการช่วงเก่าในหน้าถัดไป`
+        : created.message;
+    setFeedback({ kind: "success", message: successMessage });
     if (onDone) {
       onDone(id);
       return;
     }
+    signalNavigationPending("กำลังเปิดช่วงตาราง");
     router.push(`/hr/schedules/${id}`);
     router.refresh();
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const next: FieldErrors = {};
+    if (!branchId) next.branchId = "เลือกสาขา";
+    if (!periodStart) next.periodStart = "เลือกวันเริ่ม";
+    if (!periodEnd) next.periodEnd = "เลือกวันสิ้นสุด";
+    if (periodStart && periodEnd && periodEnd < periodStart) {
+      next.periodEnd = "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม";
+    }
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      setFeedback({
+        kind: "error",
+        message: !branchId ? "กรุณาเลือกสาขาก่อน" : "กรุณาเลือกช่วงวันให้ครบ",
+      });
+      return;
+    }
+
+    if (overlapping.length > 0) {
+      setAwaitingOverlapConfirm(true);
+      setFeedback({
+        kind: "warning",
+        title: "ช่วงวันทับตารางเดิม",
+        message: `ทับกับ ${overlapping.length} ช่วง: ${overlapping
+          .map((row) => row.name)
+          .join(" · ")} — สร้างต่อได้ แต่ควรจัดการช่วงเก่าก่อนจัดพนักงาน`,
+        confirmLabel: "สร้างต่อ",
+      });
+      return;
+    }
+
+    await createPeriod();
   }
 
   return (
@@ -155,6 +202,15 @@ export default function SchedulePeriodCreateForm({
       onSubmit={handleSubmit}
       noValidate
     >
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => {
+          setFeedback(null);
+          setAwaitingOverlapConfirm(false);
+        }}
+        onConfirm={awaitingOverlapConfirm ? createPeriod : undefined}
+      />
+
       <div className="hr-period-create-branch">
         <span className="hr-period-create-branch-label">สาขา</span>
         <strong>{branchLabel?.trim() || "—"}</strong>
@@ -164,7 +220,11 @@ export default function SchedulePeriodCreateForm({
         เลือกช่วงวันของตารางนี้ แล้วค่อยเพิ่มกะและจัดพนักงานเฉพาะสาขานี้
       </p>
 
-      {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {overlapping.length > 0 ? (
+        <p className="hr-period-create-overlap" role="status">
+          ทับกับช่วงที่มีอยู่ {overlapping.length} รายการ — หลังสร้างจะมีปุ่มจัดการช่วงเก่า
+        </p>
+      ) : null}
 
       <div className="hr-period-presets" role="group" aria-label="เลือกช่วงวัน">
         {PRESETS.map((item) => {

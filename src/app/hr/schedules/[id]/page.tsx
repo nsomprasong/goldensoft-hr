@@ -30,6 +30,7 @@ export default async function ScheduleDetailPage({
   ]);
   const period = result.data?.period ?? null;
   const periodShifts = result.data?.periodShifts ?? [];
+  const overlappingPeriods = result.data?.overlappingPeriods ?? [];
   const canManage = canHr(ctx, HR_PERMISSIONS.scheduleManage);
   const canPublish = canHr(ctx, HR_PERMISSIONS.schedulePublish);
   const locked = period?.statusCode === "LOCKED";
@@ -72,6 +73,8 @@ export default async function ScheduleDetailPage({
                 scheduleId={period.id}
                 name={period.name}
                 statusCode={period.statusCode}
+                hasAttendance={Boolean(period.hasAttendance)}
+                attendanceDayCount={period.attendanceDayCount ?? 0}
                 disabled={!result.available}
               />
             ) : null}
@@ -81,7 +84,7 @@ export default async function ScheduleDetailPage({
         <h1 className="hr-schedule-hero-title">
           {period
             ? formatThaiDateRange(period.periodStart, period.periodEnd)
-            : "ตารางกะงาน"}
+            : "ตารางงาน"}
         </h1>
 
         {period ? (
@@ -130,6 +133,7 @@ export default async function ScheduleDetailPage({
           canManage={canManage}
           canPublish={canPublish}
           periodShifts={periodShifts}
+          overlappingPeriods={overlappingPeriods}
           shifts={options.data.shifts}
           available={result.available && options.available}
         />

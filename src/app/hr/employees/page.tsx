@@ -6,7 +6,6 @@ import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
   listEmployees,
-  listOrganizationBranches,
   loadHrMasterData,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -25,7 +24,7 @@ function single(params: SearchParams, key: string): string {
 
 function pageHref(params: SearchParams, page: number): string {
   const query = new URLSearchParams();
-  for (const key of ["q", "branchId", "employeeStatusId", "employmentTypeId"]) {
+  for (const key of ["q", "employeeStatusId", "employmentTypeId"]) {
     const value = single(params, key);
     if (value) query.set(key, value);
   }
@@ -43,12 +42,13 @@ export default async function EmployeesPage({
   const params = await searchParams;
 
   const search = single(params, "q");
-  const branchId = single(params, "branchId");
+  // Branch scope comes from the top context switcher — not a page filter.
+  const branchId = ctx.branchId ?? "";
   const employeeStatusId = single(params, "employeeStatusId");
   const employmentTypeId = single(params, "employmentTypeId");
   const page = Number.parseInt(single(params, "page") || "1", 10) || 1;
 
-  const [master, list, branches] = await Promise.all([
+  const [master, list] = await Promise.all([
     loadHrMasterData(),
     listEmployees(ctx, {
       search,
@@ -57,20 +57,24 @@ export default async function EmployeesPage({
       employmentTypeId,
       page,
     }),
-    listOrganizationBranches(ctx),
   ]);
 
-  const availability = combineAvailability(master, list, branches);
+  const availability = combineAvailability(master, list);
   const result = list.data;
   const canCreate = canHr(ctx, HR_PERMISSIONS.employeeCreate);
-  const branchOptions = branches.data;
+  const branchLabel = ctx.branch?.name ?? null;
 
   return (
     <HrShell ctx={ctx} active="employees">
       <div className="hr-page-head">
         <div>
           <h1>พนักงาน</h1>
-          <p>ทั้งหมด {result.total} คน — กด + เพื่อเพิ่มพนักงาน</p>
+          <p>
+            {branchLabel
+              ? `สาขา ${branchLabel} — ${result.total} คน`
+              : `ทุกสาขาที่มีสิทธิ์ — ${result.total} คน`}
+            {" — กด + เพื่อเพิ่มพนักงาน"}
+          </p>
         </div>
       </div>
 
@@ -86,18 +90,6 @@ export default async function EmployeesPage({
               defaultValue={search}
               placeholder="ชื่อ / เบอร์โทร"
             />
-          </div>
-
-          <div className="field">
-            <label htmlFor="branchId">สาขา</label>
-            <select id="branchId" name="branchId" defaultValue={branchId}>
-              <option value="">ทุกสาขา</option>
-              {branchOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div className="field">

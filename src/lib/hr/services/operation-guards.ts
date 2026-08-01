@@ -25,3 +25,12 @@ export function assertPayrollMutable(status: string): void {
     });
   }
 }
+
+/** Calculate may re-run on APPROVED (returns to REVIEW); not after paid/locked. */
+export function assertPayrollRecalculable(status: string): void {
+  if (["PAID", "LOCKED"].includes(status)) {
+    throw new HrError("PERIOD_LOCKED", {
+      message: "Payroll ที่จ่ายหรือล็อกแล้วคำนวณใหม่ไม่ได้",
+    });
+  }
+}

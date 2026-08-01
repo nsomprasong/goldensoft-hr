@@ -1,3 +1,6 @@
-import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
-export const dynamic = "force-dynamic";
-export default async function CompensationPage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.compensationRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="ค่าตอบแทนพนักงาน" description="สรุปค่าจ้างซึ่งเข้าถึงได้เฉพาะผู้มีสิทธิ์" emptyMessage="ยังไม่มีข้อมูลค่าตอบแทนที่แสดงได้" endpoint="/api/hr/compensation" /></HrShell>; }
+import { redirect } from "next/navigation";
+
+/** Legacy menu path — compensation lives on the employee profile; pay items replaced this nav. */
+export default function CompensationPage() {
+  redirect("/hr/pay-items");
+}

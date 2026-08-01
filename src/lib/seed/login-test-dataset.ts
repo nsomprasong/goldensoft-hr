@@ -681,8 +681,28 @@ export async function seedLoginTestHr(
     return row;
   };
 
-  const demoStart = new Date("2026-06-01T00:00:00Z");
-  const demoEnd = new Date("2026-06-16T00:00:00Z");
+  // Align attendance / OT with the first generated payroll period so calculate
+  // picks up OT / สาย / ขาดงาน in the same window as the sample payroll run.
+  const seededPayPeriods = await db.payrollPeriod.findMany({
+    where: { organizationId, payrollScheduleId: payrollSchedule.id },
+    orderBy: { periodStart: "asc" },
+  });
+  const demoStart =
+    seededPayPeriods[0]?.periodStart ?? new Date("2026-06-01T00:00:00Z");
+  const demoEnd =
+    seededPayPeriods[0]?.periodEnd ?? new Date("2026-06-16T00:00:00Z");
+  const demoDay = (day: number) => {
+    const d = new Date(demoStart);
+    d.setUTCDate(d.getUTCDate() + (day - 1));
+    return d;
+  };
+  const demoDayIso = (day: number, hm = "00:00:00") => {
+    const d = demoDay(day);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}T${hm}Z`;
+  };
   const [
     draftScheduleStatusId,
     publicHolidayId,
@@ -697,10 +717,15 @@ export async function seedLoginTestHr(
     clockInId,
     clockOutId,
     baseSalaryId,
+    overtimeEarnId,
     taxId,
     ssoId,
+    lateDedId,
+    absenceDedId,
     leaveNotifId,
     otNotifId,
+    advanceNotifId,
+    deliveredNotifId,
     pendingNotifId,
   ] = await Promise.all([
     requireMasterId(prisma, "schedulePeriodStatus", "DRAFT"),
@@ -716,12 +741,18 @@ export async function seedLoginTestHr(
     requireMasterId(prisma, "attendanceEventType", "CLOCK_IN"),
     requireMasterId(prisma, "attendanceEventType", "CLOCK_OUT"),
     requireMasterId(prisma, "earningType", "BASE_SALARY"),
+    requireMasterId(prisma, "earningType", "OVERTIME"),
     requireMasterId(prisma, "deductionType", "TAX"),
     requireMasterId(prisma, "deductionType", "SOCIAL_SECURITY"),
+    requireMasterId(prisma, "deductionType", "LATE"),
+    requireMasterId(prisma, "deductionType", "ABSENCE"),
     requireMasterId(prisma, "notificationType", "LEAVE_SUBMITTED"),
     requireMasterId(prisma, "notificationType", "OT_SUBMITTED"),
+    requireMasterId(prisma, "notificationType", "ADVANCE_SUBMITTED"),
+    requireMasterId(prisma, "notificationStatus", "DELIVERED"),
     requireMasterId(prisma, "notificationStatus", "PENDING"),
   ]);
+  void pendingNotifId;
 
   const calendar = await db.workCalendar.upsert({
     where: {
@@ -741,7 +772,7 @@ export async function seedLoginTestHr(
     where: {
       workCalendarId_holidayDate_name: {
         workCalendarId: calendar.id,
-        holidayDate: new Date("2026-06-03T00:00:00Z"),
+        holidayDate: demoDay(3),
         name: "วันหยุดตัวอย่าง",
       },
     },
@@ -751,14 +782,15 @@ export async function seedLoginTestHr(
       branchId: hqBranchId,
       workCalendarId: calendar.id,
       holidayTypeId: publicHolidayId,
-      holidayDate: new Date("2026-06-03T00:00:00Z"),
+      holidayDate: demoDay(3),
       name: "วันหยุดตัวอย่าง",
       isPaid: true,
     },
   });
+  const schedulePeriodCode = `${prefix}${demoStart.toISOString().slice(0, 10).replace(/-/g, "")}_${String(demoEnd.getUTCDate()).padStart(2, "0")}`;
   const schedulePeriod = await db.schedulePeriod.upsert({
     where: {
-      organizationId_code: { organizationId, code: `${prefix}20260601_16` },
+      organizationId_code: { organizationId, code: schedulePeriodCode },
     },
     update: {
       branchId: hqBranchId,
@@ -777,12 +809,38 @@ export async function seedLoginTestHr(
       timezone: "Asia/Bangkok",
     },
   });
+  const branchSchedulePeriod = await db.schedulePeriod.upsert({
+    where: {
+      organizationId_code: {
+        organizationId,
+        code: `${schedulePeriodCode}_B1`,
+      },
+    },
+    update: {
+      branchId: branches.BRANCH01,
+      periodStart: demoStart,
+      periodEnd: demoEnd,
+      statusId: draftScheduleStatusId,
+    },
+    create: {
+      organizationId,
+      branchId: branches.BRANCH01,
+      code: `${schedulePeriodCode}_B1`,
+      name: "ตารางงานสาขา 1–16 มิถุนายน 2569",
+      periodStart: demoStart,
+      periodEnd: demoEnd,
+      statusId: draftScheduleStatusId,
+      timezone: "Asia/Bangkok",
+    },
+  });
 
   for (const person of LOGIN_TEST_ROSTER) {
     if (!person.assignSchedule) continue;
     const emp = byKey(person.key);
     const location = person.branchCode === "BRANCH01" ? locBranch : locHq;
     const shift = person.shift === "NIGHT" ? nightShift : dayShift;
+    const personPeriod =
+      person.branchCode === "BRANCH01" ? branchSchedulePeriod : schedulePeriod;
     await db.employeeWorkCalendar.upsert({
       where: {
         employeeId_workCalendarId_effectiveFrom: {
@@ -815,9 +873,7 @@ export async function seedLoginTestHr(
       },
     });
     for (let day = 1; day <= 10; day += 1) {
-      const workDate = new Date(
-        `2026-06-${String(day).padStart(2, "0")}T00:00:00Z`,
-      );
+      const workDate = demoDay(day);
       await db.shiftAssignment.upsert({
         where: {
           employeeId_workDate_sequenceNo: {
@@ -827,12 +883,12 @@ export async function seedLoginTestHr(
           },
         },
         update: {
-          schedulePeriodId: schedulePeriod.id,
+          schedulePeriodId: personPeriod.id,
           shiftId: shift.id,
           workLocationId: location.id,
         },
         create: {
-          schedulePeriodId: schedulePeriod.id,
+          schedulePeriodId: personPeriod.id,
           employeeId: emp.id,
           shiftId: shift.id,
           workDate,
@@ -856,9 +912,7 @@ export async function seedLoginTestHr(
     const emp = byKey(input.key);
     const person = LOGIN_TEST_ROSTER.find((p) => p.key === input.key)!;
     const location = person.branchCode === "BRANCH01" ? locBranch : locHq;
-    const workDate = new Date(
-      `2026-06-${String(input.day).padStart(2, "0")}T00:00:00Z`,
-    );
+    const workDate = demoDay(input.day);
     const assignment = await db.shiftAssignment.findUnique({
       where: {
         employeeId_workDate_sequenceNo: {
@@ -883,7 +937,7 @@ export async function seedLoginTestHr(
         employeeId: emp.id,
         workDate,
         statusId: input.statusId,
-        schedulePeriodId: schedulePeriod.id,
+        schedulePeriodId: assignment?.schedulePeriodId ?? schedulePeriod.id,
         shiftAssignmentId: assignment?.id ?? null,
         clockInAt: input.inAt ? new Date(input.inAt) : null,
         clockOutAt: input.outAt ? new Date(input.outAt) : null,
@@ -947,16 +1001,34 @@ export async function seedLoginTestHr(
     key: "owner",
     day: 1,
     statusId: presentId,
-    inAt: "2026-06-01T08:00:00Z",
-    outAt: "2026-06-01T17:00:00Z",
+    inAt: demoDayIso(1, "08:00:00"),
+    outAt: demoDayIso(1, "17:00:00"),
     note: "มาตรงเวลา",
+  });
+  // HQ late/absence so payroll run filtered to สำนักงานใหญ่ shows สาย/ขาดงาน
+  await upsertAttendance({
+    key: "hq-staff-1",
+    day: 2,
+    statusId: lateId,
+    inAt: demoDayIso(2, "08:45:00"),
+    outAt: demoDayIso(2, "17:00:00"),
+    late: 45,
+    note: "มาสาย",
+  });
+  await upsertAttendance({
+    key: "hq-staff-2",
+    day: 5,
+    statusId: absentId,
+    inAt: null,
+    outAt: null,
+    note: "ขาดงาน",
   });
   await upsertAttendance({
     key: "b1-staff-1",
     day: 2,
     statusId: lateId,
-    inAt: "2026-06-02T20:20:00Z",
-    outAt: "2026-06-03T05:00:00Z",
+    inAt: demoDayIso(2, "20:20:00"),
+    outAt: demoDayIso(3, "05:00:00"),
     late: 20,
     note: "มาสาย",
   });
@@ -972,8 +1044,8 @@ export async function seedLoginTestHr(
     key: "b1-manager",
     day: 1,
     statusId: presentId,
-    inAt: "2026-06-01T08:05:00Z",
-    outAt: "2026-06-01T17:00:00Z",
+    inAt: demoDayIso(1, "08:05:00"),
+    outAt: demoDayIso(1, "17:00:00"),
     note: "ลงเวลาสาขา",
   });
 
@@ -1102,7 +1174,6 @@ export async function seedLoginTestHr(
   let leaveApproved = await db.leaveRequest.findFirst({
     where: {
       employeeId: owner.id,
-      startDate: new Date("2026-06-10T00:00:00Z"),
       reason: "ลาพักผ่อน (ทดสอบ)",
     },
   });
@@ -1113,8 +1184,8 @@ export async function seedLoginTestHr(
         employeeId: owner.id,
         leaveTypeId: leaveAnnual.id,
         statusId: approvedLeaveId,
-        startDate: new Date("2026-06-10T00:00:00Z"),
-        endDate: new Date("2026-06-10T00:00:00Z"),
+        startDate: demoDay(10),
+        endDate: demoDay(10),
         startUnitId: dayUnitId,
         endUnitId: dayUnitId,
         requestedAmount: 1,
@@ -1126,6 +1197,16 @@ export async function seedLoginTestHr(
     });
   }
 
+  // Keep pending leave/OT on "today" so approval inbox + notification deep-links stay visible.
+  const inboxToday = (() => {
+    const label = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    return new Date(`${label}T00:00:00.000Z`);
+  })();
   let leaveSubmitted = await db.leaveRequest.findFirst({
     where: {
       employeeId: staff1.id,
@@ -1139,13 +1220,25 @@ export async function seedLoginTestHr(
         employeeId: staff1.id,
         leaveTypeId: leaveSick.id,
         statusId: submittedLeaveId,
-        startDate: new Date("2026-06-12T00:00:00Z"),
-        endDate: new Date("2026-06-12T00:00:00Z"),
+        startDate: inboxToday,
+        endDate: inboxToday,
         startUnitId: dayUnitId,
         endUnitId: dayUnitId,
         requestedAmount: 1,
         reason: "ลาป่วยรออนุมัติ (ทดสอบ)",
-        submittedAt: demoStart,
+        submittedAt: new Date(),
+      },
+    });
+  } else {
+    leaveSubmitted = await db.leaveRequest.update({
+      where: { id: leaveSubmitted.id },
+      data: {
+        statusId: submittedLeaveId,
+        startDate: inboxToday,
+        endDate: inboxToday,
+        submittedAt: new Date(),
+        reviewedAt: null,
+        reviewedByAuthUserId: null,
       },
     });
   }
@@ -1166,9 +1259,9 @@ export async function seedLoginTestHr(
         employeeId: owner.id,
         overtimeRuleId: otRule?.id ?? null,
         statusId: approvedOtId,
-        workDate: new Date("2026-06-01T00:00:00Z"),
-        startAt: new Date("2026-06-01T17:00:00Z"),
-        endAt: new Date("2026-06-01T19:00:00Z"),
+        workDate: demoDay(1),
+        startAt: new Date(demoDayIso(1, "17:00:00")),
+        endAt: new Date(demoDayIso(1, "19:00:00")),
         requestedMinutes: 120,
         approvedMinutes: 120,
         reason: "OT อนุมัติแล้ว (ทดสอบ)",
@@ -1181,6 +1274,8 @@ export async function seedLoginTestHr(
   const pendingOt = await db.overtimeRequest.findFirst({
     where: { employeeId: suspended.id, reason: "OT รออนุมัติ (ทดสอบ)" },
   });
+  const pendingOtStart = new Date(`${inboxToday.toISOString().slice(0, 10)}T17:00:00.000Z`);
+  const pendingOtEnd = new Date(`${inboxToday.toISOString().slice(0, 10)}T20:00:00.000Z`);
   if (!pendingOt) {
     await db.overtimeRequest.create({
       data: {
@@ -1189,12 +1284,26 @@ export async function seedLoginTestHr(
         employeeId: suspended.id,
         overtimeRuleId: otRule?.id ?? null,
         statusId: submittedOtId,
-        workDate: new Date("2026-06-08T00:00:00Z"),
-        startAt: new Date("2026-06-08T17:00:00Z"),
-        endAt: new Date("2026-06-08T20:00:00Z"),
+        workDate: inboxToday,
+        startAt: pendingOtStart,
+        endAt: pendingOtEnd,
         requestedMinutes: 180,
         reason: "OT รออนุมัติ (ทดสอบ)",
-        submittedAt: demoStart,
+        submittedAt: new Date(),
+      },
+    });
+  } else {
+    await db.overtimeRequest.update({
+      where: { id: pendingOt.id },
+      data: {
+        statusId: submittedOtId,
+        workDate: inboxToday,
+        startAt: pendingOtStart,
+        endAt: pendingOtEnd,
+        submittedAt: new Date(),
+        reviewedAt: null,
+        reviewedByAuthUserId: null,
+        approvedMinutes: null,
       },
     });
   }
@@ -1204,7 +1313,7 @@ export async function seedLoginTestHr(
     where: {
       employeeId_workDate: {
         employeeId: lateStaff.id,
-        workDate: new Date("2026-06-02T00:00:00Z"),
+        workDate: demoDay(2),
       },
     },
   });
@@ -1220,9 +1329,9 @@ export async function seedLoginTestHr(
         organizationId,
         employeeId: lateStaff.id,
         attendanceDayId: lateDay?.id ?? null,
-        workDate: new Date("2026-06-02T00:00:00Z"),
-        requestedClockInAt: new Date("2026-06-02T20:00:00Z"),
-        requestedClockOutAt: new Date("2026-06-03T05:00:00Z"),
+        workDate: demoDay(2),
+        requestedClockInAt: new Date(demoDayIso(2, "20:00:00")),
+        requestedClockOutAt: new Date(demoDayIso(3, "05:00:00")),
         reason: "ขอปรับเวลาเข้า (ทดสอบ)",
         statusId: submittedLeaveId,
         requestedByAuthUserId: lateStaff.authUserId ?? actorId,
@@ -1230,6 +1339,11 @@ export async function seedLoginTestHr(
     });
   }
 
+  const { formatThaiDate: formatNotifThaiDate } = await import(
+    "@/lib/hr/thai-date"
+  );
+  const leaveDateLabel = formatNotifThaiDate(inboxToday);
+  const leaveNotifBody = `นภา สุขใจ ส่งคำขอลาป่วย 1 วัน · ${leaveDateLabel}`;
   const notifLeave = await db.notification.findFirst({
     where: {
       organizationId,
@@ -1245,12 +1359,18 @@ export async function seedLoginTestHr(
         recipientAuthUserId: actorId,
         recipientEmployeeId: staff1.id,
         typeId: leaveNotifId,
-        statusId: pendingNotifId,
+        statusId: deliveredNotifId,
         title: "คำขอลาป่วยรออนุมัติ",
-        body: "นภา สุขใจ ส่งคำขอลาป่วย 1 วัน",
+        body: leaveNotifBody,
         entityType: "LEAVE_REQUEST",
         entityId: leaveSubmitted.id,
+        deliveredAt: new Date(),
       },
+    });
+  } else {
+    await db.notification.update({
+      where: { id: notifLeave.id },
+      data: { body: leaveNotifBody, readAt: null },
     });
   }
 
@@ -1265,6 +1385,7 @@ export async function seedLoginTestHr(
         entityId: pendingOtRow.id,
       },
     });
+    const otNotifBody = `วราภรณ์ พักงาน ส่งคำขอ OT 3 ชั่วโมง · ${leaveDateLabel}`;
     if (!notifOt) {
       await db.notification.create({
         data: {
@@ -1273,12 +1394,18 @@ export async function seedLoginTestHr(
           recipientAuthUserId: actorId,
           recipientEmployeeId: suspended.id,
           typeId: otNotifId,
-          statusId: pendingNotifId,
+          statusId: deliveredNotifId,
           title: "คำขอ OT รออนุมัติ",
-          body: "วราภรณ์ พักงาน ส่งคำขอ OT 3 ชั่วโมง",
+          body: otNotifBody,
           entityType: "OVERTIME_REQUEST",
           entityId: pendingOtRow.id,
+          deliveredAt: new Date(),
         },
+      });
+    } else {
+      await db.notification.update({
+        where: { id: notifOt.id },
+        data: { body: otNotifBody, readAt: null },
       });
     }
   }
@@ -1359,11 +1486,48 @@ export async function seedLoginTestHr(
           : person.wageType === "HOURLY"
             ? "HOURLY"
             : "MONTHLY";
+      // Showcase OT / late / absence on HQ sample rows (matches attendance + OT seed).
+      const daily =
+        wageType === "DAILY"
+          ? person.amount
+          : wageType === "HOURLY"
+            ? person.amount * 8
+            : person.amount / 30;
+      const extraEarnings =
+        person.key === "owner"
+          ? [
+              {
+                code: "OVERTIME",
+                amount: Math.round(((daily / 8) * 2 * 1.5) * 100) / 100,
+                description: "ค่าล่วงเวลา (120 นาที)",
+              },
+            ]
+          : undefined;
+      const extraDeductions =
+        person.key === "hq-staff-1"
+          ? [
+              {
+                code: "LATE",
+                amount: Math.round((daily / 8 / 60) * 45 * 100) / 100,
+                description: "หักสาย (45 นาที)",
+              },
+            ]
+          : person.key === "hq-staff-2"
+            ? [
+                {
+                  code: "ABSENCE",
+                  amount: Math.round(daily * 100) / 100,
+                  description: "หักขาดงาน (1 วัน)",
+                },
+              ]
+            : undefined;
       // EMP-0005 shows higher tax showcase; others use org rates on full wage.
       const calc = calculatePayroll({
         wageType,
         wageAmount: person.amount,
         workedDays: wageType === "DAILY" ? 13 : undefined,
+        earnings: extraEarnings,
+        deductions: extraDeductions,
         deductionRates:
           person.key === "hq-staff-2"
             ? { ...deductionRates, taxRatePercent: 5 }
@@ -1377,6 +1541,7 @@ export async function seedLoginTestHr(
           grossEarnings: calc.gross,
           totalDeductions: calc.deductions,
           netPay: calc.net,
+          overtimeMinutes: person.key === "owner" ? 120 : 0,
           statusId: reviewStatusId,
           calculatedAt: demoStart,
         },
@@ -1386,6 +1551,7 @@ export async function seedLoginTestHr(
           grossEarnings: calc.gross,
           totalDeductions: calc.deductions,
           netPay: calc.net,
+          overtimeMinutes: person.key === "owner" ? 120 : 0,
           statusId: reviewStatusId,
           calculatedAt: demoStart,
         },
@@ -1400,15 +1566,23 @@ export async function seedLoginTestHr(
           data: {
             payrollRunEmployeeId: runEmp.id,
             earningTypeId:
-              line.kind === "EARNING" && line.code === "BASE_PAY"
-                ? baseSalaryId
+              line.kind === "EARNING"
+                ? line.code === "BASE_PAY"
+                  ? baseSalaryId
+                  : line.code === "OVERTIME"
+                    ? overtimeEarnId
+                    : null
                 : null,
             deductionTypeId:
               line.code === "TAX"
                 ? taxId
                 : line.code === "SOCIAL_SECURITY"
                   ? ssoId
-                  : null,
+                  : line.code === "LATE"
+                    ? lateDedId
+                    : line.code === "ABSENCE"
+                      ? absenceDedId
+                      : null,
             sourceType: "LOGIN_TEST",
             description: line.description,
             amount: line.amount,
@@ -1588,6 +1762,30 @@ export async function seedLoginTestHr(
         ${actorId}::uuid
       )
     `;
+    const notifAdvance = await db.notification.findFirst({
+      where: {
+        organizationId,
+        entityType: "SALARY_ADVANCE",
+        entityId: submittedId,
+      },
+    });
+    if (!notifAdvance) {
+      await db.notification.create({
+        data: {
+          organizationId,
+          branchId: advanceEmpSubmit.branchId,
+          recipientAuthUserId: actorId,
+          recipientEmployeeId: advanceEmpSubmit.id,
+          typeId: advanceNotifId,
+          statusId: deliveredNotifId,
+          title: "คำขอเบิกล่วงหน้ารออนุมัติ",
+          body: `จิราภรณ์ ใหม่งาน ขอเบิก 3,000 บาท · ${demoStart.toISOString().slice(0, 10)}`,
+          entityType: "SALARY_ADVANCE",
+          entityId: submittedId,
+          deliveredAt: new Date(),
+        },
+      });
+    }
   }
 
   if (issuedPeriod) {

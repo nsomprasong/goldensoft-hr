@@ -7,16 +7,31 @@ import {
   listMySalaryAdvances,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
+import { markNotifyFromQuery } from "@/lib/hr/mark-notify-from-query";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import { resolveSelfEmployee } from "@/lib/hr/services/operations";
 import { toHrServiceContext } from "@/lib/hr/services/shared";
 
 export const dynamic = "force-dynamic";
 
-export default async function MeAdvancesPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function single(params: SearchParams, key: string): string {
+  const value = params[key];
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
+
+export default async function MeAdvancesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
   const ctx = await requireHrPage({
     permission: HR_PERMISSIONS.advanceSelf,
   });
+  const params = searchParams ? await searchParams : {};
+  await markNotifyFromQuery(toHrServiceContext(ctx), single(params, "notify"));
   const service = toHrServiceContext(ctx);
   const self = await resolveSelfEmployee(service);
   if (!self) {

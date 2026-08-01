@@ -56,10 +56,12 @@ function candidateLabel(candidate: LeaveCoverCandidate): string {
 export default function LeaveApprovalCards({
   rows,
   canApprove,
+  focusId = null,
   emptyMessage = "ยังไม่มีคำขอลา",
 }: {
   rows: LeaveRequestRow[];
   canApprove: boolean;
+  focusId?: string | null;
   emptyMessage?: string;
 }) {
   const router = useRouter();
@@ -228,7 +230,13 @@ export default function LeaveApprovalCards({
             : "ยังไม่ระบุคนแทน";
 
           return (
-            <li key={row.id} className="hr-leave-approval-item">
+            <li
+              key={row.id}
+              id={`approval-${row.id}`}
+              className={`hr-leave-approval-item${
+                focusId === row.id ? " hr-approval-focus" : ""
+              }`}
+            >
               <div className="hr-leave-approval-head">
                 <div className="hr-ot-approval-person">
                   <EmployeeAvatar
@@ -329,7 +337,7 @@ export default function LeaveApprovalCards({
                         </p>
                       ) : candidates.length === 0 ? (
                         <p className="muted" style={{ margin: 0 }}>
-                          ไม่มีพนักงานกะอื่นในวันที่ลา
+                          ไม่มีพนักงานกะอื่นในสาขาเดียวกับผู้ลา ในวันที่ลา
                         </p>
                       ) : null}
                       <button

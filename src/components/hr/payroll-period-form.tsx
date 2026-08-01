@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import Alert from "@/components/hr/alert";
 import Field, { fieldProps } from "@/components/hr/field";
@@ -21,6 +21,8 @@ export default function PayrollPeriodForm({
   disabled?: boolean;
 }) {
   const router = useRouter();
+  const titleId = useId();
+  const [open, setOpen] = useState(false);
   const [values, setValues] = useState({
     payrollScheduleId: "",
     periodStart: "",
@@ -33,6 +35,31 @@ export default function PayrollPeriodForm({
     kind: "success" | "error";
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") close();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  function close() {
+    setOpen(false);
+    setErrors({});
+    setFeedback(null);
+    setSaving(false);
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,99 +110,170 @@ export default function PayrollPeriodForm({
       return;
     }
 
-    setFeedback({ kind: "success", text: result.message });
     setValues({
       payrollScheduleId: values.payrollScheduleId,
       periodStart: "",
       periodEnd: "",
       paymentDate: "",
     });
+    close();
     router.refresh();
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>สร้างงวดเงินเดือน</h2>
-      {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
-
-      <div className="form-grid">
-        <Field
-          id="period-scheduleId"
-          label="รอบจ่าย"
-          required
-          error={errors.payrollScheduleId}
-        >
-          <select
-            {...fieldProps("period-scheduleId", errors.payrollScheduleId)}
-            value={values.payrollScheduleId}
-            onChange={(e) =>
-              setValues({ ...values, payrollScheduleId: e.target.value })
-            }
-          >
-            <option value="">— เลือกรอบจ่าย —</option>
-            {schedules.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <Field
-          id="period-start"
-          label="วันเริ่มงวด"
-          required
-          error={errors.periodStart}
-        >
-          <input
-            {...fieldProps("period-start", errors.periodStart)}
-            type="date"
-            value={values.periodStart}
-            onChange={(e) =>
-              setValues({ ...values, periodStart: e.target.value })
-            }
-          />
-        </Field>
-
-        <Field id="period-end" label="วันสิ้นงวด" required error={errors.periodEnd}>
-          <input
-            {...fieldProps("period-end", errors.periodEnd)}
-            type="date"
-            value={values.periodEnd}
-            onChange={(e) => setValues({ ...values, periodEnd: e.target.value })}
-          />
-        </Field>
-
-        <Field
-          id="period-paymentDate"
-          label="วันจ่ายเงิน"
-          required
-          error={errors.paymentDate}
-        >
-          <input
-            {...fieldProps("period-paymentDate", errors.paymentDate)}
-            type="date"
-            value={values.paymentDate}
-            onChange={(e) =>
-              setValues({ ...values, paymentDate: e.target.value })
-            }
-          />
-        </Field>
-      </div>
-
-      <div className="form-actions">
+    <>
+      {!open ? (
         <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={saving || disabled || schedules.length === 0}
+          type="button"
+          className="hr-fab"
+          onClick={() => setOpen(true)}
+          disabled={disabled || schedules.length === 0}
+          aria-label="สร้างงวดจ่าย"
+          title={
+            schedules.length === 0
+              ? "ต้องสร้างรอบจ่ายก่อน"
+              : "สร้างงวดจ่าย"
+          }
         >
-          {saving ? "กำลังบันทึก…" : "สร้างงวด"}
+          <span aria-hidden="true">+</span>
         </button>
-      </div>
-
-      {schedules.length === 0 ? (
-        <p className="field-hint">ต้องสร้างรอบจ่ายก่อนจึงจะสร้างงวดเงินเดือนได้</p>
       ) : null}
-    </form>
+
+      {open ? (
+        <div className="hr-overlay" role="presentation">
+          <button
+            type="button"
+            className="hr-overlay-backdrop"
+            aria-label="ปิด"
+            onClick={close}
+          />
+          <div
+            className="hr-overlay-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+          >
+            <div className="hr-overlay-head hr-period-create-overlay-head">
+              <div>
+                <p className="hr-period-create-overlay-kicker">งวดเงินเดือน</p>
+                <h2 id={titleId}>สร้างงวดจ่าย</h2>
+              </div>
+              <button type="button" className="btn btn-sm" onClick={close}>
+                ปิด
+              </button>
+            </div>
+            <div className="hr-overlay-body">
+              <form onSubmit={handleSubmit} noValidate>
+                {feedback ? (
+                  <Alert kind={feedback.kind}>{feedback.text}</Alert>
+                ) : null}
+
+                <div className="form-grid">
+                  <Field
+                    id="period-scheduleId"
+                    label="รอบจ่าย"
+                    required
+                    error={errors.payrollScheduleId}
+                  >
+                    <select
+                      {...fieldProps(
+                        "period-scheduleId",
+                        errors.payrollScheduleId,
+                      )}
+                      value={values.payrollScheduleId}
+                      onChange={(e) =>
+                        setValues({
+                          ...values,
+                          payrollScheduleId: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">— เลือกรอบจ่าย —</option>
+                      {schedules.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field
+                    id="period-start"
+                    label="วันเริ่มงวด"
+                    required
+                    error={errors.periodStart}
+                  >
+                    <input
+                      {...fieldProps("period-start", errors.periodStart)}
+                      type="date"
+                      value={values.periodStart}
+                      onChange={(e) =>
+                        setValues({ ...values, periodStart: e.target.value })
+                      }
+                    />
+                  </Field>
+
+                  <Field
+                    id="period-end"
+                    label="วันสิ้นงวด"
+                    required
+                    error={errors.periodEnd}
+                  >
+                    <input
+                      {...fieldProps("period-end", errors.periodEnd)}
+                      type="date"
+                      value={values.periodEnd}
+                      onChange={(e) =>
+                        setValues({ ...values, periodEnd: e.target.value })
+                      }
+                    />
+                  </Field>
+
+                  <Field
+                    id="period-paymentDate"
+                    label="วันจ่ายเงิน"
+                    required
+                    error={errors.paymentDate}
+                  >
+                    <input
+                      {...fieldProps("period-paymentDate", errors.paymentDate)}
+                      type="date"
+                      value={values.paymentDate}
+                      onChange={(e) =>
+                        setValues({ ...values, paymentDate: e.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={close}
+                    disabled={saving}
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={saving || disabled || schedules.length === 0}
+                  >
+                    {saving ? "กำลังบันทึก…" : "สร้างงวด"}
+                  </button>
+                </div>
+
+                {schedules.length === 0 ? (
+                  <p className="field-hint">
+                    ต้องสร้างรอบจ่ายก่อนจึงจะสร้างงวดเงินเดือนได้
+                  </p>
+                ) : null}
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

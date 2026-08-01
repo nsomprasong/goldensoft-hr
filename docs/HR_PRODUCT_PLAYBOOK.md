@@ -3,7 +3,7 @@
 > **อ่านไฟล์นี้ก่อนแก้ HR ทุกครั้ง** — เป็นแหล่งอ้างอิงเดียว ไม่ต้องไล่โครงสร้างโปรเจกต์ใหม่  
 > อัปเดตไฟล์นี้ทุกครั้งที่ปิดงานย่อยหรือขออนุมัติปิดเฟส
 
-Last updated: 2026-08-01 (Phase 4 + 6 closed)  
+Last updated: 2026-08-01 (Phase 5 skipped — customer `/` already is employee home)  
 Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft-platform` (auth/permissions)
 
 ---
@@ -84,9 +84,10 @@ Legend: `working` | `partial` | `stub` | `missing`
 | สถานที่ทำงาน | `/hr/locations` | working | 1 | UI จริง + ตั้งรัศมี GPS ได้ |
 | เวลาทำงาน | `/hr/attendance` | working | 2 | รายวัน + avatar + รูปหลักฐาน |
 | การลา / OT / อนุมัติ | leave, overtime, approvals | working | 3 | รวมคิวลา/OT/ปรับเวลา/ย้ายกะผิดกะ; me leave/OT + ขอแก้เวลา |
-| ประมวลผล / สลิป / รายงาน | payroll runs, payslips, reports | partial | 4–7 | Phase 4 closed: runs/payslips/tax-SSO + filter งวด; reports ยัง stub |
+| ประมวลผล / สลิป / รายงาน | payroll runs, payslips, reports | partial | 4–7 | Run table: ค่าจ้าง/OT/จ่ายเบิก/รายได้อื่น + หักภาษี/SSO/หักเบิก/สาย/ขาด; sticky ชื่อ; reports ยัง stub |
+| งานของฉัน (home) | `/` (Customer App) | working | — | เมนูลัดพนักงาน — ไม่ทำ hub ซ้ำที่ `/hr/me` |
 | ลงเวลาของฉัน | `/hr/me/attendance` | working | 2 | รูป + GPS + รัศมี; face = Phase 8 |
-| me อื่นๆ | schedule/leave/OT/payslips | partial | 3–5 | leave/OT/payslips ของฉันใช้งานได้ |
+| me อื่นๆ | schedule/leave/OT/payslips/advances | working | 3–6 | leaf ครบ; เข้าจาก `/` + bottom tabs |
 | เบิกล่วงหน้า | `/hr/advances`, `/hr/me/advances` | working | 6 | งวดหักคืน + วิธีรับเงิน + สลิป; notification center ยังค้าง |
 | Face matching | — | missing | 8 | |
 | Tax/SSO legal | payroll-calc placeholders | partial | 4 then 8 | |
@@ -140,7 +141,7 @@ Status values: `OPEN` | `IN_PROGRESS` | `READY_FOR_APPROVAL` | `CLOSED`
 - Closed: 2026-08-01 — user approved close
 
 ### Phase 4 — Payroll UI + tax/SSO configurable (2B)
-- Status: **CLOSED**
+- Status: **CLOSED** (+ follow-up 2026-08-01 tested OK)
 - Done:
   - Runs / run detail / org+me payslips UI (cards + FAB/overlay, no internal codes)
   - Tax/SSO org settings `/hr/settings/payroll-deductions` (2B rates → calculate)
@@ -148,10 +149,17 @@ Status values: `OPEN` | `IN_PROGRESS` | `READY_FOR_APPROVAL` | `CLOSED`
   - Login-test: deduction settings + approved run with issued payslips + draft run
   - Migration `0009_payroll_deduction_settings`
   - Smoke: `npm run test:payroll-phase4` (7/7 pass)
-- Closed: 2026-08-01 — user approved close + commit/push
+  - **Follow-up (user tested OK 2026-08-01):**
+    - Calculate pulls approved OT + late minutes + ABSENT days into pay lines
+    - Settings `/hr/settings/attendance-pay` (หักสาย / ขาดงาน; 0 = derive from wage)
+    - Run detail columns: ค่าจ้าง / OT / จ่ายเบิก / รายได้อื่น / ภาษี / SSO / หักเบิก / สาย / ขาดงาน; sticky ชื่อ
+    - Migration `0014_attendance_pay_settings` (+ `LATE` deduction type)
+- Closed: 2026-08-01 — user approved close + commit/push; follow-up pass same day
 
 ### Phase 5 — Mobile self-service hub
-- Status: **OPEN**
+- Status: **CANCELLED** (ไม่ต้องทำ — หน้าแรก Customer `/` จัดเมนูพนักงานครบแล้ว)
+- Decision 2026-08-01: ถอด `/hr/me` hub ที่ซ้ำ; `/hr/me` redirect → attendance ตามเดิม
+- Next open: **Phase 7** (Reports + notification center)
 
 ### Phase 6 — Advances + notification center
 - Status: **CLOSED** (advances); notification center deferred → track under Phase 7 / follow-up
@@ -160,14 +168,24 @@ Status values: `OPEN` | `IN_PROGRESS` | `READY_FOR_APPROVAL` | `CLOSED`
   - Installment plan (N งวด); start period optional until calculate binds
   - Employee chooses รับเงินเลย / รับพร้อมเงินเดือน; approver can change
   - รับเงินเลย: optional transfer slip now or later; stored as employee document `ADVANCE_SLIP`
-  - Calculate: credit `ADVANCE_PAYOUT` (WITH_SALARY) + deduct installment for period
+  - Calculate: `ADVANCE_PAYOUT` (WITH_SALARY) in payout period; **หักงวดถัดไป** (ไม่หักงวดเดียวกับที่จ่าย)
   - Approvals inbox tab `เบิก` + main-nav hub รายการรออนุมัติ; permissions `hr.advance.self` / `hr.advance.approve`
   - Migrations `0010`–`0013` (advances, installments, nullable period, transfer slip)
-- Closed: 2026-08-01 — user approved close + commit/push
+- Closed: 2026-08-01 — user approved close + commit/push; WITH_SALARY deferral follow-up tested OK same day
 - Deferred: in-app notification center UI
 
 ### Phase 7 — Reports + manager dashboard
-- Status: **OPEN** (also absorbs deferred notification center from Phase 6)
+- Status: **CLOSED** (absorbs deferred notification center from Phase 6)
+- Done:
+  - In-app notification center `/hr/notifications` (list / unread / mark read / mark all)
+  - Emit on leave / OT / advance submit + review; body + `dateLabel` (วันลา / วัน OT / วันเบิก)
+  - Deep-link `focus` + `notify` — open request and mark read reliably
+  - Manager dashboard: unread strip + advances pending tile
+  - Reports hub: month cards (attendance / leave / OT / advances)
+  - Leave cover: คนแทน must be same branch as leave employee
+  - Nav แจ้งเตือน (HR routes + Customer App registry)
+  - Master types: `ADVANCE_SUBMITTED` / `ADVANCE_APPROVED` / `ADVANCE_REJECTED`
+- Closed: 2026-08-01 — user approved close
 
 ### Phase 8 — Face matching + legal tax/SSO depth
 - Status: **OPEN** (separate approvals OK)
@@ -206,21 +224,54 @@ Per-phase: add checklist under Changelog when closing.
 | Login-test dataset | `src/lib/seed/login-test-dataset.ts`, `docs/HR_LOGIN_TEST_DATASET.md` |
 | Demo dataset (legacy) | `src/lib/seed/demo-dataset.ts`, `docs/HR_DEMO_DATASET.md` |
 | Tokens | `src/app/design-tokens.css`, `src/app/globals.css` |
-| Payroll UI | `payroll-runs-workspace.tsx`, `payroll-run-detail-workspace.tsx`, `payslips-workspace.tsx`, `me-payslips-workspace.tsx`, `payroll-deduction-settings-form.tsx` |
-| Payroll services | `services/payroll-runs.ts`, `services/payroll-deduction-settings.ts` |
-
+| Payroll UI | `payroll-runs-workspace.tsx`, `payroll-run-detail-workspace.tsx`, `payslips-workspace.tsx`, `me-payslips-workspace.tsx`, `payroll-deduction-settings-form.tsx`, `attendance-pay-settings-form.tsx` |
+| Payroll services | `services/payroll-runs.ts`, `services/payroll-deduction-settings.ts`, `services/payroll-attendance-effects.ts`, `services/salary-advances.ts` |
+| Notifications | `services/notify.ts`, `/hr/notifications`, `notifications-workspace.tsx`, `notification-link.tsx`, `mark-notify-from-query.ts` |
+| Reports hub | `services/report-summaries.ts`, `/hr/reports` |
+| Leave cover | `listLeaveCoverCandidates` / `assertLeaveCoverSameBranch` in `operations.ts` |
 Do **not** re-read whole repo if this map answers the question — update the map when paths change.
 
 ---
 
 ## 8. Changelog
 
+### 2026-08-01 — Phase 7 CLOSED
+- User approved close after smoke (notifications, reports, dashboard, leave cover same-branch)
+- Notifications: center UI + emit leave/OT/advance; dates in body/`dateLabel`; mark-read on open (`notify` query)
+- Approvals deep-link `focus=<id>`; empty POST body allowed for mark-read APIs
+- Dashboard: unread strip + เบิกรออนุมัติ; Reports hub month cards
+- Leave cover candidates + assign: same branch as leave employee only
+- Next open: **Phase 8** (Face matching + legal tax/SSO depth)
+
+### 2026-08-01 — Schedule overlap + workdays on assign
+- Assign: warn when employee+date already in another period (no silent skip)
+- Resolve: ข้ามวันที่ชน / ย้ายมาช่วงนี้ / เปิดจัดการช่วงเก่า (เปิด/ลบ)
+- Create + detail + list: show overlapping periods; detail panel to manage old ranges
+- Assign UI: choose work days/week (จ–ศ · ทุกวัน · chip กำหนดเอง)
+- Fix false “กะซ้ำ”: time-overlap check is per-employee (was mixing people)
+- Seed: BRANCH01 staff no longer land on HQ June schedule; cleanup moved cross-branch rows
+- Delete schedule: blocked when any punch exists on covered days (PUBLISHED ok only if no attendance)
+
+### 2026-08-01 — Phase 5 CANCELLED
+- User: customer `/` จัดหน้าพนักงานเรียบร้อยแล้ว — hub `/hr/me` ซ้ำซ้อน ให้ถอดออก
+- Restored `/hr/me` → redirect attendance; removed MeHubWorkspace / me-hub service
+- Next open phase: **Phase 7**
+
+### 2026-08-01 — Payroll follow-up tested OK (OT / สาย / ขาด / จ่ายเบิก)
+- User confirmed browser test pass
+- Calculate: OT (approved) + late + absence; settings `/hr/settings/attendance-pay`
+- Run table: split earnings (incl. จ่ายเบิก / รายได้อื่น) + sticky name column
+- WITH_SALARY: credit this period, deduct from next period only
+- Migration `0014_attendance_pay_settings`
+- Next open phase: **Phase 5 — Mobile self-service hub**
+- Awaiting user: commit/push? start Phase 5?
+
 ### 2026-08-01 — Phase 4 + Phase 6 CLOSED
 - User approved close → commit/push (hr, app, platform)
 - Phase 4: payroll UI + tax/SSO 2B + payslip period filter (default current)
 - Phase 6 advances: installments, payout mode, transfer slip evidence, approve inbox, nav section rename
 - Notification center deferred (not in this close)
-- Nav (app): รายการรออนุมัติ as own hub; section **งวดจ่าย คำนวณเงินเดือน และเบิกล่วงหน้า**
+- Nav (app): รายการรออนุมัติ as own hub; section **จัดการเงินเดือน/เบิกล่วงหน้า**
 - Platform: `hr.advance.self` / `hr.advance.approve` in catalog + seed
 
 ### 2026-08-01 — Phase 4 READY_FOR_APPROVAL

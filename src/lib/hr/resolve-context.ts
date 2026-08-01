@@ -142,7 +142,9 @@ export async function resolveHrRequestContext(
     ),
   ]);
 
-  if (!access.allowed) {
+  // SUPER_ADMIN may open HR for any org (support / inspect) even without a
+  // paid entitlement. Regular members still require an active entitlement.
+  if (!access.allowed && !isSuper) {
     if (
       access.subscriptionStatus &&
       isInactiveSubscriptionStatus(access.subscriptionStatus)

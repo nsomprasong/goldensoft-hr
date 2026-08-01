@@ -9,6 +9,8 @@ export type HrSubmitResult = {
   message: string;
   fieldErrors: FieldErrors;
   data: unknown;
+  /** Server `error.details` when the request failed. */
+  details: Record<string, unknown> | null;
 };
 
 const DEFAULT_ERROR_BY_STATUS: Record<number, string> = {
@@ -26,7 +28,7 @@ const DEFAULT_ERROR_BY_STATUS: Record<number, string> = {
 function errorBody(body: unknown): {
   code?: string;
   message?: string;
-  details?: { issues?: unknown; fieldErrors?: unknown };
+  details?: Record<string, unknown>;
 } | null {
   if (!body || typeof body !== "object") return null;
   const wrapper = (body as { error?: unknown }).error;
@@ -34,8 +36,13 @@ function errorBody(body: unknown): {
   return candidate as {
     code?: string;
     message?: string;
-    details?: { issues?: unknown; fieldErrors?: unknown };
+    details?: Record<string, unknown>;
   };
+}
+
+function extractDetails(body: unknown): Record<string, unknown> | null {
+  const details = errorBody(body)?.details;
+  return details && typeof details === "object" ? details : null;
 }
 
 function extractFieldErrors(body: unknown): FieldErrors {
@@ -92,6 +99,7 @@ export async function submitHrJson(
       message: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต",
       fieldErrors: {},
       data: null,
+      details: null,
     };
   }
 
@@ -114,6 +122,7 @@ export async function submitHrJson(
             "ดำเนินการไม่สำเร็จ กรุณาลองใหม่"),
       fieldErrors: extractFieldErrors(payload),
       data: payload,
+      details: extractDetails(payload),
     };
   }
 
@@ -125,6 +134,7 @@ export async function submitHrJson(
         : successMessage,
     fieldErrors: {},
     data: payload,
+    details: null,
   };
 }
 

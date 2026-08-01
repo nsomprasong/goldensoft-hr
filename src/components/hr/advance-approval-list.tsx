@@ -17,9 +17,11 @@ import type {
 export default function AdvanceApprovalList({
   rows,
   canApprove,
+  focusId = null,
 }: {
   rows: SalaryAdvanceRow[];
   canApprove: boolean;
+  focusId?: string | null;
 }) {
   const router = useRouter();
   const titleId = useId();
@@ -113,7 +115,13 @@ export default function AdvanceApprovalList({
       <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
       <div className="hr-card-grid">
         {rows.map((row) => (
-          <article key={row.id} className="card hr-entity-card">
+          <article
+            key={row.id}
+            id={`approval-${row.id}`}
+            className={`card hr-entity-card${
+              focusId === row.id ? " hr-approval-focus" : ""
+            }`}
+          >
             <div className="hr-entity-card-top">
               <div className="hr-employee-card-head">
                 <EmployeeAvatar

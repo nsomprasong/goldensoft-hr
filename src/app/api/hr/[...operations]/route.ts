@@ -4,7 +4,7 @@ import {
   approvalInbox, assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, deleteCalendar, deleteHoliday, deleteSchedulePeriod, getSchedulePeriod, issuePayslips,
   assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listShiftMismatchRequests, listWorkLocations,
-  markNotificationRead, payrollAction, report, resolveSelfEmployee, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, reviewShiftMismatchRequest, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
+  markAllNotificationsRead, markNotificationRead, payrollAction, report, resolveSelfEmployee, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, reviewShiftMismatchRequest, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
   toCsv, updateSchedulePeriod, updateWorkLocation,
 } from "@/lib/hr/services/operations";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/lib/hr/services/payroll-runs";
 import {
   getPayrollDeductionSettings,
+  upsertAttendancePaySettings,
   upsertPayrollDeductionSettings,
 } from "@/lib/hr/services/payroll-deduction-settings";
 import {
@@ -359,6 +360,10 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     if (request.method === "GET") return jsonResponse(await getPayrollDeductionSettings(service));
     return jsonResponse(await upsertPayrollDeductionSettings(service, body));
   }
+  if (path === "payroll/attendance-pay-settings") {
+    if (request.method === "GET") return jsonResponse(await getPayrollDeductionSettings(service));
+    return jsonResponse(await upsertAttendancePaySettings(service, body));
+  }
   if (path === "payroll/runs") {
     if (request.method === "GET") return jsonResponse(await listPayrollRuns(service));
     return jsonResponse(await createPayrollRun(service, String(body.payrollPeriodId)), 201);
@@ -380,13 +385,50 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     return jsonResponse(await getPayslip(service, params.operations[1]));
   }
   if (path === "approvals") return jsonResponse(await approvalInbox(service));
-  if (path === "notifications") return jsonResponse(request.method === "POST" ? await createNotification(service, body) : await listNotifications(service));
-  if (path.startsWith("notifications/")) return jsonResponse(await markNotificationRead(service, params.operations[1]));
+  if (path === "notifications") {
+    if (request.method === "POST") {
+      return jsonResponse(await createNotification(service, body));
+    }
+    const search = new URL(request.url).searchParams;
+    return jsonResponse(
+      await listNotifications(service, {
+        unreadOnly: search.get("unreadOnly") === "1" || search.get("unreadOnly") === "true",
+        limit: Number(search.get("limit") || 40) || 40,
+      }),
+    );
+  }
+  if (path === "notifications/mark-all-read") {
+    if (request.method !== "POST") {
+      return jsonResponse(
+        { error: { code: "METHOD_NOT_ALLOWED", message: "ใช้ POST" } },
+        405,
+      );
+    }
+    return jsonResponse(await markAllNotificationsRead(service));
+  }
+  if (path.startsWith("notifications/")) {
+    const id = params.operations[1];
+    if (!id || id === "mark-all-read") {
+      return jsonResponse(
+        { error: { code: "NOT_FOUND", message: "ไม่พบการแจ้งเตือน" } },
+        404,
+      );
+    }
+    return jsonResponse(await markNotificationRead(service, id));
+  }
   if (path.startsWith("reports/")) {
-    const result = await report(service, params.operations[1], Object.fromEntries(new URL(request.url).searchParams));
-    return new URL(request.url).searchParams.get("format") === "csv"
-      ? new Response(toCsv(result.rows), { headers: { "content-type": "text/csv; charset=utf-8" } })
-      : jsonResponse(result);
+    const result = await report(
+      service,
+      params.operations[1],
+      Object.fromEntries(new URL(request.url).searchParams),
+    );
+    const wantCsv = new URL(request.url).searchParams.get("format") === "csv";
+    if (wantCsv && result && typeof result === "object" && "rows" in result) {
+      return new Response(toCsv((result as { rows: Record<string, unknown>[] }).rows), {
+        headers: { "content-type": "text/csv; charset=utf-8" },
+      });
+    }
+    return jsonResponse(result);
   }
   if (path.startsWith("me/")) return jsonResponse(await selfService(service, params.operations[1]));
   return jsonResponse({ error: { code: "NOT_FOUND", message: "ไม่พบ API ที่ต้องการ" } }, 404);

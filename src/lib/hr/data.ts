@@ -66,6 +66,8 @@ import {
 } from "@/lib/hr/services/calendars";
 import {
   approvalInbox as approvalInboxService,
+  getLeaveRequestById as getLeaveRequestByIdService,
+  getOvertimeRequestById as getOvertimeRequestByIdService,
   listAttendanceAdjustments as listAttendanceAdjustmentsService,
   listLeaveBalances as listLeaveBalancesService,
   listLeaveCoverCandidates as listLeaveCoverCandidatesService,
@@ -238,6 +240,7 @@ export type HrDashboardActions = {
   pendingLeave: number;
   pendingOvertime: number;
   pendingAttendanceAdjustments: number;
+  pendingAdvances: number;
   attendanceExceptionsToday: number;
   missingClockOutToday: number;
   draftSchedules: number;
@@ -285,6 +288,7 @@ const EMPTY_ACTIONS: HrDashboardActions = {
   pendingLeave: 0,
   pendingOvertime: 0,
   pendingAttendanceAdjustments: 0,
+  pendingAdvances: 0,
   attendanceExceptionsToday: 0,
   missingClockOutToday: 0,
   draftSchedules: 0,
@@ -1089,6 +1093,9 @@ export type SchedulePeriodRow = {
   timezone: string;
   branchId: string | null;
   assignmentCount?: number;
+  /** True when any punch exists on days covered by this schedule. */
+  hasAttendance?: boolean;
+  attendanceDayCount?: number;
 };
 
 export async function listSchedulePeriods(
@@ -1108,6 +1115,12 @@ export async function listSchedulePeriods(
         statusName: row.status?.name ?? row.status?.code ?? "—",
         timezone: row.timezone,
         branchId: row.branchId ?? null,
+        hasAttendance: Boolean(
+          (row as { hasAttendance?: boolean }).hasAttendance,
+        ),
+        attendanceDayCount: Number(
+          (row as { attendanceDayCount?: number }).attendanceDayCount ?? 0,
+        ),
       }))
       .sort((a, b) => {
         const byStart = b.periodStart.localeCompare(a.periodStart);
@@ -1123,6 +1136,17 @@ export type SchedulePeriodShiftRow = {
   name: string;
   timeLabel: string;
   employeeCount: number;
+};
+
+export type OverlappingSchedulePeriod = {
+  id: string;
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  statusCode: string;
+  statusName: string;
+  hasAttendance?: boolean;
+  attendanceDayCount?: number;
 };
 
 /** Compact employee + shift lists for schedule UIs. */
@@ -1145,6 +1169,7 @@ export async function getSchedulePeriod(
   HrDataResult<{
     period: SchedulePeriodRow;
     periodShifts: SchedulePeriodShiftRow[];
+    overlappingPeriods: OverlappingSchedulePeriod[];
   } | null>
 > {
   return safeRead(null, async () => {
@@ -1172,6 +1197,18 @@ export async function getSchedulePeriod(
         employeeCount: link.employeeCount ?? 0,
       };
     });
+    const overlappingPeriods: OverlappingSchedulePeriod[] = (
+      (row.overlappingPeriods ?? []) as OverlappingSchedulePeriod[]
+    ).map((item) => ({
+      id: item.id,
+      name: item.name,
+      periodStart: item.periodStart,
+      periodEnd: item.periodEnd,
+      statusCode: item.statusCode,
+      statusName: item.statusName,
+      hasAttendance: Boolean(item.hasAttendance),
+      attendanceDayCount: Number(item.attendanceDayCount ?? 0),
+    }));
 
     return {
       period: {
@@ -1185,8 +1222,15 @@ export async function getSchedulePeriod(
         timezone: row.timezone,
         branchId: row.branchId ?? null,
         assignmentCount: Number(row.assignmentCount ?? 0),
+        hasAttendance: Boolean(
+          (row as { hasAttendance?: boolean }).hasAttendance,
+        ),
+        attendanceDayCount: Number(
+          (row as { attendanceDayCount?: number }).attendanceDayCount ?? 0,
+        ),
       },
       periodShifts,
+      overlappingPeriods,
     };
   });
 }
@@ -1891,6 +1935,36 @@ export async function getApprovalInbox(
       };
     },
   );
+}
+
+/** Fetch one leave/OT/advance by id for notification deep-links. */
+export async function getFocusedApprovalItem(
+  ctx: HrRequestContext,
+  kind: "leave" | "ot" | "advance",
+  id: string,
+): Promise<
+  HrDataResult<
+    | LeaveRequestRow
+    | OvertimeRequestRow
+    | import("@/lib/hr/services/salary-advances").SalaryAdvanceRow
+    | null
+  >
+> {
+  return safeRead(null, async () => {
+    const service = serviceContext(ctx);
+    if (kind === "leave") {
+      const row = await getLeaveRequestByIdService(service, id);
+      return row ? mapLeaveRequestRow(row) : null;
+    }
+    if (kind === "ot") {
+      const row = await getOvertimeRequestByIdService(service, id);
+      return row ? mapOvertimeRequestRow(row) : null;
+    }
+    const { getSalaryAdvanceById } = await import(
+      "@/lib/hr/services/salary-advances"
+    );
+    return getSalaryAdvanceById(service, id);
+  });
 }
 
 export async function listAttendanceAdjustments(

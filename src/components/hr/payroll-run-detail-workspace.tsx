@@ -82,7 +82,10 @@ export default function PayrollRunDetailWorkspace({
   }
 
   const status = run.statusCode;
-  const showCalculate = canCalculate && (status === "DRAFT" || status === "REVIEW");
+  // APPROVED ยังคำนวณใหม่ได้ (ยังไม่จ่าย/ล็อก) เพื่อดึง OT/สาย/ขาดงาน
+  const showCalculate =
+    canCalculate &&
+    (status === "DRAFT" || status === "REVIEW" || status === "APPROVED");
   const showApprove = canApprove && status === "REVIEW";
   const showMarkPaid = canMarkPaid && status === "APPROVED";
   const showIssue =
@@ -92,15 +95,44 @@ export default function PayrollRunDetailWorkspace({
 
   const totals = run.employees.reduce(
     (acc, emp) => ({
-      earnings: acc.earnings + emp.earnings,
+      baseEarnings: acc.baseEarnings + emp.baseEarnings,
+      overtime: acc.overtime + emp.overtime,
+      advancePayout: acc.advancePayout + emp.advancePayout,
+      otherEarnings: acc.otherEarnings + emp.otherEarnings,
       tax: acc.tax + emp.tax,
       socialSecurity: acc.socialSecurity + emp.socialSecurity,
       advance: acc.advance + emp.advance,
+      late: acc.late + emp.late,
+      absence: acc.absence + emp.absence,
       other: acc.other + emp.otherDeductions,
       net: acc.net + emp.netPay,
     }),
-    { earnings: 0, tax: 0, socialSecurity: 0, advance: 0, other: 0, net: 0 },
+    {
+      baseEarnings: 0,
+      overtime: 0,
+      advancePayout: 0,
+      otherEarnings: 0,
+      tax: 0,
+      socialSecurity: 0,
+      advance: 0,
+      late: 0,
+      absence: 0,
+      other: 0,
+      net: 0,
+    },
   );
+  const totalEarnings =
+    totals.baseEarnings +
+    totals.overtime +
+    totals.advancePayout +
+    totals.otherEarnings;
+  const totalDeductions =
+    totals.tax +
+    totals.socialSecurity +
+    totals.advance +
+    totals.late +
+    totals.absence +
+    totals.other;
 
   return (
     <>
@@ -143,9 +175,20 @@ export default function PayrollRunDetailWorkspace({
                 type="button"
                 className="btn btn-sm btn-primary"
                 disabled={busy != null}
-                onClick={() => runAction("calculate", "คำนวณเรียบร้อยแล้ว")}
+                onClick={() =>
+                  runAction(
+                    "calculate",
+                    status === "APPROVED"
+                      ? "คำนวณใหม่เรียบร้อยแล้ว (สถานะกลับไปรอตรวจสอบ)"
+                      : "คำนวณเรียบร้อยแล้ว",
+                  )
+                }
               >
-                {busy === "calculate" ? "…" : "คำนวณ"}
+                {busy === "calculate"
+                  ? "…"
+                  : status === "APPROVED"
+                    ? "คำนวณใหม่"
+                    : "คำนวณ"}
               </button>
             ) : null}
             {showApprove ? (
@@ -189,24 +232,20 @@ export default function PayrollRunDetailWorkspace({
           <div className="hr-payroll-run-table-caption">
             <strong>{run.branchLabel ?? "ทุกสาขา"}</strong>
             <span>
-              รายรับ {formatThb(totals.earnings)} · หัก{" "}
-              {formatThb(
-                totals.tax +
-                  totals.socialSecurity +
-                  totals.advance +
-                  totals.other,
-              )}{" "}
+              รายรับ {formatThb(totalEarnings)} · หัก {formatThb(totalDeductions)}{" "}
               · คงเหลือ {formatThb(totals.net)}
             </span>
           </div>
           <table className="hr-payroll-run-table">
             <thead>
               <tr>
-                <th rowSpan={2}>พนักงาน</th>
-                <th rowSpan={2} className="num col-earn">
+                <th rowSpan={2} className="col-sticky-name">
+                  พนักงาน
+                </th>
+                <th colSpan={4} className="col-earn-group">
                   รายรับ
                 </th>
-                <th colSpan={4} className="col-deduct-group">
+                <th colSpan={6} className="col-deduct-group">
                   รายการหัก
                 </th>
                 <th rowSpan={2} className="num col-net">
@@ -215,16 +254,22 @@ export default function PayrollRunDetailWorkspace({
                 <th rowSpan={2}>สลิป</th>
               </tr>
               <tr>
+                <th className="num col-earn">ค่าจ้าง</th>
+                <th className="num col-earn">OT</th>
+                <th className="num col-earn">จ่ายเบิก</th>
+                <th className="num col-earn">รายได้อื่น</th>
                 <th className="num col-deduct">ภาษี</th>
                 <th className="num col-deduct">ประกันสังคม</th>
-                <th className="num col-deduct">เบิกล่วงหน้า</th>
+                <th className="num col-deduct">หักเบิก</th>
+                <th className="num col-deduct">สาย</th>
+                <th className="num col-deduct">ขาดงาน</th>
                 <th className="num col-deduct">หักอื่น</th>
               </tr>
             </thead>
             <tbody>
               {run.employees.map((emp) => (
                 <tr key={emp.id}>
-                  <td>
+                  <td className="col-sticky-name">
                     <div className="hr-payroll-run-person">
                       <EmployeeAvatar
                         displayName={emp.displayName}
@@ -235,7 +280,16 @@ export default function PayrollRunDetailWorkspace({
                     </div>
                   </td>
                   <td className="num nowrap col-earn">
-                    {formatThb(emp.earnings)}
+                    {formatThb(emp.baseEarnings)}
+                  </td>
+                  <td className="num nowrap col-earn">
+                    {cellOrDash(emp.overtime)}
+                  </td>
+                  <td className="num nowrap col-earn">
+                    {cellOrDash(emp.advancePayout)}
+                  </td>
+                  <td className="num nowrap col-earn">
+                    {cellOrDash(emp.otherEarnings)}
                   </td>
                   <td className="num nowrap col-deduct">
                     {cellOrDash(emp.tax)}
@@ -245,6 +299,12 @@ export default function PayrollRunDetailWorkspace({
                   </td>
                   <td className="num nowrap col-deduct">
                     {cellOrDash(emp.advance)}
+                  </td>
+                  <td className="num nowrap col-deduct">
+                    {cellOrDash(emp.late)}
+                  </td>
+                  <td className="num nowrap col-deduct">
+                    {cellOrDash(emp.absence)}
                   </td>
                   <td className="num nowrap col-deduct">
                     {cellOrDash(emp.otherDeductions)}
@@ -258,13 +318,24 @@ export default function PayrollRunDetailWorkspace({
             </tbody>
             <tfoot>
               <tr>
-                <th>รวม</th>
-                <th className="num col-earn">{formatThb(totals.earnings)}</th>
+                <th className="col-sticky-name">รวม</th>
+                <th className="num col-earn">
+                  {formatThb(totals.baseEarnings)}
+                </th>
+                <th className="num col-earn">{cellOrDash(totals.overtime)}</th>
+                <th className="num col-earn">
+                  {cellOrDash(totals.advancePayout)}
+                </th>
+                <th className="num col-earn">
+                  {cellOrDash(totals.otherEarnings)}
+                </th>
                 <th className="num col-deduct">{cellOrDash(totals.tax)}</th>
                 <th className="num col-deduct">
                   {cellOrDash(totals.socialSecurity)}
                 </th>
                 <th className="num col-deduct">{cellOrDash(totals.advance)}</th>
+                <th className="num col-deduct">{cellOrDash(totals.late)}</th>
+                <th className="num col-deduct">{cellOrDash(totals.absence)}</th>
                 <th className="num col-deduct">{cellOrDash(totals.other)}</th>
                 <th className="num col-net">{formatThb(totals.net)}</th>
                 <th />

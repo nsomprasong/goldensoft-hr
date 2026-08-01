@@ -8,6 +8,8 @@ export type FeedbackPopupState = {
   kind: FeedbackKind;
   message: string;
   title?: string;
+  /** When set with onConfirm, show confirm + cancel (replaces window.confirm). */
+  confirmLabel?: string;
 } | null;
 
 const TITLES: Record<FeedbackKind, string> = {
@@ -135,16 +137,22 @@ function FeedbackIcon({ kind }: { kind: FeedbackKind }) {
 export default function FeedbackPopup({
   feedback,
   onClose,
+  onConfirm,
   autoCloseMs = 2600,
 }: {
   feedback: FeedbackPopupState;
   onClose: () => void;
-  /** Auto-dismiss for success/info; error/warning stay until dismissed. */
+  /** Paired with feedback.confirmLabel for confirm dialogs. */
+  onConfirm?: () => void;
+  /** Auto-dismiss for success/info; error/warning/confirm stay until dismissed. */
   autoCloseMs?: number;
 }) {
   const titleId = useId();
+  const isConfirm = Boolean(feedback?.confirmLabel && onConfirm);
   const needsAction =
-    feedback?.kind === "error" || feedback?.kind === "warning";
+    isConfirm ||
+    feedback?.kind === "error" ||
+    feedback?.kind === "warning";
 
   useEffect(() => {
     if (!feedback) return;
@@ -157,10 +165,10 @@ export default function FeedbackPopup({
 
   useEffect(() => {
     if (!feedback) return;
-    if (feedback.kind === "error" || feedback.kind === "warning") return;
+    if (needsAction) return;
     const timer = window.setTimeout(onClose, autoCloseMs);
     return () => window.clearTimeout(timer);
-  }, [feedback, onClose, autoCloseMs]);
+  }, [feedback, onClose, autoCloseMs, needsAction]);
 
   if (!feedback) return null;
 
@@ -184,14 +192,35 @@ export default function FeedbackPopup({
           <p>{feedback.message}</p>
         </div>
         {needsAction ? (
-          <div className="hr-feedback-popup-actions">
-            <button
-              type="button"
-              className="btn hr-feedback-popup-dismiss"
-              onClick={onClose}
-            >
-              ปิด
-            </button>
+          <div
+            className={`hr-feedback-popup-actions${isConfirm ? " hr-feedback-popup-actions--pair" : ""}`}
+          >
+            {isConfirm ? (
+              <>
+                <button
+                  type="button"
+                  className="btn hr-feedback-popup-dismiss"
+                  onClick={onClose}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={onConfirm}
+                >
+                  {feedback.confirmLabel}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn hr-feedback-popup-dismiss"
+                onClick={onClose}
+              >
+                ปิด
+              </button>
+            )}
           </div>
         ) : null}
       </div>

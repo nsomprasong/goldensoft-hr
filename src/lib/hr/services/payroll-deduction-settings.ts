@@ -14,7 +14,20 @@ export type PayrollDeductionSettingsRow = {
   socialSecurityEnabled: boolean;
   socialSecurityRatePercent: number;
   socialSecurityMaxAmount: number;
+  lateDeductionEnabled: boolean;
+  /** 0 = derive from daily wage ÷ 8 ÷ 60 */
+  lateBahtPerMinute: number;
+  absenceDeductionEnabled: boolean;
+  /** 0 = one day wage */
+  absenceBahtPerDay: number;
   updatedAt: string;
+};
+
+export type AttendancePaySettingsInput = {
+  lateDeductionEnabled: boolean;
+  lateBahtPerMinute: number;
+  absenceDeductionEnabled: boolean;
+  absenceBahtPerDay: number;
 };
 
 const DEFAULTS = {
@@ -23,6 +36,10 @@ const DEFAULTS = {
   socialSecurityEnabled: true,
   socialSecurityRatePercent: 5,
   socialSecurityMaxAmount: 750,
+  lateDeductionEnabled: true,
+  lateBahtPerMinute: 0,
+  absenceDeductionEnabled: true,
+  absenceBahtPerDay: 0,
 } as const;
 
 type DbRow = {
@@ -33,6 +50,10 @@ type DbRow = {
   social_security_enabled: boolean;
   social_security_rate_percent: string | number;
   social_security_max_amount: string | number;
+  late_deduction_enabled: boolean;
+  late_baht_per_minute: string | number;
+  absence_deduction_enabled: boolean;
+  absence_baht_per_day: string | number;
   updated_at: Date;
 };
 
@@ -45,6 +66,10 @@ function toRow(row: DbRow): PayrollDeductionSettingsRow {
     socialSecurityEnabled: row.social_security_enabled,
     socialSecurityRatePercent: Number(row.social_security_rate_percent),
     socialSecurityMaxAmount: Number(row.social_security_max_amount),
+    lateDeductionEnabled: row.late_deduction_enabled,
+    lateBahtPerMinute: Number(row.late_baht_per_minute),
+    absenceDeductionEnabled: row.absence_deduction_enabled,
+    absenceBahtPerDay: Number(row.absence_baht_per_day),
     updatedAt: row.updated_at.toISOString(),
   };
 }
@@ -74,12 +99,25 @@ async function findSettingsRow(
       social_security_enabled,
       social_security_rate_percent,
       social_security_max_amount,
+      COALESCE(late_deduction_enabled, true) AS late_deduction_enabled,
+      COALESCE(late_baht_per_minute, 0) AS late_baht_per_minute,
+      COALESCE(absence_deduction_enabled, true) AS absence_deduction_enabled,
+      COALESCE(absence_baht_per_day, 0) AS absence_baht_per_day,
       updated_at
     FROM hr.payroll_deduction_settings
     WHERE organization_id = ${organizationId}::uuid
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+function defaultRow(organizationId: string): PayrollDeductionSettingsRow {
+  return {
+    id: "",
+    organizationId,
+    ...DEFAULTS,
+    updatedAt: new Date(0).toISOString(),
+  };
 }
 
 /** Returns defaults (not persisted) when the org has never saved settings. */
@@ -93,12 +131,7 @@ export async function getPayrollDeductionSettings(
   ]);
   const existing = await findSettingsRow(ctx.organizationId);
   if (existing) return toRow(existing);
-  return {
-    id: "",
-    organizationId: ctx.organizationId,
-    ...DEFAULTS,
-    updatedAt: new Date(0).toISOString(),
-  };
+  return defaultRow(ctx.organizationId);
 }
 
 export async function upsertPayrollDeductionSettings(
@@ -158,19 +191,61 @@ export async function upsertPayrollDeductionSettings(
     `;
   }
   const row = await findSettingsRow(ctx.organizationId);
-  if (!row) {
-    return {
-      id: "",
-      organizationId: ctx.organizationId,
-      taxEnabled: Boolean(input.taxEnabled),
-      taxRatePercent,
-      socialSecurityEnabled: Boolean(input.socialSecurityEnabled),
-      socialSecurityRatePercent,
-      socialSecurityMaxAmount,
-      updatedAt: new Date().toISOString(),
-    };
+  return row ? toRow(row) : defaultRow(ctx.organizationId);
+}
+
+export async function upsertAttendancePaySettings(
+  ctx: HrServiceContext,
+  input: AttendancePaySettingsInput,
+): Promise<PayrollDeductionSettingsRow> {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.payrollManage,
+    HR_PERMISSIONS.settingsManage,
+  ]);
+  const lateBahtPerMinute = Math.max(0, Number(input.lateBahtPerMinute) || 0);
+  const absenceBahtPerDay = Math.max(0, Number(input.absenceBahtPerDay) || 0);
+  const existing = await findSettingsRow(ctx.organizationId);
+  if (existing) {
+    await prisma.$executeRaw`
+      UPDATE hr.payroll_deduction_settings
+      SET
+        late_deduction_enabled = ${Boolean(input.lateDeductionEnabled)},
+        late_baht_per_minute = ${lateBahtPerMinute},
+        absence_deduction_enabled = ${Boolean(input.absenceDeductionEnabled)},
+        absence_baht_per_day = ${absenceBahtPerDay},
+        updated_by_auth_user_id = ${ctx.actorAuthUserId}::uuid,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE organization_id = ${ctx.organizationId}::uuid
+    `;
+  } else {
+    const id = randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO hr.payroll_deduction_settings (
+        id, organization_id,
+        tax_enabled, tax_rate_percent,
+        social_security_enabled, social_security_rate_percent,
+        social_security_max_amount,
+        late_deduction_enabled, late_baht_per_minute,
+        absence_deduction_enabled, absence_baht_per_day,
+        updated_by_auth_user_id
+      ) VALUES (
+        ${id}::uuid,
+        ${ctx.organizationId}::uuid,
+        ${DEFAULTS.taxEnabled},
+        ${DEFAULTS.taxRatePercent},
+        ${DEFAULTS.socialSecurityEnabled},
+        ${DEFAULTS.socialSecurityRatePercent},
+        ${DEFAULTS.socialSecurityMaxAmount},
+        ${Boolean(input.lateDeductionEnabled)},
+        ${lateBahtPerMinute},
+        ${Boolean(input.absenceDeductionEnabled)},
+        ${absenceBahtPerDay},
+        ${ctx.actorAuthUserId}::uuid
+      )
+    `;
   }
-  return toRow(row);
+  const row = await findSettingsRow(ctx.organizationId);
+  return row ? toRow(row) : defaultRow(ctx.organizationId);
 }
 
 /** Internal: load rates for calculate (no permission gate). */
@@ -180,4 +255,26 @@ export async function loadDeductionRatesForOrg(
   const existing = await findSettingsRow(organizationId);
   if (!existing) return null;
   return toDeductionRateConfig(toRow(existing));
+}
+
+/** Internal: late/absence pay settings for calculate. */
+export async function loadAttendancePaySettingsForOrg(
+  organizationId: string,
+): Promise<AttendancePaySettingsInput> {
+  const existing = await findSettingsRow(organizationId);
+  if (!existing) {
+    return {
+      lateDeductionEnabled: DEFAULTS.lateDeductionEnabled,
+      lateBahtPerMinute: DEFAULTS.lateBahtPerMinute,
+      absenceDeductionEnabled: DEFAULTS.absenceDeductionEnabled,
+      absenceBahtPerDay: DEFAULTS.absenceBahtPerDay,
+    };
+  }
+  const row = toRow(existing);
+  return {
+    lateDeductionEnabled: row.lateDeductionEnabled,
+    lateBahtPerMinute: row.lateBahtPerMinute,
+    absenceDeductionEnabled: row.absenceDeductionEnabled,
+    absenceBahtPerDay: row.absenceBahtPerDay,
+  };
 }

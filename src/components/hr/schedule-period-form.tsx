@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import Alert from "@/components/hr/alert";
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import Field, { fieldProps } from "@/components/hr/field";
 import {
   compact,
@@ -14,6 +16,7 @@ import {
   type FieldErrors,
 } from "@/components/hr/form-utils";
 import ThaiDateInput from "@/components/hr/thai-date-input";
+import { signalNavigationPending } from "@/lib/navigation-pending";
 
 function monthBounds(now = new Date()) {
   const y = now.getFullYear();
@@ -55,15 +58,11 @@ export default function SchedulePeriodForm({
   });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<{
-    kind: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (locked) return;
-    setFeedback(null);
 
     const nextErrors = compact({
       periodStart: validateDate(values.periodStart, true) ?? "",
@@ -79,7 +78,10 @@ export default function SchedulePeriodForm({
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง" });
+      setFeedback({
+        kind: "error",
+        message: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง",
+      });
       return;
     }
 
@@ -90,6 +92,7 @@ export default function SchedulePeriodForm({
     };
 
     setSaving(true);
+    setFeedback({ kind: "info", message: "กำลังบันทึก…" });
     const result =
       mode === "create"
         ? await submitHrJson(
@@ -111,16 +114,17 @@ export default function SchedulePeriodForm({
       const hint = firstError(result.fieldErrors);
       setFeedback({
         kind: "error",
-        text: hint ? `${result.message} (${hint})` : result.message,
+        message: hint ? `${result.message} (${hint})` : result.message,
       });
       return;
     }
 
-    setFeedback({ kind: "success", text: result.message });
+    setFeedback({ kind: "success", message: result.message });
     if (mode === "create") {
       setValues({ name: "", periodStart: bounds.start, periodEnd: bounds.end });
       const createdId = (result.data as { id?: string } | null)?.id;
       if (createdId) {
+        signalNavigationPending("กำลังเปิดช่วงตาราง");
         router.push(`/hr/schedules/${createdId}`);
         return;
       }
@@ -130,14 +134,19 @@ export default function SchedulePeriodForm({
 
   return (
     <form className="card" onSubmit={handleSubmit} noValidate>
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => setFeedback(null)}
+      />
       <h2>{mode === "create" ? "สร้างช่วงตารางใหม่" : "แก้ไขช่วงตาราง"}</h2>
-      {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
       {mode === "create" ? (
         <p className="muted" style={{ marginTop: 0 }}>
           รหัสช่วงตารางจะถูกสร้างอัตโนมัติเมื่อบันทึก
         </p>
       ) : locked ? (
-        <Alert kind="warning">ช่วงตารางถูกล็อกแล้ว แก้ไขหรือลบไม่ได้</Alert>
+        <p className="muted" style={{ marginTop: 0 }}>
+          ช่วงตารางถูกล็อกแล้ว แก้ไขหรือลบไม่ได้
+        </p>
       ) : null}
 
       <div className="form-grid">

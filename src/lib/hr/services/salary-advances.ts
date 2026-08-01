@@ -583,6 +583,54 @@ export async function listPendingSalaryAdvances(
   return mapRows(ctx, pending);
 }
 
+/** Org-scoped lookup for notification deep-links (ignores branch filter). */
+export async function getSalaryAdvanceById(
+  ctx: HrServiceContext,
+  id: string,
+): Promise<SalaryAdvanceRow | null> {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.advanceApprove,
+    HR_PERMISSIONS.payrollManage,
+    HR_PERMISSIONS.approvalRead,
+    HR_PERMISSIONS.advanceSelf,
+  ]);
+  const rows = await prisma.$queryRaw<DbAdvance[]>`
+    SELECT
+      a.id::text AS id,
+      a.employee_id::text AS employee_id,
+      a.amount,
+      a.advance_date,
+      a.reason,
+      a.status,
+      a.installment_count,
+      a.start_payroll_period_id::text AS start_payroll_period_id,
+      a.disbursement_mode,
+      a.transfer_slip_document_id::text AS transfer_slip_document_id,
+      d.file_name AS slip_file_name,
+      d.content_type AS slip_content_type,
+      a.deducted_at,
+      a.submitted_at,
+      a.created_at,
+      e.display_name,
+      e.photo_url,
+      e.branch_id::text AS branch_id,
+      e.auth_user_id::text AS auth_user_id,
+      p.period_start,
+      p.period_end,
+      p.payment_date
+    FROM hr.salary_advances a
+    JOIN hr.employees e ON e.id = a.employee_id
+    LEFT JOIN hr.payroll_periods p ON p.id = a.start_payroll_period_id
+    LEFT JOIN hr.employee_documents d ON d.id = a.transfer_slip_document_id
+    WHERE a.organization_id = ${ctx.organizationId}::uuid
+      AND a.id = ${id}::uuid
+    LIMIT 1
+  `;
+  if (!rows[0]) return null;
+  const [mapped] = await mapRows(ctx, [rows[0]]);
+  return mapped ?? null;
+}
+
 type SubmitInput = {
   employeeId?: string;
   amount: number;
@@ -741,6 +789,23 @@ export async function submitSalaryAdvance(
   const created = rows.find((row) => row.id === id);
   if (!created) throw new HrError("NOT_FOUND", { message: "บันทึกไม่สำเร็จ" });
   const [mapped] = await mapRows(ctx, [created]);
+  if (!autoApprove && mapped) {
+    const empName =
+      mapped.displayName?.trim() ||
+      `${employee.firstNameTh} ${employee.lastNameTh}`.trim();
+    const { formatThaiDate } = await import("@/lib/hr/thai-date");
+    const advanceDateLabel = formatThaiDate(advanceDate);
+    const { emitHrNotification } = await import("@/lib/hr/services/notify");
+    void emitHrNotification(ctx, {
+      typeCode: "ADVANCE_SUBMITTED",
+      title: "คำขอเบิกล่วงหน้ารออนุมัติ",
+      body: `${empName} ขอเบิก ${amount.toLocaleString("th-TH")} บาท · ${advanceDateLabel}`,
+      branchId: employee.branchId,
+      entityType: "SALARY_ADVANCE",
+      entityId: id,
+      excludeAuthUserId: ctx.actorAuthUserId,
+    });
+  }
   return mapped!;
 }
 
@@ -925,6 +990,27 @@ export async function reviewSalaryAdvance(
   const refreshed = (await queryAdvances(ctx)).find((r) => r.id === id);
   if (!refreshed) throw new HrError("NOT_FOUND");
   const [mapped] = await mapRows(ctx, [refreshed]);
+  if (row.auth_user_id) {
+    const { formatThaiDate } = await import("@/lib/hr/thai-date");
+    const advanceDateLabel = mapped?.advanceDateLabel
+      ? mapped.advanceDateLabel
+      : formatThaiDate(mapped?.advanceDate ?? "");
+    const { emitHrNotification } = await import("@/lib/hr/services/notify");
+    void emitHrNotification(ctx, {
+      typeCode: approve ? "ADVANCE_APPROVED" : "ADVANCE_REJECTED",
+      title: approve
+        ? "คำขอเบิกได้รับการอนุมัติ"
+        : "คำขอเบิกไม่ได้รับการอนุมัติ",
+      body: approve
+        ? `คำขอเบิกวันที่ ${advanceDateLabel} ของคุณได้รับการอนุมัติแล้ว`
+        : `คำขอเบิกวันที่ ${advanceDateLabel} ของคุณไม่ได้รับการอนุมัติ`,
+      branchId: row.branch_id,
+      entityType: "SALARY_ADVANCE",
+      entityId: id,
+      recipientAuthUserIds: [row.auth_user_id],
+      recipientEmployeeId: row.employee_id,
+    });
+  }
   return mapped!;
 }
 
@@ -1080,6 +1166,10 @@ export async function cancelSalaryAdvance(
 /**
  * Bind the next unbound installment to this period (when eligible), then return
  * deductions + WITH_SALARY credits for the period.
+ *
+ * WITH_SALARY: credit (จ่ายพร้อมเงินเดือน) in the start/eligible period, then
+ * start deducting from the *next* period — never credit and deduct in the same period.
+ * CASH_ALREADY: deduct from the start/eligible period as usual.
  */
 export async function loadAdvanceEffectsForPeriod(
   organizationId: string,
@@ -1119,7 +1209,34 @@ export async function loadAdvanceEffectsForPeriod(
     return { deductionsByEmployee, creditsByEmployee };
   }
 
+  // Unbind WITH_SALARY installments that are not yet eligible to deduct
+  // (credit period = this period, or never credited in an earlier period).
+  await prisma.$executeRaw`
+    UPDATE hr.salary_advance_installments i
+    SET
+      payroll_period_id = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    FROM hr.salary_advances a
+    WHERE i.salary_advance_id = a.id
+      AND i.organization_id = ${organizationId}::uuid
+      AND i.payroll_period_id = ${payrollPeriodId}::uuid
+      AND i.status = 'PENDING'
+      AND a.disbursement_mode = 'WITH_SALARY'
+      AND a.employee_id = ANY(${employeeIds}::uuid[])
+      AND NOT (
+        a.credited_payroll_run_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM hr.payroll_runs cr
+          JOIN hr.payroll_periods cp ON cp.id = cr.payroll_period_id
+          WHERE cr.id = a.credited_payroll_run_id
+            AND cp.period_start < ${periodStart}::date
+        )
+      )
+  `;
+
   // Attach at most one unbound installment per advance to this period.
+  // WITH_SALARY only when credited in a strictly earlier period.
   await prisma.$executeRaw`
     WITH eligible AS (
       SELECT a.id AS advance_id
@@ -1131,6 +1248,19 @@ export async function loadAdvanceEffectsForPeriod(
         AND (
           a.start_payroll_period_id IS NULL
           OR sp.period_start <= ${periodStart}::date
+        )
+        AND (
+          a.disbursement_mode IS DISTINCT FROM 'WITH_SALARY'
+          OR (
+            a.credited_payroll_run_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM hr.payroll_runs cr
+              JOIN hr.payroll_periods cp ON cp.id = cr.payroll_period_id
+              WHERE cr.id = a.credited_payroll_run_id
+                AND cp.period_start < ${periodStart}::date
+            )
+          )
         )
     ),
     next_inst AS (
@@ -1169,6 +1299,19 @@ export async function loadAdvanceEffectsForPeriod(
       AND i.status = 'PENDING'
       AND a.status IN ('APPROVED', 'PARTIALLY_DEDUCTED')
       AND a.employee_id = ANY(${employeeIds}::uuid[])
+      AND (
+        a.disbursement_mode IS DISTINCT FROM 'WITH_SALARY'
+        OR (
+          a.credited_payroll_run_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM hr.payroll_runs cr
+            JOIN hr.payroll_periods cp ON cp.id = cr.payroll_period_id
+            WHERE cr.id = a.credited_payroll_run_id
+              AND cp.period_start < ${periodStart}::date
+          )
+        )
+      )
   `;
   for (const row of installmentRows) {
     const list = deductionsByEmployee.get(row.employee_id) ?? [];
@@ -1180,6 +1323,8 @@ export async function loadAdvanceEffectsForPeriod(
     deductionsByEmployee.set(row.employee_id, list);
   }
 
+  // Credit WITH_SALARY in the start period (or first eligible period if unset).
+  // Deduction starts only in a later period after credit is marked.
   const creditRows = await prisma.$queryRaw<
     Array<{ id: string; employee_id: string; amount: string | number }>
   >`
@@ -1188,6 +1333,7 @@ export async function loadAdvanceEffectsForPeriod(
       a.employee_id::text AS employee_id,
       a.amount
     FROM hr.salary_advances a
+    LEFT JOIN hr.payroll_periods sp ON sp.id = a.start_payroll_period_id
     WHERE a.organization_id = ${organizationId}::uuid
       AND a.disbursement_mode = 'WITH_SALARY'
       AND a.credited_payroll_run_id IS NULL
@@ -1197,13 +1343,7 @@ export async function loadAdvanceEffectsForPeriod(
         a.start_payroll_period_id = ${payrollPeriodId}::uuid
         OR (
           a.start_payroll_period_id IS NULL
-          AND EXISTS (
-            SELECT 1
-            FROM hr.salary_advance_installments i
-            WHERE i.salary_advance_id = a.id
-              AND i.sequence = 1
-              AND i.payroll_period_id = ${payrollPeriodId}::uuid
-          )
+          AND (sp.period_start IS NULL OR sp.period_start <= ${periodStart}::date)
         )
       )
   `;
@@ -1211,6 +1351,36 @@ export async function loadAdvanceEffectsForPeriod(
     const list = creditsByEmployee.get(row.employee_id) ?? [];
     list.push({ advanceId: row.id, amount: money(row.amount) });
     creditsByEmployee.set(row.employee_id, list);
+  }
+
+  // Hard guard: never deduct an advance that is being credited in this same load.
+  const creditedAdvanceIds = new Set<string>();
+  for (const rows of creditsByEmployee.values()) {
+    for (const row of rows) creditedAdvanceIds.add(row.advanceId);
+  }
+  if (creditedAdvanceIds.size > 0) {
+    const unboundIds: string[] = [];
+    for (const [employeeId, rows] of deductionsByEmployee) {
+      const kept = rows.filter((row) => {
+        if (creditedAdvanceIds.has(row.advanceId)) {
+          unboundIds.push(row.installmentId);
+          return false;
+        }
+        return true;
+      });
+      if (kept.length > 0) deductionsByEmployee.set(employeeId, kept);
+      else deductionsByEmployee.delete(employeeId);
+    }
+    if (unboundIds.length > 0) {
+      await prisma.$executeRaw`
+        UPDATE hr.salary_advance_installments
+        SET
+          payroll_period_id = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ANY(${unboundIds}::uuid[])
+          AND status = 'PENDING'
+      `;
+    }
   }
 
   return { deductionsByEmployee, creditsByEmployee };
@@ -1270,6 +1440,7 @@ export async function reopenAdvanceEffectsForRun(
       status = 'PENDING',
       deducted_payroll_run_id = NULL,
       deducted_at = NULL,
+      payroll_period_id = NULL,
       updated_at = CURRENT_TIMESTAMP
     WHERE deducted_payroll_run_id = ${payrollRunId}::uuid
       AND status = 'DEDUCTED'

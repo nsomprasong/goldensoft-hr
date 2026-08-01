@@ -197,7 +197,9 @@ export async function parseJsonBody<T>(
 ): Promise<T> {
   let raw: unknown;
   try {
-    raw = await request.json();
+    const text = await request.text();
+    // Empty POST body (action endpoints) → treat as {}.
+    raw = text.trim() ? JSON.parse(text) : {};
   } catch {
     throw new HrError("VALIDATION_ERROR", {
       message: "รูปแบบข้อมูล JSON ไม่ถูกต้อง",

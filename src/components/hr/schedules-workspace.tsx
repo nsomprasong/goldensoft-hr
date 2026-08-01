@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import DeleteSchedulePeriodButton from "@/components/hr/delete-schedule-period-button";
 import PublishScheduleButton from "@/components/hr/publish-schedule-button";
 import SchedulePeriodCreateForm from "@/components/hr/schedule-period-create-form";
+import { findOverlappingPeriods } from "@/lib/hr/schedule-period-overlap";
 import { formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export type SchedulePeriodCard = {
@@ -17,6 +18,8 @@ export type SchedulePeriodCard = {
   statusCode: string;
   statusName: string;
   branchId?: string | null;
+  hasAttendance?: boolean;
+  attendanceDayCount?: number;
 };
 
 export default function SchedulesWorkspace({
@@ -37,6 +40,14 @@ export default function SchedulesWorkspace({
   const router = useRouter();
   const titleId = useId();
   const [creating, setCreating] = useState(false);
+
+  const overlapCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of periods) {
+      map.set(row.id, findOverlappingPeriods(row, periods).length);
+    }
+    return map;
+  }, [periods]);
 
   useEffect(() => {
     if (!creating) return;
@@ -106,6 +117,14 @@ export default function SchedulesWorkspace({
                   <dt>สถานะ</dt>
                   <dd>{row.statusName}</dd>
                 </div>
+                {(overlapCountById.get(row.id) ?? 0) > 0 ? (
+                  <div>
+                    <dt>ทับช่วงอื่น</dt>
+                    <dd className="hr-schedule-overlap-flag">
+                      {overlapCountById.get(row.id)} ช่วง — เปิดแล้วจัดการช่วงเก่า
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
 
               <div className="hr-entity-card-actions">
@@ -124,6 +143,8 @@ export default function SchedulesWorkspace({
                     scheduleId={row.id}
                     name={row.name}
                     statusCode={row.statusCode}
+                    hasAttendance={Boolean(row.hasAttendance)}
+                    attendanceDayCount={row.attendanceDayCount ?? 0}
                     disabled={!available}
                   />
                 ) : null}
@@ -181,6 +202,7 @@ export default function SchedulesWorkspace({
               <SchedulePeriodCreateForm
                 branchId={branchId}
                 branchLabel={branchLabel}
+                existingPeriods={periods}
                 disabled={!available}
                 onDone={handleCreated}
                 onCancel={() => setCreating(false)}

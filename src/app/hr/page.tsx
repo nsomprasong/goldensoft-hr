@@ -7,12 +7,15 @@ import {
   clampPercent,
   parseLimitValue,
 } from "@/components/hr/dashboard-meter";
+import DashboardNotifyStrip from "@/components/hr/dashboard-notify-strip";
 import HrShell from "@/components/hr-shell";
 import { resolveAllowedBranchIds } from "@/lib/hr/api";
 import { loadHrDashboard } from "@/lib/hr/data";
 import { HR_ENTITLEMENTS } from "@/lib/hr/entitlements";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { listNotifications } from "@/lib/hr/services/notify";
+import { toHrServiceContext } from "@/lib/hr/services/shared";
 import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
@@ -97,9 +100,20 @@ export default async function HrDashboardPage() {
       : allowedBranches?.length === 1
         ? allowedBranches[0]!
         : null;
-  const dashboard = await loadHrDashboard(ctx, { branchId });
+  const [dashboard, notifyPreview] = await Promise.all([
+    loadHrDashboard(ctx, { branchId }),
+    listNotifications(toHrServiceContext(ctx), {
+      unreadOnly: true,
+      limit: 5,
+    }).catch(() => ({ items: [], unreadCount: 0 })),
+  ]);
   const stats = dashboard.data;
   const actions = stats.actions;
+  const canApproveAdvances = canHr(ctx, [
+    HR_PERMISSIONS.advanceApprove,
+    HR_PERMISSIONS.payrollManage,
+    HR_PERMISSIONS.approvalRead,
+  ]);
   const employeeLimitRaw =
     ctx.entitlements[HR_ENTITLEMENTS.employeeLimit]?.value ?? "—";
   const employeeLimit = parseLimitValue(employeeLimitRaw);
@@ -151,6 +165,18 @@ export default async function HrDashboardPage() {
 
         <DatabaseUnavailableNotice message={dashboard.message} />
 
+        <DashboardNotifyStrip
+          unreadCount={notifyPreview.unreadCount}
+          items={notifyPreview.items.map((row) => ({
+            id: row.id,
+            title: row.title,
+            body: row.body,
+            dateLabel: row.dateLabel,
+            href: row.href,
+            unread: row.unread,
+          }))}
+        />
+
         <section className="hr-dash-section" aria-label="ต้องทำวันนี้">
           <div className="hr-dash-section-head">
             <h2>ต้องทำวันนี้</h2>
@@ -183,6 +209,14 @@ export default async function HrDashboardPage() {
                 />
               </>
             ) : null}
+            {canApproveAdvances ? (
+              <ActionTile
+                href="/hr/approvals?tab=advance"
+                label="เบิกรออนุมัติ"
+                value={actions.pendingAdvances}
+                tone="green"
+              />
+            ) : null}
             {canManageAttendance ? (
               <ActionTile
                 href="/hr/attendance"
@@ -213,6 +247,12 @@ export default async function HrDashboardPage() {
         </section>
 
         <nav className="hr-dash-shortcuts" aria-label="ทางลัด">
+          <Link className="hr-dash-chip" href="/hr/notifications">
+            แจ้งเตือน
+            {notifyPreview.unreadCount > 0
+              ? ` (${notifyPreview.unreadCount})`
+              : ""}
+          </Link>
           {canApprove ? (
             <Link className="hr-dash-chip" href="/hr/approvals">
               คิวอนุมัติ
@@ -236,7 +276,7 @@ export default async function HrDashboardPage() {
               className="hr-dash-chip"
               href={dashHref(branchForLinks, "/hr/schedules")}
             >
-              ตารางกะ
+              ตารางงาน
             </Link>
           ) : null}
           {canManagePayroll ? (
@@ -486,9 +526,10 @@ export default async function HrDashboardPage() {
                 <p className="hr-dash-big">
                   {actions.pendingLeave +
                     actions.pendingOvertime +
-                    actions.pendingAttendanceAdjustments}
+                    actions.pendingAttendanceAdjustments +
+                    actions.pendingAdvances}
                 </p>
-                <p className="muted">ลา · OT · ปรับเวลา</p>
+                <p className="muted">ลา · OT · ปรับเวลา · เบิก</p>
               </article>
               <article className="hr-dash-panel">
                 <h3>ลงเวลาผิดปกติวันนี้</h3>

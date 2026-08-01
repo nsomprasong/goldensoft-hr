@@ -65,6 +65,7 @@ export default function OvertimeApprovalList({
   sectionTitle = "คำขอ OT",
   heroLead = "คำขอ OT และการอนุมัติขององค์กร",
   heroAction,
+  focusId = null,
 }: {
   rows: OvertimeRequestRow[];
   canApprove: boolean;
@@ -74,6 +75,7 @@ export default function OvertimeApprovalList({
   sectionTitle?: string;
   heroLead?: string;
   heroAction?: ReactNode;
+  focusId?: string | null;
 }) {
   const router = useRouter();
   const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
@@ -158,7 +160,13 @@ export default function OvertimeApprovalList({
               const pending = row.statusCode === "SUBMITTED";
               const busy = busyId === row.id;
               return (
-                <li key={row.id} className="hr-leave-approval-item">
+                <li
+                  key={row.id}
+                  id={`approval-${row.id}`}
+                  className={`hr-leave-approval-item${
+                    focusId === row.id ? " hr-approval-focus" : ""
+                  }`}
+                >
                   <div className="hr-leave-approval-head">
                     <div className="hr-ot-approval-person">
                       <EmployeeAvatar

@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import Alert from "@/components/hr/alert";
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import Field, { fieldProps } from "@/components/hr/field";
 import {
   submitHrJson,
   type FieldErrors,
 } from "@/components/hr/form-utils";
 import ThaiDateInput from "@/components/hr/thai-date-input";
+import { signalNavigationPending } from "@/lib/navigation-pending";
 import {
   expandWorkDates,
   type ScheduleDayMode,
@@ -130,10 +133,7 @@ export default function ScheduleComposer({
   );
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [feedback, setFeedback] = useState<{
-    kind: "success" | "error" | "warning";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
 
   const visibleEmployees = useMemo(
     () => filterEmployeesForShift(employees, assignments, shiftId),
@@ -196,7 +196,6 @@ export default function ScheduleComposer({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setFeedback(null);
 
     const nextErrors: FieldErrors = {};
     if (!periodStart) nextErrors.periodStart = "เลือกวันเริ่ม";
@@ -211,11 +210,15 @@ export default function ScheduleComposer({
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาเลือกข้อมูลให้ครบก่อนบันทึก" });
+      setFeedback({
+        kind: "error",
+        message: "กรุณาเลือกข้อมูลให้ครบก่อนบันทึก",
+      });
       return;
     }
 
     setSaving(true);
+    setFeedback({ kind: "info", message: "กำลังบันทึกตาราง…" });
 
     let id = scheduleId;
     if (mode === "create") {
@@ -231,13 +234,16 @@ export default function ScheduleComposer({
       );
       if (!created.ok) {
         setSaving(false);
-        setFeedback({ kind: "error", text: created.message });
+        setFeedback({ kind: "error", message: created.message });
         return;
       }
       id = (created.data as { id?: string } | null)?.id;
       if (!id) {
         setSaving(false);
-        setFeedback({ kind: "error", text: "สร้างตารางแล้ว แต่ไม่พบรหัสช่วงตาราง" });
+        setFeedback({
+          kind: "error",
+          message: "สร้างตารางแล้ว แต่ไม่พบรหัสช่วงตาราง",
+        });
         return;
       }
     }
@@ -248,7 +254,7 @@ export default function ScheduleComposer({
       setSaving(false);
       setFeedback({
         kind: "error",
-        text: "ไม่มีพนักงานที่จัดกะนี้ได้ในรายการที่เลือก",
+        message: "ไม่มีพนักงานที่จัดกะนี้ได้ในรายการที่เลือก",
       });
       return;
     }
@@ -268,7 +274,7 @@ export default function ScheduleComposer({
 
     if (!assigned.ok) {
       setSaving(false);
-      setFeedback({ kind: "error", text: assigned.message });
+      setFeedback({ kind: "error", message: assigned.message });
       return;
     }
 
@@ -284,9 +290,10 @@ export default function ScheduleComposer({
       if (!published.ok) {
         setFeedback({
           kind: "warning",
-          text: `บันทึกกะแล้ว แต่เปิดใช้ไม่สำเร็จ: ${published.message}`,
+          message: `บันทึกกะแล้ว แต่เปิดใช้ไม่สำเร็จ: ${published.message}`,
         });
         setSaving(false);
+        signalNavigationPending("กำลังเปิดช่วงตาราง");
         router.push(`/hr/schedules/${id}`);
         router.refresh();
         return;
@@ -300,10 +307,11 @@ export default function ScheduleComposer({
     }
     setFeedback({
       kind: "success",
-      text: publishedOk
+      message: publishedOk
         ? `บันทึกและเปิดใช้ตารางแล้ว (${previewCount} รายการ)`
         : `บันทึกตารางแล้ว (${previewCount} รายการ)`,
     });
+    signalNavigationPending("กำลังเปิดช่วงตาราง");
     router.push(`/hr/schedules/${id}`);
     router.refresh();
   }
@@ -321,13 +329,16 @@ export default function ScheduleComposer({
       {embedded ? null : (
         <h2>{mode === "create" ? "จัดตารางกะ" : "เพิ่มกะในตารางนี้"}</h2>
       )}
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => setFeedback(null)}
+      />
+
       <p className="muted" style={{ marginTop: 0 }}>
         {mode === "create"
           ? "เลือกช่วงวัน กะ และพนักงาน แล้วกดบันทึก — จบในขั้นตอนเดียว"
           : `เพิ่มกะให้ช่วง ${lockedPeriod?.name ?? ""} (${formatThaiDateRange(periodStart, periodEnd)})`}
       </p>
-
-      {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       {!datesLocked ? (
         <div className="schedule-preset" role="group" aria-label="ช่วงวัน">

@@ -31,6 +31,7 @@ export type HrRouteKey =
   | "meLeave"
   | "meOvertime"
   | "mePayslips"
+  | "meAdvances"
   | "mePayslipDetail"
   | "schedules"
   | "scheduleDetail"
@@ -52,10 +53,12 @@ export type HrRouteKey =
   | "payrollRunDetail"
   | "payrollReview"
   | "payrollDeductions"
+  | "attendancePay"
   | "advances"
   | "payslips"
   | "payslipDetail"
   | "reports"
+  | "notifications"
   | "settings"
   | "leaveEntitlements";
 
@@ -138,7 +141,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     key: "shifts",
     path: `${HR_ROUTE_PREFIX}/settings/shifts`,
     labelTh: "กะงาน",
-    nav: true,
+    nav: false,
     requiredPermissions: [HR_PERMISSIONS.shiftRead],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
@@ -165,6 +168,17 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     key: "payrollDeductions",
     path: `${HR_ROUTE_PREFIX}/settings/payroll-deductions`,
     labelTh: "ภาษีและประกันสังคม",
+    nav: true,
+    requiredPermissions: [
+      HR_PERMISSIONS.payrollManage,
+      HR_PERMISSIONS.settingsManage,
+    ],
+    requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "attendancePay",
+    path: `${HR_ROUTE_PREFIX}/settings/attendance-pay`,
+    labelTh: "หักสาย / ขาดงาน",
     nav: true,
     requiredPermissions: [
       HR_PERMISSIONS.payrollManage,
@@ -248,20 +262,36 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     requiredPermissions: [HR_PERMISSIONS.payslipSelf], requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "schedules", path: `${HR_ROUTE_PREFIX}/schedules`, labelTh: "ตารางกะงาน", nav: true,
-    requiredPermissions: [HR_PERMISSIONS.scheduleRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "schedules",
+    path: `${HR_ROUTE_PREFIX}/schedules`,
+    labelTh: "ตารางงาน",
+    nav: true,
+    requiredPermissions: [HR_PERMISSIONS.scheduleRead],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "scheduleDetail", path: `${HR_ROUTE_PREFIX}/schedules/[id]`, labelTh: "รายละเอียดตารางกะ", nav: false,
-    requiredPermissions: [HR_PERMISSIONS.scheduleRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "scheduleDetail",
+    path: `${HR_ROUTE_PREFIX}/schedules/[id]`,
+    labelTh: "รายละเอียดตารางงาน",
+    nav: false,
+    requiredPermissions: [HR_PERMISSIONS.scheduleRead],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "calendars", path: `${HR_ROUTE_PREFIX}/calendars`, labelTh: "ปฏิทินทำงาน", nav: true,
-    requiredPermissions: [HR_PERMISSIONS.calendarManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "calendars",
+    path: `${HR_ROUTE_PREFIX}/calendars`,
+    labelTh: "ปฏิทินทำงาน",
+    nav: false,
+    requiredPermissions: [HR_PERMISSIONS.calendarManage],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "locations", path: `${HR_ROUTE_PREFIX}/locations`, labelTh: "สถานที่ทำงาน", nav: true,
-    requiredPermissions: [HR_PERMISSIONS.locationManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "locations",
+    path: `${HR_ROUTE_PREFIX}/locations`,
+    labelTh: "สถานที่ทำงาน",
+    nav: false,
+    requiredPermissions: [HR_PERMISSIONS.locationManage],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
     key: "attendance", path: `${HR_ROUTE_PREFIX}/attendance`, labelTh: "เวลาทำงาน", nav: true,
@@ -331,12 +361,23 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "compensation", path: `${HR_ROUTE_PREFIX}/compensation`, labelTh: "ค่าตอบแทน", nav: true,
-    requiredPermissions: [HR_PERMISSIONS.compensationRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "compensation",
+    path: `${HR_ROUTE_PREFIX}/compensation`,
+    labelTh: "ค่าตอบแทน",
+    nav: false,
+    requiredPermissions: [HR_PERMISSIONS.compensationRead],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "payItems", path: `${HR_ROUTE_PREFIX}/pay-items`, labelTh: "รายการจ่ายและหัก", nav: true,
-    requiredPermissions: [HR_PERMISSIONS.compensationRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+    key: "payItems",
+    path: `${HR_ROUTE_PREFIX}/pay-items`,
+    labelTh: "รายได้ / รายการหัก",
+    nav: true,
+    requiredPermissions: [
+      HR_PERMISSIONS.compensationManage,
+      HR_PERMISSIONS.compensationRead,
+    ],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
     key: "advances",
@@ -377,6 +418,14 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
   {
     key: "reports", path: `${HR_ROUTE_PREFIX}/reports`, labelTh: "รายงาน", nav: true,
     requiredPermissions: [HR_PERMISSIONS.reportRead], requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
+    key: "notifications",
+    path: `${HR_ROUTE_PREFIX}/notifications`,
+    labelTh: "แจ้งเตือน",
+    nav: true,
+    requiredPermissions: [],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
     key: "settings", path: `${HR_ROUTE_PREFIX}/settings`, labelTh: "ตั้งค่า HR", nav: true,

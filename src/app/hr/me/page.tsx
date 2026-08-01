@@ -4,7 +4,7 @@ import { requireHrPage } from "@/lib/hr/guards";
 
 export const dynamic = "force-dynamic";
 
-/** Hub removed — “ของฉัน” opens attendance first; other items live in the bottom bar. */
+/** “ของฉัน” opens attendance; other items live in the customer home + bottom bar. */
 export default async function MyHrPage() {
   await requireHrPage();
   redirect("/hr/me/attendance");

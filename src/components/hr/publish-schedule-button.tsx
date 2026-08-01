@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import { submitHrJson } from "@/components/hr/form-utils";
 
 export default function PublishScheduleButton({
@@ -16,15 +19,26 @@ export default function PublishScheduleButton({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
 
   if (statusCode === "PUBLISHED" || statusCode === "LOCKED") {
     return null;
   }
 
-  async function run() {
-    if (!window.confirm("เปิดใช้ตารางนี้ให้พนักงานเห็นหรือไม่?")) return;
-    setError(null);
+  function askPublish() {
+    setAwaitingConfirm(true);
+    setFeedback({
+      kind: "warning",
+      title: "ยืนยันการเปิดใช้",
+      message: "เปิดใช้ตารางนี้ให้พนักงานเห็นหรือไม่?",
+      confirmLabel: "เปิดใช้",
+    });
+  }
+
+  async function confirmPublish() {
+    setAwaitingConfirm(false);
+    setFeedback({ kind: "info", message: "กำลังเปิดใช้ตาราง…" });
     setBusy(true);
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
@@ -34,27 +48,31 @@ export default function PublishScheduleButton({
     );
     setBusy(false);
     if (!result.ok) {
-      setError(result.message);
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
+    setFeedback({ kind: "success", message: result.message });
     router.refresh();
   }
 
   return (
     <span className="inline-actions">
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => {
+          setFeedback(null);
+          setAwaitingConfirm(false);
+        }}
+        onConfirm={awaitingConfirm ? confirmPublish : undefined}
+      />
       <button
         type="button"
         className="btn btn-sm btn-primary"
-        onClick={run}
+        onClick={askPublish}
         disabled={busy || disabled}
       >
         {busy ? "กำลังเปิดใช้…" : "เปิดใช้ตารางกะ"}
       </button>
-      {error ? (
-        <span className="field-error" role="alert">
-          {error}
-        </span>
-      ) : null}
     </span>
   );
 }

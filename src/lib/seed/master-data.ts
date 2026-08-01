@@ -317,11 +317,14 @@ export const NOTIFICATION_TYPES: OperationMasterRow[] = [
   { code: "OT_SUBMITTED", name: "ส่งคำขอทำงานล่วงเวลา", sortOrder: 4 },
   { code: "OT_APPROVED", name: "อนุมัติการทำงานล่วงเวลา", sortOrder: 5 },
   { code: "OT_REJECTED", name: "ไม่อนุมัติการทำงานล่วงเวลา", sortOrder: 6 },
-  { code: "SCHEDULE_PUBLISHED", name: "เผยแพร่ตารางงาน", sortOrder: 7 },
-  { code: "SCHEDULE_CHANGED", name: "เปลี่ยนตารางงาน", sortOrder: 8 },
-  { code: "ATTENDANCE_MISSING", name: "ลงเวลาไม่ครบ", sortOrder: 9 },
-  { code: "PAYROLL_APPROVED", name: "อนุมัติเงินเดือน", sortOrder: 10 },
-  { code: "PAYSLIP_ISSUED", name: "ออกสลิปเงินเดือน", sortOrder: 11 },
+  { code: "ADVANCE_SUBMITTED", name: "ส่งคำขอเบิกล่วงหน้า", sortOrder: 7 },
+  { code: "ADVANCE_APPROVED", name: "อนุมัติเบิกล่วงหน้า", sortOrder: 8 },
+  { code: "ADVANCE_REJECTED", name: "ไม่อนุมัติเบิกล่วงหน้า", sortOrder: 9 },
+  { code: "SCHEDULE_PUBLISHED", name: "เผยแพร่ตารางงาน", sortOrder: 10 },
+  { code: "SCHEDULE_CHANGED", name: "เปลี่ยนตารางงาน", sortOrder: 11 },
+  { code: "ATTENDANCE_MISSING", name: "ลงเวลาไม่ครบ", sortOrder: 12 },
+  { code: "PAYROLL_APPROVED", name: "อนุมัติเงินเดือน", sortOrder: 13 },
+  { code: "PAYSLIP_ISSUED", name: "ออกสลิปเงินเดือน", sortOrder: 14 },
 ];
 export const NOTIFICATION_STATUSES: OperationMasterRow[] = [
   { code: "PENDING", name: "รอดำเนินการ", sortOrder: 1 },
@@ -348,6 +351,7 @@ export const DEDUCTION_TYPES: OperationMasterRow[] = [
   { code: "SOCIAL_SECURITY", name: "ประกันสังคม" },
   { code: "ADVANCE", name: "เบิกล่วงหน้า" },
   { code: "LOAN", name: "หักชำระเงินกู้" },
+  { code: "LATE", name: "หักสาย" },
   { code: "ABSENCE", name: "หักขาดงาน" },
   { code: "OTHER", name: "รายการหักอื่น" },
 ];

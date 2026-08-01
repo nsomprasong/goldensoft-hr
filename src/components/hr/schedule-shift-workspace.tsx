@@ -3,14 +3,23 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 
-import Alert from "@/components/hr/alert";
+import FeedbackPopup, {
+  type FeedbackPopupState,
+} from "@/components/hr/feedback-popup";
 import { submitHrJson } from "@/components/hr/form-utils";
+import ScheduleAssignConflictDialog from "@/components/hr/schedule-assign-conflict-dialog";
 import type { ScheduleComposerOption } from "@/components/hr/schedule-composer";
 import {
+  ALL_WORK_DAYS,
   expandWorkDates,
-  type ScheduleDayMode,
+  WEEKDAY_WORK_DAYS,
 } from "@/lib/hr/schedule-dates";
+import type { ScheduleConflictPeriodSummary } from "@/lib/hr/schedule-period-overlap";
 import { formatThaiDate } from "@/lib/hr/thai-date";
+import {
+  WORK_DAY_OPTIONS,
+  WORK_DAY_SHORT_LABELS,
+} from "@/lib/hr/work-days";
 
 type OnShiftPerson = {
   employeeId: string;
@@ -24,15 +33,53 @@ type OnShiftPerson = {
 
 type AdjustMode = "changeShift" | "substitute";
 
-const DAY_MODES: Array<{ id: ScheduleDayMode; title: string; hint: string }> = [
-  { id: "weekdays", title: "จ–ศ", hint: "วันทำงาน" },
-  { id: "all", title: "ทุกวัน", hint: "ทั้งช่วง" },
-];
+type ConflictMode = "skip" | "reassign";
+
+type PendingAssign = {
+  employeeIds: string[];
+  workDates: string[];
+};
 
 const ADJUST_MODES: Array<{ id: AdjustMode; title: string; hint: string }> = [
   { id: "changeShift", title: "ย้ายไปกะอื่น", hint: "เปลี่ยนกะในวันที่เลือก" },
   { id: "substitute", title: "มีคนแทน", hint: "เลือกแล้วระบบย้ายกะให้อัตโนมัติ" },
 ];
+
+function sameDaySet(a: number[], b: readonly number[]) {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((d) => set.has(d));
+}
+
+function parseConflictDetails(details: Record<string, unknown> | null): {
+  periods: ScheduleConflictPeriodSummary[];
+} | null {
+  if (!details || details.conflictCode !== "SCHEDULE_DATE_CONFLICT") return null;
+  const periodsRaw = details.periods;
+  if (!Array.isArray(periodsRaw)) return { periods: [] };
+  const periods: ScheduleConflictPeriodSummary[] = periodsRaw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const item = row as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.name !== "string" ||
+        typeof item.periodStart !== "string" ||
+        typeof item.periodEnd !== "string"
+      ) {
+        return null;
+      }
+      return {
+        id: item.id,
+        name: item.name,
+        periodStart: item.periodStart,
+        periodEnd: item.periodEnd,
+        conflictCount: Number(item.conflictCount ?? 0),
+      };
+    })
+    .filter((row): row is ScheduleConflictPeriodSummary => row != null);
+  return { periods };
+}
 
 export default function ScheduleShiftWorkspace({
   scheduleId,
@@ -69,14 +116,20 @@ export default function ScheduleShiftWorkspace({
   const [availablePool, setAvailablePool] = useState(unassignedEmployees);
   const [adding, setAdding] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
-  const [dayMode, setDayMode] = useState<ScheduleDayMode>("weekdays");
+  const [workDays, setWorkDays] = useState<number[]>([...WEEKDAY_WORK_DAYS]);
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    kind: "success" | "error";
-    text: string;
+  const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
+  const [pendingRemove, setPendingRemove] = useState<{
+    employeeId: string;
+    label: string;
   } | null>(null);
+  const [pendingAssign, setPendingAssign] = useState<PendingAssign | null>(null);
+  const [conflictPeriods, setConflictPeriods] = useState<
+    ScheduleConflictPeriodSummary[]
+  >([]);
+  const [conflictMessage, setConflictMessage] = useState("");
 
   const [adjustEmployeeId, setAdjustEmployeeId] = useState("");
   const [adjustMode, setAdjustMode] = useState<AdjustMode>("changeShift");
@@ -85,10 +138,6 @@ export default function ScheduleShiftWorkspace({
   const [toShiftId, setToShiftId] = useState(() => otherShifts[0]?.id ?? "");
   const [substituteId, setSubstituteId] = useState("");
   const [adjusting, setAdjusting] = useState(false);
-  const [adjustFeedback, setAdjustFeedback] = useState<{
-    kind: "success" | "error";
-    text: string;
-  } | null>(null);
 
   useEffect(() => {
     setPeople(onShift);
@@ -99,9 +148,25 @@ export default function ScheduleShiftWorkspace({
   }, [unassignedEmployees]);
 
   const workDates = useMemo(
-    () => expandWorkDates(periodStart, periodEnd, dayMode),
-    [periodStart, periodEnd, dayMode],
+    () => expandWorkDates(periodStart, periodEnd, workDays),
+    [periodStart, periodEnd, workDays],
   );
+
+  const workDayPreset = useMemo(() => {
+    if (sameDaySet(workDays, WEEKDAY_WORK_DAYS)) return "weekdays";
+    if (sameDaySet(workDays, ALL_WORK_DAYS)) return "all";
+    return "custom";
+  }, [workDays]);
+
+  function toggleWorkDay(day: number) {
+    setWorkDays((prev) => {
+      if (prev.includes(day)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((d) => d !== day);
+      }
+      return [...prev, day].sort((a, b) => a - b);
+    });
+  }
 
   const adjustPerson = useMemo(
     () => people.find((p) => p.employeeId === adjustEmployeeId) ?? null,
@@ -141,7 +206,7 @@ export default function ScheduleShiftWorkspace({
 
   function openAdjust(person: OnShiftPerson) {
     setFeedback(null);
-    setAdjustFeedback(null);
+    setPendingRemove(null);
     setAdjustEmployeeId(person.employeeId);
     setAdjustMode("changeShift");
     setDayScope("all");
@@ -153,7 +218,6 @@ export default function ScheduleShiftWorkspace({
   function closeAdjust() {
     if (adjusting) return;
     setAdjustOpen(false);
-    setAdjustFeedback(null);
   }
 
   const substituteOptions = useMemo(
@@ -181,18 +245,13 @@ export default function ScheduleShiftWorkspace({
     );
   }
 
-  async function assignSelected(event: React.FormEvent) {
-    event.preventDefault();
-    setFeedback(null);
-    if (selected.length === 0) {
-      setFeedback({ kind: "error", text: "เลือกพนักงานอย่างน้อย 1 คน" });
-      return;
-    }
-    if (workDates.length === 0) {
-      setFeedback({ kind: "error", text: "ไม่มีวันที่ตรงเงื่อนไขในช่วงนี้" });
-      return;
-    }
+  async function runAssign(
+    employeeIds: string[],
+    dates: string[],
+    conflictMode?: ConflictMode,
+  ) {
     setSaving(true);
+    setFeedback({ kind: "info", message: "กำลังจัดพนักงานเข้ากะ…" });
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
       "POST",
@@ -200,25 +259,49 @@ export default function ScheduleShiftWorkspace({
         action: "assign",
         confirm: true,
         shiftId,
-        employeeIds: selected,
-        workDates,
+        employeeIds,
+        workDates: dates,
+        ...(conflictMode ? { conflictMode } : {}),
       },
       "จัดพนักงานเข้ากะแล้ว",
     );
     setSaving(false);
+
     if (!result.ok) {
-      setFeedback({ kind: "error", text: result.message });
+      const parsed = parseConflictDetails(result.details);
+      if (parsed) {
+        setPendingAssign({ employeeIds, workDates: dates });
+        setConflictPeriods(parsed.periods);
+        setConflictMessage(result.message);
+        setFeedback(null);
+        return;
+      }
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
-    const selectedSet = new Set(selected);
+
+    setPendingAssign(null);
+    setConflictPeriods([]);
+    setConflictMessage("");
+
+    const selectedSet = new Set(employeeIds);
+    const payload = result.data as {
+      count?: number;
+      skipped?: number;
+      reassigned?: number;
+    } | null;
+    const dayCountHint =
+      conflictMode === "skip" && typeof payload?.skipped === "number"
+        ? Math.max(1, dates.length - Math.ceil(payload.skipped / employeeIds.length))
+        : dates.length;
     const added = availablePool
       .filter((e) => selectedSet.has(e.id))
       .map(
         (e): OnShiftPerson => ({
           employeeId: e.id,
           label: e.label,
-          dayCount: workDates.length,
-          workDates: [...workDates],
+          dayCount: dayCountHint,
+          workDates: [...dates],
           coverNote: null,
           leaveNote: null,
         }),
@@ -233,22 +316,55 @@ export default function ScheduleShiftWorkspace({
     setAvailablePool((prev) => prev.filter((e) => !selectedSet.has(e.id)));
     setSelected([]);
     setAdding(false);
-    setFeedback({
-      kind: "success",
-      text: `เพิ่ม ${added.length} คน · ${workDates.length} วัน`,
-    });
+
+    let successText = `เพิ่ม ${added.length} คน · ${dates.length} วัน`;
+    if (conflictMode === "skip" && payload?.skipped) {
+      successText = `จัดแล้ว (ข้าม ${payload.skipped} วันที่ชนช่วงอื่น)`;
+    } else if (conflictMode === "reassign" && payload?.reassigned) {
+      successText = `ย้ายมาช่วงนี้แล้ว (${payload.reassigned} วัน)`;
+    }
+    setFeedback({ kind: "success", message: successText });
     router.refresh();
   }
 
-  async function removeEmployee(employeeId: string, label: string) {
-    if (
-      !window.confirm(
-        `ลบ ${label} ออกจากกะ “${shiftName}” ในช่วงนี้หรือไม่?`,
-      )
-    ) {
+  async function assignSelected(event: React.FormEvent) {
+    event.preventDefault();
+    if (selected.length === 0) {
+      setFeedback({ kind: "error", message: "เลือกพนักงานอย่างน้อย 1 คน" });
       return;
     }
+    if (workDates.length === 0) {
+      setFeedback({
+        kind: "error",
+        message: "เลือกวันทำงานอย่างน้อย 1 วันในสัปดาห์",
+      });
+      return;
+    }
+    await runAssign(selected, workDates);
+  }
+
+  async function resolveConflict(mode: ConflictMode) {
+    if (!pendingAssign) return;
+    await runAssign(pendingAssign.employeeIds, pendingAssign.workDates, mode);
+  }
+
+  function askRemoveEmployee(employeeId: string, label: string) {
+    setPendingRemove({ employeeId, label });
+    setFeedback({
+      kind: "warning",
+      title: "ยืนยันการลบ",
+      message: `ลบ ${label} ออกจากกะ “${shiftName}” ในช่วงนี้หรือไม่?`,
+      confirmLabel: "ลบ",
+    });
+  }
+
+  async function confirmRemoveEmployee() {
+    const pending = pendingRemove;
+    setPendingRemove(null);
+    if (!pending) return;
+    const { employeeId, label } = pending;
     setRemovingId(employeeId);
+    setFeedback({ kind: "info", message: "กำลังลบ…" });
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
       "POST",
@@ -262,7 +378,7 @@ export default function ScheduleShiftWorkspace({
     );
     setRemovingId(null);
     if (!result.ok) {
-      window.alert(result.message);
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
     setPeople((prev) => prev.filter((p) => p.employeeId !== employeeId));
@@ -272,18 +388,18 @@ export default function ScheduleShiftWorkspace({
         a.label.localeCompare(b.label, "th"),
       );
     });
+    setFeedback({ kind: "success", message: result.message });
     router.refresh();
   }
 
   async function applyAdjust(event: React.FormEvent) {
     event.preventDefault();
-    setAdjustFeedback(null);
     if (!adjustEmployeeId) {
-      setAdjustFeedback({ kind: "error", text: "เลือกพนักงาน" });
+      setFeedback({ kind: "error", message: "เลือกพนักงาน" });
       return;
     }
     if (effectiveDates.length === 0) {
-      setAdjustFeedback({ kind: "error", text: "เลือกวันอย่างน้อย 1 วัน" });
+      setFeedback({ kind: "error", message: "เลือกวันอย่างน้อย 1 วัน" });
       return;
     }
 
@@ -292,7 +408,7 @@ export default function ScheduleShiftWorkspace({
 
     if (adjustMode === "changeShift") {
       if (!toShiftId) {
-        setAdjustFeedback({ kind: "error", text: "เลือกกะปลายทาง" });
+        setFeedback({ kind: "error", message: "เลือกกะปลายทาง" });
         return;
       }
       body = {
@@ -306,7 +422,7 @@ export default function ScheduleShiftWorkspace({
       successMessage = "ย้ายไปกะอื่นแล้ว";
     } else {
       if (!substituteId) {
-        setAdjustFeedback({ kind: "error", text: "เลือกคนทำงานแทน" });
+        setFeedback({ kind: "error", message: "เลือกคนทำงานแทน" });
         return;
       }
       body = {
@@ -321,6 +437,7 @@ export default function ScheduleShiftWorkspace({
     }
 
     setAdjusting(true);
+    setFeedback({ kind: "info", message: "กำลังบันทึก…" });
     const result = await submitHrJson(
       `/api/hr/schedules/${scheduleId}`,
       "POST",
@@ -329,18 +446,38 @@ export default function ScheduleShiftWorkspace({
     );
     setAdjusting(false);
     if (!result.ok) {
-      setAdjustFeedback({ kind: "error", text: result.message });
+      setFeedback({ kind: "error", message: result.message });
       return;
     }
     setAdjustOpen(false);
-    setFeedback({ kind: "success", text: result.message });
+    setFeedback({ kind: "success", message: result.message });
     router.refresh();
   }
 
   return (
     <>
-      {feedback && !overlayOpen ? (
-        <Alert kind={feedback.kind}>{feedback.text}</Alert>
+      <FeedbackPopup
+        feedback={feedback}
+        onClose={() => {
+          setFeedback(null);
+          setPendingRemove(null);
+        }}
+        onConfirm={pendingRemove ? confirmRemoveEmployee : undefined}
+      />
+
+      {pendingAssign && conflictMessage ? (
+        <ScheduleAssignConflictDialog
+          message={conflictMessage}
+          periods={conflictPeriods}
+          busy={saving}
+          onCancel={() => {
+            setPendingAssign(null);
+            setConflictPeriods([]);
+            setConflictMessage("");
+          }}
+          onSkip={() => resolveConflict("skip")}
+          onReassign={() => resolveConflict("reassign")}
+        />
       ) : null}
 
       <section className="hr-shift-board" aria-label="พนักงานในกะ">
@@ -395,7 +532,7 @@ export default function ScheduleShiftWorkspace({
                       type="button"
                       className="btn btn-sm btn-danger"
                       onClick={() =>
-                        removeEmployee(person.employeeId, person.label)
+                        askRemoveEmployee(person.employeeId, person.label)
                       }
                       disabled={!available || removingId === person.employeeId}
                     >
@@ -469,10 +606,6 @@ export default function ScheduleShiftWorkspace({
                 onSubmit={applyAdjust}
                 noValidate
               >
-                {adjustFeedback ? (
-                  <Alert kind={adjustFeedback.kind}>{adjustFeedback.text}</Alert>
-                ) : null}
-
                 <div className="hr-shift-step">
                   <p className="hr-shift-step-label">1. ต้องการทำอะไร</p>
                   <div
@@ -689,39 +822,65 @@ export default function ScheduleShiftWorkspace({
             </div>
             <div className="hr-overlay-body">
               <form className="hr-shift-assign" onSubmit={assignSelected} noValidate>
-                {feedback ? (
-                  <Alert kind={feedback.kind}>{feedback.text}</Alert>
-                ) : null}
-
-                <div className="hr-shift-assign-toolbar">
-                  <div
-                    className="hr-shift-seg"
-                    role="group"
-                    aria-label="วันที่จัดกะ"
-                  >
-                    {DAY_MODES.map((mode) => {
-                      const active = dayMode === mode.id;
-                      return (
+                <div className="hr-shift-assign-toolbar hr-shift-assign-toolbar--days">
+                  <div className="hr-shift-workdays">
+                    <div className="hr-shift-workdays-head">
+                      <span>วันทำงานต่อสัปดาห์</span>
+                      <div className="hr-shift-seg" role="group" aria-label="ชุดวัน">
                         <button
-                          key={mode.id}
                           type="button"
                           className={
-                            active
+                            workDayPreset === "weekdays"
                               ? "hr-shift-seg-btn hr-shift-seg-btn--active"
                               : "hr-shift-seg-btn"
                           }
-                          aria-pressed={active}
-                          onClick={() => setDayMode(mode.id)}
+                          aria-pressed={workDayPreset === "weekdays"}
+                          onClick={() => setWorkDays([...WEEKDAY_WORK_DAYS])}
                           disabled={saving || !available}
                         >
-                          {mode.title}
+                          จ–ศ
                         </button>
-                      );
-                    })}
+                        <button
+                          type="button"
+                          className={
+                            workDayPreset === "all"
+                              ? "hr-shift-seg-btn hr-shift-seg-btn--active"
+                              : "hr-shift-seg-btn"
+                          }
+                          aria-pressed={workDayPreset === "all"}
+                          onClick={() => setWorkDays([...ALL_WORK_DAYS])}
+                          disabled={saving || !available}
+                        >
+                          ทุกวัน
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      className="workday-chips hr-shift-workday-chips"
+                      role="group"
+                      aria-label="เลือกวันในสัปดาห์"
+                    >
+                      {WORK_DAY_OPTIONS.map((day) => {
+                        const on = workDays.includes(day.value);
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            className={`btn btn-sm${on ? " btn-primary" : ""}`}
+                            aria-pressed={on}
+                            title={day.label}
+                            onClick={() => toggleWorkDay(day.value)}
+                            disabled={saving || !available}
+                          >
+                            {WORK_DAY_SHORT_LABELS[day.value] ?? day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <p className="hr-shift-assign-meta" aria-live="polite">
                     <strong>{selected.length}</strong> คน ·{" "}
-                    <strong>{workDates.length}</strong> วัน
+                    <strong>{workDates.length}</strong> วันในช่วงนี้
                   </p>
                 </div>
 

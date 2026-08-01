@@ -59,6 +59,7 @@ export type DashboardActions = {
   pendingLeave: number;
   pendingOvertime: number;
   pendingAttendanceAdjustments: number;
+  pendingAdvances: number;
   attendanceExceptionsToday: number;
   missingClockOutToday: number;
   draftSchedules: number;
@@ -124,6 +125,7 @@ async function loadActionCounts(
     pendingLeave: 0,
     pendingOvertime: 0,
     pendingAttendanceAdjustments: 0,
+    pendingAdvances: 0,
     attendanceExceptionsToday: 0,
     missingClockOutToday: 0,
     draftSchedules: 0,
@@ -153,11 +155,17 @@ async function loadActionCounts(
     HR_PERMISSIONS.scheduleRead,
     HR_PERMISSIONS.scheduleManage,
   ]);
+  const canSeeAdvances = hrCan(ctx, [
+    HR_PERMISSIONS.advanceApprove,
+    HR_PERMISSIONS.payrollManage,
+    HR_PERMISSIONS.approvalRead,
+  ]);
 
   const [
     pendingLeave,
     pendingOvertime,
     pendingAdjustments,
+    pendingAdvances,
     exceptionCount,
     missingClockOut,
     draftSchedules,
@@ -195,6 +203,36 @@ async function loadActionCounts(
             ...branchEmployeeFilter,
           },
         })
+      : Promise.resolve(0),
+    canSeeAdvances
+      ? (async () => {
+          const branchClause = branchId
+            ? prisma.$queryRaw<Array<{ c: number }>>`
+                SELECT COUNT(*)::int AS c
+                FROM hr.salary_advances a
+                JOIN hr.employees e ON e.id = a.employee_id
+                WHERE a.organization_id = ${orgId}::uuid
+                  AND a.status = 'SUBMITTED'
+                  AND e.branch_id = ${branchId}::uuid
+              `
+            : ctx.allowedBranchIds != null
+              ? prisma.$queryRaw<Array<{ c: number }>>`
+                  SELECT COUNT(*)::int AS c
+                  FROM hr.salary_advances a
+                  JOIN hr.employees e ON e.id = a.employee_id
+                  WHERE a.organization_id = ${orgId}::uuid
+                    AND a.status = 'SUBMITTED'
+                    AND e.branch_id = ANY(${ctx.allowedBranchIds}::uuid[])
+                `
+              : prisma.$queryRaw<Array<{ c: number }>>`
+                  SELECT COUNT(*)::int AS c
+                  FROM hr.salary_advances a
+                  WHERE a.organization_id = ${orgId}::uuid
+                    AND a.status = 'SUBMITTED'
+                `;
+          const rows = await branchClause;
+          return Number(rows[0]?.c ?? 0);
+        })()
       : Promise.resolve(0),
     canSeeAttendance
       ? prisma.attendanceDay.count({
@@ -589,6 +627,7 @@ async function loadActionCounts(
       pendingLeave,
       pendingOvertime,
       pendingAttendanceAdjustments: pendingAdjustments,
+      pendingAdvances,
       attendanceExceptionsToday: exceptionCount,
       missingClockOutToday: missingClockOut,
       draftSchedules,
@@ -650,6 +689,7 @@ export async function getHrDashboard(
       pendingLeave: 0,
       pendingOvertime: 0,
       pendingAttendanceAdjustments: 0,
+      pendingAdvances: 0,
       attendanceExceptionsToday: 0,
       missingClockOutToday: 0,
       draftSchedules: 0,
