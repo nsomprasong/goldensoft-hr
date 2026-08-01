@@ -48,7 +48,7 @@ export default function PublishScheduleButton({
         onClick={run}
         disabled={busy || disabled}
       >
-        {busy ? "กำลังเปิดใช้…" : "เปิดใช้"}
+        {busy ? "กำลังเปิดใช้…" : "เปิดใช้ตารางกะ"}
       </button>
       {error ? (
         <span className="field-error" role="alert">

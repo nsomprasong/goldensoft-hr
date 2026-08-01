@@ -4,24 +4,30 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import Alert from "@/components/hr/alert";
+import EmployeePhotoPicker, {
+  clearEmployeePhoto,
+  uploadEmployeePhoto,
+} from "@/components/hr/employee-photo-picker";
 import Field, { fieldProps } from "@/components/hr/field";
+import ThaiDateInput from "@/components/hr/thai-date-input";
 import {
   compact,
   submitHrJson,
   validateDate,
   validateEmail,
   validatePhone,
-  validateUuid,
+  validatePositiveNumber,
   requireSelect,
   requireText,
   type FieldErrors,
 } from "@/components/hr/form-utils";
 
 export type EmployeeFormValues = {
-  employeeCode: string;
   firstNameTh: string;
   lastNameTh: string;
   displayName: string;
+  /** Saved API path only — never typed as a public URL by the user. */
+  photoUrl: string;
   phone: string;
   email: string;
   branchId: string;
@@ -37,10 +43,10 @@ export type EmployeeFormValues = {
 export type EmployeeFormOption = { id: string; label: string };
 
 const EMPTY_VALUES: EmployeeFormValues = {
-  employeeCode: "",
   firstNameTh: "",
   lastNameTh: "",
   displayName: "",
+  photoUrl: "",
   phone: "",
   email: "",
   branchId: "",
@@ -55,7 +61,12 @@ const EMPTY_VALUES: EmployeeFormValues = {
 
 function validate(
   values: EmployeeFormValues,
-  hasBranchOptions: boolean,
+  compensation: {
+    enabled: boolean;
+    wageTypeId: string;
+    amount: string;
+    effectiveFrom: string;
+  },
 ) {
   const errors: FieldErrors = {
     firstNameTh: requireText(values.firstNameTh) ?? "",
@@ -63,10 +74,7 @@ function validate(
     displayName: requireText(values.displayName) ?? "",
     phone: validatePhone(values.phone) ?? "",
     email: validateEmail(values.email) ?? "",
-    branchId:
-      (hasBranchOptions
-        ? requireSelect(values.branchId)
-        : validateUuid(values.branchId)) ?? "",
+    branchId: requireSelect(values.branchId) ?? "",
     employmentTypeId: requireSelect(values.employmentTypeId) ?? "",
     employeeStatusId: requireSelect(values.employeeStatusId) ?? "",
     hireDate: validateDate(values.hireDate, true) ?? "",
@@ -82,7 +90,21 @@ function validate(
     errors.probationEndDate = "วันสิ้นสุดทดลองงานต้องไม่ก่อนวันเริ่มงาน";
   }
 
+  if (compensation.enabled) {
+    errors.wageTypeId = requireSelect(compensation.wageTypeId) ?? "";
+    errors.amount =
+      validatePositiveNumber(compensation.amount, { allowZero: false }) ?? "";
+    errors.effectiveFrom =
+      validateDate(compensation.effectiveFrom, true) ?? "";
+  }
+
   return compact(errors);
+}
+
+function extractEmployeeId(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const root = data as { id?: string; employee?: { id?: string } };
+  return root.employee?.id ?? root.id;
 }
 
 export default function EmployeeForm({
@@ -94,6 +116,8 @@ export default function EmployeeForm({
   employmentTypes,
   employeeStatuses,
   branches,
+  wageTypes = [],
+  includeCompensation = false,
   disabled = false,
 }: {
   mode: "create" | "edit";
@@ -104,6 +128,8 @@ export default function EmployeeForm({
   employmentTypes: EmployeeFormOption[];
   employeeStatuses: EmployeeFormOption[];
   branches: EmployeeFormOption[];
+  wageTypes?: EmployeeFormOption[];
+  includeCompensation?: boolean;
   disabled?: boolean;
 }) {
   const router = useRouter();
@@ -112,12 +138,23 @@ export default function EmployeeForm({
     branchId: branches.length === 1 ? branches[0].id : "",
     ...initialValues,
   });
+  const [comp, setComp] = useState({
+    wageTypeId: "",
+    amount: "",
+    currency: "THB",
+    effectiveFrom: "",
+    overtimeEligible: true,
+  });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoCleared, setPhotoCleared] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
     text: string;
   } | null>(null);
+
+  const showCompensation = mode === "create" && includeCompensation;
 
   function set<K extends keyof EmployeeFormValues>(
     key: K,
@@ -125,13 +162,15 @@ export default function EmployeeForm({
   ) {
     setValues((prev) => {
       const next = { ...prev, [key]: value };
-      // Keep the display name in sync until the user types their own.
       if (
         (key === "firstNameTh" || key === "lastNameTh") &&
         (!prev.displayName ||
           prev.displayName === `${prev.firstNameTh} ${prev.lastNameTh}`.trim())
       ) {
         next.displayName = `${next.firstNameTh} ${next.lastNameTh}`.trim();
+      }
+      if (key === "hireDate" && !comp.effectiveFrom) {
+        setComp((c) => ({ ...c, effectiveFrom: String(value) }));
       }
       return next;
     });
@@ -141,7 +180,12 @@ export default function EmployeeForm({
     event.preventDefault();
     setFeedback(null);
 
-    const nextErrors = validate(values, branches.length > 0);
+    const nextErrors = validate(values, {
+      enabled: showCompensation,
+      wageTypeId: comp.wageTypeId,
+      amount: comp.amount,
+      effectiveFrom: comp.effectiveFrom || values.hireDate,
+    });
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       setFeedback({
@@ -184,52 +228,107 @@ export default function EmployeeForm({
             payload,
             "บันทึกการแก้ไขเรียบร้อยแล้ว",
           );
-    setSaving(false);
 
     if (!result.ok) {
+      setSaving(false);
       setErrors(result.fieldErrors);
       setFeedback({ kind: "error", text: result.message });
       return;
     }
 
-    setFeedback({ kind: "success", text: result.message });
-    const createdId =
-      result.data && typeof result.data === "object"
-        ? ((result.data as { id?: string; employee?: { id?: string } }).id ??
-          (result.data as { employee?: { id?: string } }).employee?.id)
-        : undefined;
+    const savedId =
+      mode === "create" ? extractEmployeeId(result.data) : employeeId;
 
+    if (savedId && photoFile) {
+      const upload = await uploadEmployeePhoto(savedId, photoFile);
+      if (!upload.ok) {
+        setSaving(false);
+        setFeedback({
+          kind: "error",
+          text: `${result.message} แต่${upload.message}`,
+        });
+        router.refresh();
+        if (mode === "create") {
+          router.push(`/hr/employees/${savedId}`);
+        }
+        return;
+      }
+      if (upload.photoUrl) {
+        setValues((prev) => ({ ...prev, photoUrl: upload.photoUrl ?? "" }));
+      }
+      setPhotoFile(null);
+      setPhotoCleared(false);
+    } else if (savedId && photoCleared && mode === "edit") {
+      const cleared = await clearEmployeePhoto(savedId);
+      if (!cleared.ok) {
+        setSaving(false);
+        setFeedback({
+          kind: "error",
+          text: `${result.message} แต่${cleared.message}`,
+        });
+        router.refresh();
+        return;
+      }
+      setValues((prev) => ({ ...prev, photoUrl: "" }));
+      setPhotoCleared(false);
+    }
+
+    if (savedId && showCompensation) {
+      const compResult = await submitHrJson(
+        `/api/hr/employees/${savedId}/compensations`,
+        "POST",
+        {
+          wageTypeId: comp.wageTypeId,
+          amount: Number(comp.amount),
+          currency: comp.currency.trim().toUpperCase() || "THB",
+          effectiveFrom: comp.effectiveFrom || values.hireDate,
+          overtimeEligible: comp.overtimeEligible,
+        },
+        "บันทึกค่าจ้างเรียบร้อยแล้ว",
+      );
+      if (!compResult.ok) {
+        setSaving(false);
+        setFeedback({
+          kind: "error",
+          text: `${result.message} แต่บันทึกค่าตอบแทนไม่สำเร็จ: ${compResult.message}`,
+        });
+        router.push(`/hr/employees/${savedId}?tab=employment`);
+        return;
+      }
+    }
+
+    setSaving(false);
+    setFeedback({ kind: "success", text: result.message });
     router.refresh();
     if (mode === "create") {
-      router.push(createdId ? `/hr/employees/${createdId}` : "/hr/employees");
+      router.push(savedId ? `/hr/employees/${savedId}` : "/hr/employees");
     } else if (employeeId) {
       router.push(`/hr/employees/${employeeId}`);
     }
   }
 
+  const shownPhotoUrl =
+    photoCleared && !photoFile ? null : values.photoUrl || null;
+
   return (
     <form className="card" onSubmit={handleSubmit} noValidate>
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
-      <div className="form-grid">
-        {mode === "edit" ? (
-          <Field
-            id="employeeCode"
-            label="รหัสพนักงาน"
-            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
-          >
-            <input
-              {...fieldProps("employeeCode")}
-              value={values.employeeCode}
-              readOnly
-            />
-          </Field>
-        ) : (
-          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            รหัสพนักงานจะถูกสร้างอัตโนมัติเมื่อบันทึก
-          </p>
-        )}
+      <EmployeePhotoPicker
+        displayName={values.displayName || "พนักงาน"}
+        savedPhotoUrl={shownPhotoUrl}
+        disabled={disabled || saving}
+        onFileChange={(file) => {
+          setPhotoFile(file);
+          if (file) {
+            setPhotoCleared(false);
+          } else {
+            setPhotoCleared(true);
+          }
+        }}
+      />
 
+      <div className="form-grid">
         <Field
           id="firstNameTh"
           label="ชื่อ"
@@ -297,30 +396,23 @@ export default function EmployeeForm({
           error={errors.branchId}
           hint={
             branches.length === 0
-              ? "ไม่พบสาขาในบริบทปัจจุบัน กรุณาระบุรหัสสาขา (UUID)"
+              ? "ไม่พบสาขาในองค์กร — ตั้งค่าสาขาบนแพลตฟอร์มก่อน"
               : undefined
           }
         >
-          {branches.length > 0 ? (
-            <select
-              {...fieldProps("branchId", errors.branchId)}
-              value={values.branchId}
-              onChange={(e) => set("branchId", e.target.value)}
-            >
-              <option value="">— เลือกสาขา —</option>
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              {...fieldProps("branchId", errors.branchId)}
-              value={values.branchId}
-              onChange={(e) => set("branchId", e.target.value)}
-            />
-          )}
+          <select
+            {...fieldProps("branchId", errors.branchId)}
+            value={values.branchId}
+            onChange={(e) => set("branchId", e.target.value)}
+            disabled={branches.length === 0}
+          >
+            <option value="">— เลือกสาขา —</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.label}
+              </option>
+            ))}
+          </select>
         </Field>
 
         <Field id="departmentId" label="แผนก">
@@ -394,11 +486,12 @@ export default function EmployeeForm({
         </Field>
 
         <Field id="hireDate" label="วันเริ่มงาน" required error={errors.hireDate}>
-          <input
-            {...fieldProps("hireDate", errors.hireDate)}
-            type="date"
+          <ThaiDateInput
+            id="hireDate"
             value={values.hireDate}
-            onChange={(e) => set("hireDate", e.target.value)}
+            onChange={(value) => set("hireDate", value)}
+            required
+            aria-invalid={Boolean(errors.hireDate)}
           />
         </Field>
 
@@ -407,11 +500,11 @@ export default function EmployeeForm({
           label="วันสิ้นสุดทดลองงาน"
           error={errors.probationEndDate}
         >
-          <input
-            {...fieldProps("probationEndDate", errors.probationEndDate)}
-            type="date"
+          <ThaiDateInput
+            id="probationEndDate"
             value={values.probationEndDate}
-            onChange={(e) => set("probationEndDate", e.target.value)}
+            onChange={(value) => set("probationEndDate", value)}
+            aria-invalid={Boolean(errors.probationEndDate)}
           />
         </Field>
 
@@ -423,6 +516,82 @@ export default function EmployeeForm({
           />
         </Field>
       </div>
+
+      {showCompensation ? (
+        <>
+          <h3 style={{ marginTop: "1.25rem" }}>ค่าตอบแทนเริ่มต้น</h3>
+          <p className="muted">
+            กำหนดค่าจ้างพร้อมกับการสร้างพนักงาน — มีผลตั้งแต่วันที่ระบุ
+          </p>
+          <div className="form-grid">
+            <Field
+              id="wageTypeId"
+              label="ประเภทค่าจ้าง"
+              required
+              error={errors.wageTypeId}
+            >
+              <select
+                {...fieldProps("wageTypeId", errors.wageTypeId)}
+                value={comp.wageTypeId}
+                onChange={(e) =>
+                  setComp((c) => ({ ...c, wageTypeId: e.target.value }))
+                }
+              >
+                <option value="">— เลือกประเภท —</option>
+                {wageTypes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field id="amount" label="จำนวนเงิน" required error={errors.amount}>
+              <input
+                {...fieldProps("amount", errors.amount)}
+                type="number"
+                min={0}
+                step="0.01"
+                value={comp.amount}
+                onChange={(e) =>
+                  setComp((c) => ({ ...c, amount: e.target.value }))
+                }
+              />
+            </Field>
+            <Field
+              id="effectiveFrom"
+              label="มีผลตั้งแต่"
+              required
+              error={errors.effectiveFrom}
+            >
+              <ThaiDateInput
+                id="effectiveFrom"
+                value={comp.effectiveFrom || values.hireDate}
+                onChange={(value) =>
+                  setComp((c) => ({ ...c, effectiveFrom: value }))
+                }
+                required
+                aria-invalid={Boolean(errors.effectiveFrom)}
+              />
+            </Field>
+            <div className="field">
+              <div className="checkbox-row">
+                <input
+                  id="overtimeEligible"
+                  type="checkbox"
+                  checked={comp.overtimeEligible}
+                  onChange={(e) =>
+                    setComp((c) => ({
+                      ...c,
+                      overtimeEligible: e.target.checked,
+                    }))
+                  }
+                />
+                <label htmlFor="overtimeEligible">มีสิทธิ์รับค่าล่วงเวลา</label>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <div className="form-actions">
         <button

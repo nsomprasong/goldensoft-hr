@@ -138,6 +138,17 @@ describe("Phase 8A HR platform integration", () => {
     );
   });
 
+  it("ignores stale org cookie when Platform active org is entitled", async () => {
+    const { state, organizationId, branchId } = mockEntitledHrUser();
+    const staleOrg = "99999999-9999-4999-8999-999999999999";
+    const client = createMockPlatformClient(state);
+    const ctx = await resolveHrRequestContext({
+      cookieHeader: cookieHeader(staleOrg, branchId),
+      platformClient: client,
+    });
+    assert.equal(ctx.organizationId, organizationId);
+  });
+
   it("denies branch out of scope", async () => {
     const { state, organizationId, branchId } = mockEntitledHrUser();
     const client = createMockPlatformClient(state);

@@ -39,7 +39,7 @@ export function parseDateParts(
   }
 
   const trimmed = String(value).trim();
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/.exec(trimmed);
   if (iso) {
     const year = Number(iso[1]);
     const month = Number(iso[2]);

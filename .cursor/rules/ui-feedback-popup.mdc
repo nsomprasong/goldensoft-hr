@@ -1,0 +1,32 @@
+---
+description: แจ้งสำเร็จ/error ด้วย popup ในแอป — ห้าม window.alert หรือการแจ้งเตือนของระบบ
+alwaysApply: true
+---
+
+# In-app feedback popups
+
+When showing success, error, warning, or short progress feedback to users in `goldensoft-hr` or Customer App product UI:
+
+## Do
+
+- Use the in-app popup: `FeedbackPopup` (`src/components/hr/feedback-popup.tsx`)
+- Pop up centered over the page with backdrop; Thai title + message + ปิด
+- Auto-dismiss success/info; keep error/warning until the user closes
+- Keep persistent contextual banners (e.g. offline) as inline `Alert` only when they must stay visible while the user works
+
+## Do not
+
+- `window.alert`, `window.confirm`, `window.prompt`
+- Browser / OS notification APIs for routine form or action feedback
+- Rely only on an inline `Alert` for one-shot success/error after a user action (use the popup)
+
+## Example
+
+```tsx
+const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
+
+setFeedback({ kind: "success", message: "บันทึกเรียบร้อยแล้ว" });
+setFeedback({ kind: "error", message: "ไม่สามารถบันทึกได้" });
+
+<FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
+```

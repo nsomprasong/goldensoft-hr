@@ -164,7 +164,18 @@ export type CompensationCreateInput = Omit<
 >;
 
 export type CompensationPatch = Partial<
-  Pick<CompensationRecord, "effectiveTo" | "isCurrent">
+  Pick<
+    CompensationRecord,
+    | "wageTypeId"
+    | "amount"
+    | "currency"
+    | "effectiveFrom"
+    | "effectiveTo"
+    | "standardHoursPerDay"
+    | "standardDaysPerMonth"
+    | "overtimeEligible"
+    | "isCurrent"
+  >
 >;
 
 // ─── Overtime ─────────────────────────────────────────────────────────────

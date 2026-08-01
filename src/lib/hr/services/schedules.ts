@@ -2,6 +2,7 @@ export {
   createSchedulePeriod,
   deleteSchedulePeriod,
   getSchedulePeriod,
+  getScheduleShiftBoard,
   listSchedulePeriods,
   scheduleAction,
   updateSchedulePeriod,

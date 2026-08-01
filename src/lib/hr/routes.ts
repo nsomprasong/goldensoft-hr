@@ -50,7 +50,8 @@ export type HrRouteKey =
   | "payrollReview"
   | "payslips"
   | "reports"
-  | "settings";
+  | "settings"
+  | "leaveEntitlements";
 
 export type HrRouteDefinition = {
   key: HrRouteKey;
@@ -71,7 +72,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     path: HR_ROUTE_PREFIX,
     labelTh: "แดชบอร์ด",
     nav: true,
-    requiredPermissions: [],
+    requiredPermissions: [HR_PERMISSIONS.employeeRead],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
@@ -148,6 +149,17 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     nav: true,
     requiredPermissions: [HR_PERMISSIONS.payrollScheduleRead],
     requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "leaveEntitlements",
+    path: `${HR_ROUTE_PREFIX}/settings/leave-entitlements`,
+    labelTh: "สิทธิ์วันลา",
+    nav: false,
+    requiredPermissions: [
+      HR_PERMISSIONS.leaveManage,
+      HR_PERMISSIONS.settingsManage,
+    ],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
     key: "payrollPeriods",
@@ -317,6 +329,7 @@ export type HrNavKey =
   | "shifts"
   | "schedules"
   | "calendars"
+  | "locations"
   | "overtime-rules"
   | "payroll-schedules"
   | "payroll-periods";
@@ -329,6 +342,7 @@ const NAV_KEY_TO_ROUTE: Record<HrNavKey, HrRouteKey> = {
   shifts: "shifts",
   schedules: "schedules",
   calendars: "calendars",
+  locations: "locations",
   "overtime-rules": "overtimeRules",
   "payroll-schedules": "payrollSchedules",
   "payroll-periods": "payrollPeriods",

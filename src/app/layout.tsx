@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Anuphan, Prompt } from "next/font/google";
 import type { ReactNode } from "react";
 
+import NavigationPending from "@/components/hr/navigation-pending";
+
 import "./globals.css";
 
 const anuphan = Anuphan({
@@ -33,6 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="th" suppressHydrationWarning>
       <body className={`${anuphan.variable} ${prompt.variable}`}>
+        <NavigationPending />
         {children}
       </body>
     </html>

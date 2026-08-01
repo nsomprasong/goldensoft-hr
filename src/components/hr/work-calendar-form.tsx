@@ -16,12 +16,18 @@ export default function WorkCalendarForm({
   initialName = "",
   initialWorkDays = DEFAULT_DAYS,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   mode?: "create" | "edit";
   calendarId?: string;
   initialName?: string;
   initialWorkDays?: number[];
   disabled?: boolean;
+  embedded?: boolean;
+  onDone?: (calendarId?: string) => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const fieldPrefix = mode === "edit" ? `cal-edit-${calendarId}` : "cal-new";
@@ -78,6 +84,12 @@ export default function WorkCalendarForm({
       return;
     }
 
+    if (onDone) {
+      const id = (result.data as { id?: string } | null)?.id;
+      onDone(mode === "create" ? id : calendarId);
+      return;
+    }
+
     setFeedback({ kind: "success", text: result.message });
     if (mode === "create") {
       const id = (result.data as { id?: string } | null)?.id;
@@ -93,11 +105,19 @@ export default function WorkCalendarForm({
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "สร้างปฏิทินวันทำงาน" : "แก้ไขวันทำงาน"}</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
-        เลือกว่าองค์กรทำงานวันไหนบ้าง แล้วเพิ่มวันหยุดด้านล่างได้ทันที
-      </p>
+    <form
+      className={embedded ? "hr-calendar-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <>
+          <h2>{mode === "create" ? "สร้างปฏิทินวันทำงาน" : "แก้ไขวันทำงาน"}</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            ตั้งชื่อและเลือกวันทำงานขององค์กร
+          </p>
+        </>
+      )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
@@ -112,7 +132,7 @@ export default function WorkCalendarForm({
         </Field>
       </div>
 
-      <div className="field" style={{ marginTop: "0.875rem" }}>
+      <div className="field" style={{ marginTop: "0.75rem" }}>
         <span className="field-label">วันทำงาน *</span>
         {errors.workDays ? (
           <p className="field-error" role="alert">
@@ -148,8 +168,18 @@ export default function WorkCalendarForm({
             ? "กำลังบันทึก…"
             : mode === "create"
               ? "สร้างปฏิทิน"
-              : "บันทึกวันทำงาน"}
+              : "บันทึก"}
         </button>
+        {onCancel ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            ยกเลิก
+          </button>
+        ) : null}
       </div>
     </form>
   );

@@ -1,3 +1,21 @@
-import OperationsWorkspace from "@/components/hr/operations-workspace"; import HrShell from "@/components/hr-shell"; import { requireHrPage } from "@/lib/hr/guards"; import { HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
+import HrShell from "@/components/hr-shell";
+import { listOvertimeRequests } from "@/lib/hr/data";
+import { requireHrPage } from "@/lib/hr/guards";
+import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+
 export const dynamic = "force-dynamic";
-export default async function OvertimePage() { const ctx = await requireHrPage({ permission: HR_PERMISSIONS.overtimeRead }); return <HrShell ctx={ctx}><OperationsWorkspace title="ทำงานล่วงเวลา" description="คำขอ OT และการอนุมัติขององค์กร" emptyMessage="ยังไม่มีคำขอทำงานล่วงเวลา" endpoint="/api/hr/overtime-requests" /></HrShell>; }
+
+export default async function OvertimePage() {
+  const ctx = await requireHrPage({ permission: HR_PERMISSIONS.overtimeRead });
+  const list = await listOvertimeRequests(ctx);
+  const canApprove = canHr(ctx, HR_PERMISSIONS.overtimeApprove);
+
+  return (
+    <HrShell ctx={ctx}>
+      <DatabaseUnavailableNotice message={list.message} />
+      <OvertimeApprovalList rows={list.data} canApprove={canApprove} />
+    </HrShell>
+  );
+}

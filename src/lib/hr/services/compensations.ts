@@ -5,7 +5,11 @@
  * one rather than editing it, so the wage history behind any past payroll run
  * stays reconstructable. Nothing here ever hard-deletes a row.
  */
-import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
+import {
+  assertBranchInScope,
+  assertHrPermission,
+  hrCan,
+} from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
 import { HrError } from "@/lib/hr/errors";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -88,7 +92,11 @@ export async function addCompensation(
   employeeId: string,
   data: CompensationCreateData,
 ): Promise<CompensationRecord> {
-  assertHrPermission(ctx, HR_PERMISSIONS.compensationManage);
+  const canManagePay = hrCan(ctx, HR_PERMISSIONS.compensationManage);
+  const canHireWage = hrCan(ctx, HR_PERMISSIONS.employeeCreate);
+  if (!canManagePay && !canHireWage) {
+    assertHrPermission(ctx, HR_PERMISSIONS.compensationManage);
+  }
   await requireEmployeeInScope(repository, ctx, employeeId);
 
   if (!Number.isFinite(data.amount) || data.amount < 0) {
@@ -106,10 +114,66 @@ export async function addCompensation(
   }
 
   const history = await repository.compensations.listByEmployee(employeeId);
+  // Hiring flow may set the first wage without full compensation.manage.
+  if (!canManagePay && history.length > 0) {
+    throw new HrError("FORBIDDEN", {
+      message: "การปรับค่าจ้างครั้งถัดไปต้องมีสิทธิ์จัดการค่าตอบแทน",
+    });
+  }
+
+  // Prefer the open current row; fall back to latest isCurrent flag.
+  const current =
+    history.find((row) => row.effectiveTo === null) ??
+    history.find((row) => row.isCurrent) ??
+    null;
+
+  const currency = (data.currency ?? "THB").toUpperCase();
+  const standardHoursPerDay = data.standardHoursPerDay ?? null;
+  const standardDaysPerMonth = data.standardDaysPerMonth ?? null;
+  const overtimeEligible = data.overtimeEligible ?? true;
+
+  // Same effective start as current → correct/edit in place (not a new history row).
+  if (
+    current &&
+    effectiveFrom.getTime() === current.effectiveFrom.getTime() &&
+    (effectiveTo?.getTime() ?? null) ===
+      (current.effectiveTo?.getTime() ?? null)
+  ) {
+    if (!canManagePay) {
+      throw new HrError("FORBIDDEN", {
+        message: "การแก้ค่าจ้างต้องมีสิทธิ์จัดการค่าตอบแทน",
+      });
+    }
+    const updated = await repository.compensations.update(current.id, {
+      wageTypeId: data.wageTypeId,
+      amount: data.amount,
+      currency,
+      standardHoursPerDay,
+      standardDaysPerMonth,
+      overtimeEligible,
+      isCurrent: effectiveTo === null,
+    });
+    await writeHrAudit(repository, {
+      organizationId: ctx.organizationId,
+      branchId: ctx.branchId,
+      actorAuthUserId: ctx.actorAuthUserId,
+      actionCode: HR_AUDIT_ACTIONS.compensationAdd,
+      entityType: "employee_compensation",
+      entityId: updated.id,
+      after: {
+        employeeId,
+        wageTypeId: updated.wageTypeId,
+        currency: updated.currency,
+        amount: updated.amount,
+        effectiveFrom: updated.effectiveFrom,
+        effectiveTo: updated.effectiveTo,
+      },
+    });
+    return updated;
+  }
 
   // The open-ended current record is closed the day before the new one starts;
   // anything else that would straddle the new range is a genuine conflict.
-  const current = history.find((row) => row.effectiveTo === null);
   for (const row of history) {
     if (row === current) continue;
     if (overlaps(row, effectiveFrom, effectiveTo)) {
@@ -122,6 +186,8 @@ export async function addCompensation(
   if (current) {
     if (effectiveFrom.getTime() <= current.effectiveFrom.getTime()) {
       throw new HrError("OVERLAP_COMPENSATION", {
+        message:
+          "วันมีผลต้องหลังค่าจ้างปัจจุบัน หรือใช้วันเดิมเพื่อแก้ไขรายการปัจจุบัน",
         details: { conflictingId: current.id },
       });
     }
@@ -135,12 +201,12 @@ export async function addCompensation(
     employeeId,
     wageTypeId: data.wageTypeId,
     amount: data.amount,
-    currency: (data.currency ?? "THB").toUpperCase(),
+    currency,
     effectiveFrom,
     effectiveTo,
-    standardHoursPerDay: data.standardHoursPerDay ?? null,
-    standardDaysPerMonth: data.standardDaysPerMonth ?? null,
-    overtimeEligible: data.overtimeEligible ?? true,
+    standardHoursPerDay,
+    standardDaysPerMonth,
+    overtimeEligible,
     isCurrent: effectiveTo === null,
     createdBy: ctx.actorAuthUserId,
   });

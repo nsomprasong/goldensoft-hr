@@ -14,6 +14,7 @@ import {
   employeeData,
   expectHrError,
   masterId,
+  memberContext,
   payrollOfficerContext,
 } from "./helpers/hr-fixtures";
 
@@ -146,7 +147,7 @@ describe("Phase 8B compensation", () => {
     const { store, repository, employee } = await seedEmployee();
 
     await expectHrError("FORBIDDEN", () =>
-      addCompensation(repository, adminContext(), employee.id, {
+      addCompensation(repository, memberContext(), employee.id, {
         wageTypeId: masterId(store, "wageType", "MONTHLY"),
         amount: 1000,
         effectiveFrom: "2026-01-01",

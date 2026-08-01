@@ -18,7 +18,6 @@ import {
 } from "@/components/hr/form-utils";
 
 export type ShiftFormValues = {
-  code: string;
   name: string;
   shiftTypeId: string;
   branchId: string;
@@ -32,7 +31,6 @@ export type ShiftFormValues = {
 };
 
 const EMPTY: ShiftFormValues = {
-  code: "",
   name: "",
   shiftTypeId: "",
   branchId: "",
@@ -52,6 +50,9 @@ export default function ShiftForm({
   shiftTypes,
   branches,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   mode: "create" | "edit";
   shiftId?: string;
@@ -59,6 +60,10 @@ export default function ShiftForm({
   shiftTypes: Array<{ id: string; label: string }>;
   branches: Array<{ id: string; label: string }>;
   disabled?: boolean;
+  /** Hide outer card chrome when rendered inside an overlay. */
+  embedded?: boolean;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<ShiftFormValues>({
@@ -148,35 +153,33 @@ export default function ShiftForm({
       return;
     }
 
+    if (onDone) {
+      onDone();
+      return;
+    }
+
     setFeedback({ kind: "success", text: result.message });
     if (mode === "create") setValues(EMPTY);
     router.refresh();
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "เพิ่มกะงานใหม่" : "แก้ไขกะงาน"}</h2>
+    <form
+      className={embedded ? "hr-shift-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <h2>{mode === "create" ? "เพิ่มกะงานใหม่" : "แก้ไขกะงาน"}</h2>
+      )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {mode === "create" ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          รหัสกะจะถูกสร้างอัตโนมัติเมื่อบันทึก
+        </p>
+      ) : null}
 
       <div className="form-grid">
-        {mode === "edit" ? (
-          <Field
-            id="shift-code"
-            label="รหัสกะ"
-            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
-          >
-            <input
-              {...fieldProps("shift-code")}
-              value={values.code}
-              readOnly
-            />
-          </Field>
-        ) : (
-          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            รหัสกะจะถูกสร้างอัตโนมัติเมื่อบันทึก
-          </p>
-        )}
-
         <Field id="shift-name" label="ชื่อกะ" required error={errors.name}>
           <input
             {...fieldProps("shift-name", errors.name)}
@@ -227,16 +230,28 @@ export default function ShiftForm({
           </select>
         </Field>
 
-        <Field id="shift-startTime" label="เวลาเข้างาน" required error={errors.startTime}>
+        <Field
+          id="shift-startTime"
+          label="เวลาเข้างาน"
+          required
+          error={errors.startTime}
+        >
           <input
             {...fieldProps("shift-startTime", errors.startTime)}
             type="time"
             value={values.startTime}
-            onChange={(e) => setValues({ ...values, startTime: e.target.value })}
+            onChange={(e) =>
+              setValues({ ...values, startTime: e.target.value })
+            }
           />
         </Field>
 
-        <Field id="shift-endTime" label="เวลาเลิกงาน" required error={errors.endTime}>
+        <Field
+          id="shift-endTime"
+          label="เวลาเลิกงาน"
+          required
+          error={errors.endTime}
+        >
           <input
             {...fieldProps("shift-endTime", errors.endTime)}
             type="time"
@@ -306,7 +321,10 @@ export default function ShiftForm({
           hint="เว้นว่างได้หากไม่กำหนด"
         >
           <input
-            {...fieldProps("shift-overtimeAfterMinutes", errors.overtimeAfterMinutes)}
+            {...fieldProps(
+              "shift-overtimeAfterMinutes",
+              errors.overtimeAfterMinutes,
+            )}
             type="number"
             min={0}
             value={values.overtimeAfterMinutes}
@@ -340,11 +358,14 @@ export default function ShiftForm({
         >
           {saving ? "กำลังบันทึก…" : mode === "create" ? "เพิ่มกะงาน" : "บันทึก"}
         </button>
-        {mode === "edit" ? (
+        {onCancel || mode === "edit" ? (
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/hr/settings/shifts")}
+            onClick={() => {
+              if (onCancel) onCancel();
+              else router.push("/hr/settings/shifts");
+            }}
             disabled={saving}
           >
             ยกเลิก

@@ -17,3 +17,22 @@ export function formatWorkDays(workDays: number[]): string {
   );
   return labels.length ? labels.join(" · ") : "—";
 }
+
+/** Compact weekday labels for cards (จ · อ · พ · พฤ · ศ · ส · อา). */
+export const WORK_DAY_SHORT_LABELS: Record<number, string> = {
+  0: "อา",
+  1: "จ",
+  2: "อ",
+  3: "พ",
+  4: "พฤ",
+  5: "ศ",
+  6: "ส",
+};
+
+export function formatWorkDaysCompact(workDays: number[]): string {
+  if (!workDays.length) return "—";
+  const labels = WORK_DAY_OPTIONS.filter((d) => workDays.includes(d.value)).map(
+    (d) => WORK_DAY_SHORT_LABELS[d.value] ?? d.label,
+  );
+  return labels.length ? labels.join(" · ") : "—";
+}

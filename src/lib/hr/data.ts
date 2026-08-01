@@ -31,12 +31,22 @@ import { listPositions as listPositionsService } from "@/lib/hr/services/positio
 import { listShifts as listShiftsService } from "@/lib/hr/services/shifts";
 import {
   getSchedulePeriod as getSchedulePeriodService,
+  getScheduleShiftBoard as getScheduleShiftBoardService,
   listSchedulePeriods as listSchedulePeriodsService,
 } from "@/lib/hr/services/schedules";
 import {
   listCalendars as listCalendarsService,
   listHolidayTypes as listHolidayTypesService,
 } from "@/lib/hr/services/calendars";
+import {
+  approvalInbox as approvalInboxService,
+  listAttendanceAdjustments as listAttendanceAdjustmentsService,
+  listLeaveBalances as listLeaveBalancesService,
+  listLeaveCoverCandidates as listLeaveCoverCandidatesService,
+  listLeaveRequests as listLeaveRequestsService,
+  listOvertimeRequests as listOvertimeRequestsService,
+  listWorkLocations as listWorkLocationsService,
+} from "@/lib/hr/services/operations";
 import {
   toHrServiceContext,
   type HrServiceContext,
@@ -101,8 +111,9 @@ export function combineAvailability(
     : { available: true, message: null };
 }
 
-function isoDate(value: Date | null | undefined): string | null {
+function isoDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
+  if (typeof value === "string") return value.slice(0, 10);
   return value.toISOString().slice(0, 10);
 }
 
@@ -186,28 +197,72 @@ export async function loadHrMasterData(): Promise<HrDataResult<HrMasterData>> {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────
 
+export type HrDashboardActions = {
+  pendingLeave: number;
+  pendingOvertime: number;
+  pendingAttendanceAdjustments: number;
+  attendanceExceptionsToday: number;
+  missingClockOutToday: number;
+  draftSchedules: number;
+  payrollWarnings: number;
+  probationEndingSoon: number;
+};
+
+export type HrDashboardInboxItem = {
+  id: string;
+  kind: "leave" | "overtime" | "attendance_adjustment";
+  label: string;
+  employeeName: string;
+  submittedAt: string | null;
+  href: string;
+};
+
 export type HrDashboard = {
+  branchId: string | null;
   activeEmployees: number;
-  byBranch: Array<{ branchId: string; count: number }>;
+  byBranch: Array<{ branchId: string; branchName: string; count: number }>;
   byEmploymentType: Array<{ code: string; nameTh: string; count: number }>;
   activeShifts: number;
   currentPeriod: PayrollPeriodRow | null;
+  actions: HrDashboardActions;
+  recentInbox: HrDashboardInboxItem[];
+};
+
+const EMPTY_ACTIONS: HrDashboardActions = {
+  pendingLeave: 0,
+  pendingOvertime: 0,
+  pendingAttendanceAdjustments: 0,
+  attendanceExceptionsToday: 0,
+  missingClockOutToday: 0,
+  draftSchedules: 0,
+  payrollWarnings: 0,
+  probationEndingSoon: 0,
 };
 
 const EMPTY_DASHBOARD: HrDashboard = {
+  branchId: null,
   activeEmployees: 0,
   byBranch: [],
   byEmploymentType: [],
   activeShifts: 0,
   currentPeriod: null,
+  actions: EMPTY_ACTIONS,
+  recentInbox: [],
 };
 
 export async function loadHrDashboard(
   ctx: HrRequestContext,
+  input: { branchId?: string | null } = {},
 ): Promise<HrDataResult<HrDashboard>> {
   return safeRead(EMPTY_DASHBOARD, async (repository) => {
     const service = serviceContext(ctx);
-    const summary = await getHrDashboard(repository, service);
+    const [summary, branches] = await Promise.all([
+      getHrDashboard(repository, service, input),
+      listOrganizationBranches(ctx),
+    ]);
+    const branchNameById = new Map(
+      branches.data.map((row) => [row.id, row.label]),
+    );
 
     let currentPeriod: PayrollPeriodRow | null = null;
     if (summary.currentOpenPeriod) {
@@ -227,9 +282,13 @@ export async function loadHrDashboard(
     }
 
     return {
+      branchId: summary.branchId,
       activeEmployees: summary.activeEmployees.total,
       byBranch: summary.activeEmployees.byBranch.map((row) => ({
         branchId: row.id,
+        branchName:
+          branchNameById.get(row.id) ??
+          (ctx.branch?.id === row.id ? ctx.branch.name : `สาขา ${row.id.slice(0, 8)}`),
         count: row.count,
       })),
       byEmploymentType: summary.activeEmployees.byEmploymentType
@@ -241,6 +300,8 @@ export async function loadHrDashboard(
         })),
       activeShifts: summary.activeShifts,
       currentPeriod,
+      actions: summary.actions,
+      recentInbox: summary.recentInbox,
     };
   });
 }
@@ -253,6 +314,7 @@ export type EmployeeRow = {
   id: string;
   employeeCode: string;
   displayName: string;
+  photoUrl: string | null;
   branchId: string;
   departmentNameTh: string | null;
   positionNameTh: string | null;
@@ -301,6 +363,7 @@ type EmployeeRecordLike = {
   id: string;
   employeeCode: string;
   displayName: string;
+  photoUrl?: string | null;
   branchId: string;
   departmentId: string | null;
   positionId: string | null;
@@ -348,6 +411,7 @@ function toEmployeeRow(
     id: employee.id,
     employeeCode: employee.employeeCode,
     displayName: employee.displayName,
+    photoUrl: employee.photoUrl ?? null,
     branchId: employee.branchId,
     departmentNameTh: employee.departmentId
       ? (lookups.departments.get(employee.departmentId) ?? null)
@@ -448,8 +512,10 @@ export async function getEmployeeDetail(
 
 export type CompensationRow = {
   id: string;
+  wageTypeId: string;
   wageTypeNameTh: string;
   amount: string;
+  amountValue: string;
   currency: string;
   effectiveFrom: string;
   effectiveTo: string | null;
@@ -471,11 +537,13 @@ export async function listEmployeeCompensations(
 
     return rows.map((row) => ({
       id: row.id,
+      wageTypeId: row.wageTypeId,
       wageTypeNameTh: byId.get(row.wageTypeId) ?? "—",
       amount: row.amount.toLocaleString("th-TH", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }),
+      amountValue: String(row.amount),
       currency: row.currency,
       effectiveFrom: isoDate(row.effectiveFrom) ?? "",
       effectiveTo: isoDate(row.effectiveTo),
@@ -780,25 +848,55 @@ export type SchedulePeriodRow = {
   statusCode: string;
   statusName: string;
   timezone: string;
+  branchId: string | null;
   assignmentCount?: number;
 };
 
 export async function listSchedulePeriods(
   ctx: HrRequestContext,
+  input: { branchId?: string | null } = {},
 ): Promise<HrDataResult<SchedulePeriodRow[]>> {
   return safeRead<SchedulePeriodRow[]>([], async () => {
-    const rows = await listSchedulePeriodsService(serviceContext(ctx));
-    return rows.map((row) => ({
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      periodStart: isoDate(row.periodStart) ?? "",
-      periodEnd: isoDate(row.periodEnd) ?? "",
-      statusCode: row.status?.code ?? "—",
-      statusName: row.status?.name ?? row.status?.code ?? "—",
-      timezone: row.timezone,
-    }));
+    const rows = await listSchedulePeriodsService(serviceContext(ctx), input);
+    return rows
+      .map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        periodStart: isoDate(row.periodStart) ?? "",
+        periodEnd: isoDate(row.periodEnd) ?? "",
+        statusCode: row.status?.code ?? "—",
+        statusName: row.status?.name ?? row.status?.code ?? "—",
+        timezone: row.timezone,
+        branchId: row.branchId ?? null,
+      }))
+      .sort((a, b) => {
+        const byStart = b.periodStart.localeCompare(a.periodStart);
+        if (byStart !== 0) return byStart;
+        return b.periodEnd.localeCompare(a.periodEnd);
+      });
   });
+}
+
+export type SchedulePeriodShiftRow = {
+  id: string;
+  shiftId: string;
+  name: string;
+  timeLabel: string;
+  employeeCount: number;
+};
+
+/** Compact employee + shift lists for schedule UIs. */
+export type ScheduleRosterOption = {
+  id: string;
+  label: string;
+};
+
+function formatShiftClock(value: Date | string): string {
+  if (typeof value === "string") return value.slice(0, 5);
+  const hh = String(value.getUTCHours()).padStart(2, "0");
+  const mm = String(value.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 export async function getSchedulePeriod(
@@ -807,18 +905,35 @@ export async function getSchedulePeriod(
 ): Promise<
   HrDataResult<{
     period: SchedulePeriodRow;
-    assignments: Array<{
-      id: string;
-      workDate: string;
-      employeeLabel: string;
-      shiftLabel: string;
-      isRestDay: boolean;
-      isLeaveDay: boolean;
-    }>;
+    periodShifts: SchedulePeriodShiftRow[];
   } | null>
 > {
   return safeRead(null, async () => {
     const row = await getSchedulePeriodService(serviceContext(ctx), id);
+    type PeriodShiftLink = {
+      id: string;
+      shiftId: string;
+      employeeCount?: number;
+      shift: {
+        name: string;
+        startTime: Date | string;
+        endTime: Date | string;
+      };
+    };
+    const periodShifts: SchedulePeriodShiftRow[] = (
+      (row.periodShifts ?? []) as PeriodShiftLink[]
+    ).map((link) => {
+      const start = formatShiftClock(link.shift.startTime);
+      const end = formatShiftClock(link.shift.endTime);
+      return {
+        id: link.id,
+        shiftId: link.shiftId,
+        name: link.shift.name,
+        timeLabel: `${start}–${end}`,
+        employeeCount: link.employeeCount ?? 0,
+      };
+    });
+
     return {
       period: {
         id: row.id,
@@ -829,36 +944,73 @@ export async function getSchedulePeriod(
         statusCode: row.status?.code ?? "—",
         statusName: row.status?.name ?? row.status?.code ?? "—",
         timezone: row.timezone,
-        assignmentCount: row.shiftAssignments.length,
+        branchId: row.branchId ?? null,
+        assignmentCount: Number(row.assignmentCount ?? 0),
       },
-      assignments: row.shiftAssignments.map((item) => ({
-        id: item.id,
-        workDate: isoDate(item.workDate) ?? "",
-        employeeLabel: item.employee
-          ? `${item.employee.employeeCode} · ${item.employee.firstNameTh} ${item.employee.lastNameTh}`
-          : "—",
-        shiftLabel: item.shift
-          ? `${item.shift.code} · ${item.shift.name}`
-          : item.isRestDay
-            ? "วันหยุด"
-            : item.isLeaveDay
-              ? "วันลา"
-              : "—",
-        isRestDay: item.isRestDay,
-        isLeaveDay: item.isLeaveDay,
-      })),
+      periodShifts,
     };
   });
 }
 
-/** Compact employee + shift lists for the one-step schedule composer. */
-export type ScheduleRosterOption = {
-  id: string;
-  label: string;
+export type ScheduleShiftBoard = {
+  period: SchedulePeriodRow;
+  shift: { id: string; name: string; timeLabel: string };
+  onShift: Array<{
+    employeeId: string;
+    label: string;
+    dayCount: number;
+    workDates: string[];
+    coverNote?: string | null;
+    moveNote?: string | null;
+    leaveNote?: string | null;
+  }>;
+  unassigned: ScheduleRosterOption[];
+  otherShifts: ScheduleRosterOption[];
+  employeeOptions: ScheduleRosterOption[];
 };
+
+export async function getScheduleShiftBoard(
+  ctx: HrRequestContext,
+  scheduleId: string,
+  shiftId: string,
+): Promise<HrDataResult<ScheduleShiftBoard | null>> {
+  return safeRead(null, async () => {
+    const board = await getScheduleShiftBoardService(
+      serviceContext(ctx),
+      scheduleId,
+      shiftId,
+    );
+    const start = formatShiftClock(board.shift.startTime);
+    const end = formatShiftClock(board.shift.endTime);
+    return {
+      period: {
+        id: board.period.id,
+        code: board.period.code,
+        name: board.period.name,
+        periodStart: isoDate(board.period.periodStart) ?? "",
+        periodEnd: isoDate(board.period.periodEnd) ?? "",
+        statusCode: board.period.status?.code ?? "—",
+        statusName:
+          board.period.status?.name ?? board.period.status?.code ?? "—",
+        timezone: board.period.timezone,
+        branchId: board.period.branchId ?? null,
+      },
+      shift: {
+        id: board.shift.id,
+        name: board.shift.name,
+        timeLabel: `${start}–${end}`,
+      },
+      onShift: board.onShift,
+      unassigned: board.unassigned,
+      otherShifts: board.otherShifts,
+      employeeOptions: board.employeeOptions,
+    };
+  });
+}
 
 export async function listScheduleComposerOptions(
   ctx: HrRequestContext,
+  options?: { shiftsOnly?: boolean },
 ): Promise<
   HrDataResult<{
     employees: ScheduleRosterOption[];
@@ -868,12 +1020,15 @@ export async function listScheduleComposerOptions(
   const empty = { employees: [] as ScheduleRosterOption[], shifts: [] as ScheduleRosterOption[] };
   return safeRead(empty, async (repository) => {
     const service = serviceContext(ctx);
+    const shiftsOnly = Boolean(options?.shiftsOnly);
     const [employees, shifts] = await Promise.all([
-      listEmployeesService(repository, service, {
-        page: 1,
-        pageSize: ALL,
-        isActive: true,
-      }),
+      shiftsOnly
+        ? Promise.resolve({ rows: [] as Array<{ id: string; employeeCode: string; displayName: string }> })
+        : listEmployeesService(repository, service, {
+            page: 1,
+            pageSize: ALL,
+            isActive: true,
+          }),
       listShiftsService(repository, service, { pageSize: ALL }),
     ]);
 
@@ -886,7 +1041,7 @@ export async function listScheduleComposerOptions(
         .filter((row) => row.isActive)
         .map((row) => ({
           id: row.id,
-          label: `${row.code} · ${row.name} (${row.startTime.slice(0, 5)}–${row.endTime.slice(0, 5)})`,
+          label: `${row.name} (${row.startTime.slice(0, 5)}–${row.endTime.slice(0, 5)})`,
         })),
     };
   });
@@ -960,6 +1115,392 @@ export async function listHolidayTypeOptions(
       code: row.code,
       name: row.name,
     }));
+  });
+}
+
+// ─── Work locations ───────────────────────────────────────────────────────
+
+export type WorkLocationRow = {
+  id: string;
+  code: string;
+  name: string;
+  branchId: string;
+  latitude: number | null;
+  longitude: number | null;
+  geofenceRadiusMeters: number;
+  timezone: string;
+  isActive: boolean;
+};
+
+export async function listWorkLocations(
+  ctx: HrRequestContext,
+  branchId?: string | null,
+): Promise<HrDataResult<WorkLocationRow[]>> {
+  return safeRead<WorkLocationRow[]>([], async () => {
+    const rows = await listWorkLocationsService(
+      serviceContext(ctx),
+      branchId ?? null,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      branchId: row.branchId,
+      latitude: row.latitude == null ? null : Number(row.latitude),
+      longitude: row.longitude == null ? null : Number(row.longitude),
+      geofenceRadiusMeters: row.geofenceRadiusMeters,
+      timezone: row.timezone,
+      isActive: row.isActive,
+    }));
+  });
+}
+
+export type OrganizationBranchOption = {
+  id: string;
+  label: string;
+};
+
+/** Branches from Platform for location forms (OWNER/ADMIN see all org branches). */
+export async function listOrganizationBranches(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<OrganizationBranchOption[]>> {
+  return safeRead<OrganizationBranchOption[]>([], async () => {
+    const { prisma } = await import("@/lib/prisma");
+    const rows = await prisma.$queryRaw<
+      Array<{ id: string; code: string; name: string }>
+    >`
+      SELECT id::text AS id, code, name
+      FROM platform.branches
+      WHERE organization_id = ${ctx.organizationId}::uuid
+        AND deleted_at IS NULL
+      ORDER BY is_primary DESC, code ASC
+    `;
+    const allowed = resolveAllowedBranchIds(ctx);
+    const filtered =
+      allowed == null ? rows : rows.filter((row) => allowed.includes(row.id));
+    if (filtered.length > 0) {
+      return filtered.map((row) => ({
+        id: row.id,
+        label: row.name,
+      }));
+    }
+    if (ctx.branch) {
+      return [{ id: ctx.branch.id, label: ctx.branch.name }];
+    }
+    if (ctx.branchId) {
+      return [{ id: ctx.branchId, label: "สาขาปัจจุบัน" }];
+    }
+    return [];
+  });
+}
+
+// ─── Leave / OT / approvals ───────────────────────────────────────────────
+
+export type LeaveScheduledShift = {
+  shiftId: string | null;
+  shiftName: string;
+  workDates: string[];
+  timeLabel: string | null;
+};
+
+export type LeaveCoverCandidate = {
+  id: string;
+  employeeCode: string;
+  displayName: string;
+  photoUrl: string | null;
+  shiftId?: string | null;
+  shiftName?: string;
+  timeLabel?: string | null;
+  workDates?: string[];
+};
+
+export type LeaveRequestRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  photoUrl: string | null;
+  leaveTypeName: string;
+  statusCode: string;
+  statusName: string;
+  startDate: string;
+  endDate: string;
+  requestedAmount: number;
+  reason: string | null;
+  coverEmployeeId: string | null;
+  coverEmployeeName: string | null;
+  scheduledShifts: LeaveScheduledShift[];
+};
+
+function mapLeaveRequestRow(row: {
+  id: string;
+  employeeId: string;
+  employee?: {
+    employeeCode?: string | null;
+    displayName?: string | null;
+    photoUrl?: string | null;
+  } | null;
+  leaveType?: { name?: string | null } | null;
+  status?: { code?: string | null; name?: string | null } | null;
+  startDate: Date | string;
+  endDate: Date | string;
+  requestedAmount: unknown;
+  reason?: string | null;
+  coverEmployeeId?: string | null;
+  coverEmployee?: {
+    displayName?: string | null;
+  } | null;
+  scheduledShifts?: LeaveScheduledShift[];
+}): LeaveRequestRow {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    employeeCode: row.employee?.employeeCode ?? "—",
+    employeeName: row.employee?.displayName ?? "—",
+    photoUrl: row.employee?.photoUrl ?? null,
+    leaveTypeName: row.leaveType?.name ?? "—",
+    statusCode: row.status?.code ?? "—",
+    statusName: row.status?.name ?? row.status?.code ?? "—",
+    startDate: isoDate(row.startDate) ?? "",
+    endDate: isoDate(row.endDate) ?? "",
+    requestedAmount: Number(row.requestedAmount),
+    reason: row.reason ?? null,
+    coverEmployeeId: row.coverEmployeeId ?? null,
+    coverEmployeeName: row.coverEmployee?.displayName ?? null,
+    scheduledShifts: Array.isArray(row.scheduledShifts)
+      ? row.scheduledShifts
+      : [],
+  };
+}
+
+export type OvertimeRequestRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  photoUrl: string | null;
+  statusCode: string;
+  statusName: string;
+  workDate: string;
+  startAt: string;
+  endAt: string;
+  requestedMinutes: number;
+  approvedMinutes: number | null;
+  reason: string | null;
+};
+
+export type LeaveBalanceRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  photoUrl: string | null;
+  leaveTypeName: string;
+  balanceYear: number;
+  openingBalance: number;
+  usedBalance: number;
+  availableBalance: number;
+};
+
+export type AttendanceAdjustmentRow = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  photoUrl: string | null;
+  statusCode: string;
+  statusName: string;
+  workDate: string;
+  requestedClockInAt: string | null;
+  requestedClockOutAt: string | null;
+  reason: string;
+};
+
+export type ApprovalInboxData = {
+  leave: LeaveRequestRow[];
+  overtime: OvertimeRequestRow[];
+  attendanceAdjustments: AttendanceAdjustmentRow[];
+  attendanceAdjustmentCount: number;
+};
+
+function mapAttendanceAdjustmentRow(row: {
+  id: string;
+  employeeId: string;
+  workDate: Date | string;
+  requestedClockInAt?: Date | string | null;
+  requestedClockOutAt?: Date | string | null;
+  reason: string;
+  employee?: {
+    employeeCode?: string | null;
+    displayName?: string | null;
+    photoUrl?: string | null;
+  } | null;
+  status?: { code?: string | null; name?: string | null } | null;
+}): AttendanceAdjustmentRow {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    employeeCode: row.employee?.employeeCode ?? "—",
+    employeeName: row.employee?.displayName ?? "—",
+    photoUrl: row.employee?.photoUrl ?? null,
+    statusCode: row.status?.code ?? "—",
+    statusName: row.status?.name ?? row.status?.code ?? "—",
+    workDate: isoDate(row.workDate) ?? "",
+    requestedClockInAt:
+      row.requestedClockInAt instanceof Date
+        ? row.requestedClockInAt.toISOString()
+        : row.requestedClockInAt
+          ? String(row.requestedClockInAt)
+          : null,
+    requestedClockOutAt:
+      row.requestedClockOutAt instanceof Date
+        ? row.requestedClockOutAt.toISOString()
+        : row.requestedClockOutAt
+          ? String(row.requestedClockOutAt)
+          : null,
+    reason: row.reason,
+  };
+}
+
+export async function listLeaveRequests(
+  ctx: HrRequestContext,
+  status?: string | null,
+): Promise<HrDataResult<LeaveRequestRow[]>> {
+  return safeRead<LeaveRequestRow[]>([], async () => {
+    const rows = await listLeaveRequestsService(serviceContext(ctx), {
+      status: status ?? null,
+    });
+    return rows.map((row) => mapLeaveRequestRow(row));
+  });
+}
+
+export async function listLeaveCoverCandidates(
+  ctx: HrRequestContext,
+  leaveRequestId: string,
+): Promise<HrDataResult<LeaveCoverCandidate[]>> {
+  return safeRead<LeaveCoverCandidate[]>([], async () => {
+    const rows = await listLeaveCoverCandidatesService(serviceContext(ctx), {
+      leaveRequestId,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      employeeCode: row.employeeCode,
+      displayName: row.displayName,
+      photoUrl: row.photoUrl ?? null,
+      shiftId: row.shiftId ?? null,
+      shiftName: row.shiftName,
+      timeLabel: row.timeLabel ?? null,
+      workDates: row.workDates ?? [],
+    }));
+  });
+}
+
+export async function listOvertimeRequests(
+  ctx: HrRequestContext,
+  status?: string | null,
+): Promise<HrDataResult<OvertimeRequestRow[]>> {
+  return safeRead<OvertimeRequestRow[]>([], async () => {
+    const rows = await listOvertimeRequestsService(serviceContext(ctx), {
+      status: status ?? null,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      employeeId: row.employeeId,
+      employeeCode: row.employee?.employeeCode ?? "—",
+      employeeName: row.employee?.displayName ?? "—",
+      photoUrl: row.employee?.photoUrl ?? null,
+      statusCode: row.status?.code ?? "—",
+      statusName: row.status?.name ?? row.status?.code ?? "—",
+      workDate: isoDate(row.workDate) ?? "",
+      startAt:
+        row.startAt instanceof Date
+          ? row.startAt.toISOString()
+          : String(row.startAt ?? ""),
+      endAt:
+        row.endAt instanceof Date
+          ? row.endAt.toISOString()
+          : String(row.endAt ?? ""),
+      requestedMinutes: row.requestedMinutes,
+      approvedMinutes: row.approvedMinutes ?? null,
+      reason: row.reason ?? null,
+    }));
+  });
+}
+
+export async function listLeaveBalances(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<LeaveBalanceRow[]>> {
+  return safeRead<LeaveBalanceRow[]>([], async () => {
+    const rows = await listLeaveBalancesService(serviceContext(ctx));
+    return rows.map((row) => ({
+      id: row.id,
+      employeeId: row.employeeId,
+      employeeCode: row.employee?.employeeCode ?? "—",
+      employeeName: row.employee?.displayName ?? "—",
+      photoUrl: row.employee?.photoUrl ?? null,
+      leaveTypeName: row.leaveType?.name ?? "—",
+      balanceYear: row.balanceYear,
+      openingBalance: Number(row.openingBalance),
+      usedBalance: Number(row.usedBalance),
+      availableBalance: Number(row.availableBalance),
+    }));
+  });
+}
+
+export async function getApprovalInbox(
+  ctx: HrRequestContext,
+): Promise<HrDataResult<ApprovalInboxData>> {
+  return safeRead<ApprovalInboxData>(
+    {
+      leave: [],
+      overtime: [],
+      attendanceAdjustments: [],
+      attendanceAdjustmentCount: 0,
+    },
+    async () => {
+      const inbox = await approvalInboxService(serviceContext(ctx));
+      const attendanceAdjustments = inbox.attendanceAdjustments.map((row) =>
+        mapAttendanceAdjustmentRow(row),
+      );
+      return {
+        leave: inbox.leave.map((row) => mapLeaveRequestRow(row)),
+        overtime: inbox.overtime.map((row) => ({
+          id: row.id,
+          employeeId: row.employeeId,
+          employeeCode: row.employee?.employeeCode ?? "—",
+          employeeName: row.employee?.displayName ?? "—",
+          photoUrl: row.employee?.photoUrl ?? null,
+          statusCode: row.status?.code ?? "SUBMITTED",
+          statusName: row.status?.name ?? "รออนุมัติ",
+          workDate: isoDate(row.workDate) ?? "",
+          startAt:
+            row.startAt instanceof Date
+              ? row.startAt.toISOString()
+              : String(row.startAt ?? ""),
+          endAt:
+            row.endAt instanceof Date
+              ? row.endAt.toISOString()
+              : String(row.endAt ?? ""),
+          requestedMinutes: row.requestedMinutes,
+          approvedMinutes: row.approvedMinutes ?? null,
+          reason: row.reason ?? null,
+        })),
+        attendanceAdjustments,
+        attendanceAdjustmentCount: attendanceAdjustments.length,
+      };
+    },
+  );
+}
+
+export async function listAttendanceAdjustments(
+  ctx: HrRequestContext,
+  status?: string | null,
+): Promise<HrDataResult<AttendanceAdjustmentRow[]>> {
+  return safeRead<AttendanceAdjustmentRow[]>([], async () => {
+    const rows = await listAttendanceAdjustmentsService(serviceContext(ctx), {
+      status: status ?? null,
+    });
+    return rows.map((row) => mapAttendanceAdjustmentRow(row));
   });
 }
 

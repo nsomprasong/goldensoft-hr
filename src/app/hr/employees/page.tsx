@@ -1,11 +1,12 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import EmployeeAvatar from "@/components/hr/employee-avatar";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
-  listEmployeeBranchIds,
   listEmployees,
+  listOrganizationBranches,
   loadHrMasterData,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -47,7 +48,7 @@ export default async function EmployeesPage({
   const employmentTypeId = single(params, "employmentTypeId");
   const page = Number.parseInt(single(params, "page") || "1", 10) || 1;
 
-  const [master, list, branchIds] = await Promise.all([
+  const [master, list, branches] = await Promise.all([
     loadHrMasterData(),
     listEmployees(ctx, {
       search,
@@ -56,32 +57,21 @@ export default async function EmployeesPage({
       employmentTypeId,
       page,
     }),
-    listEmployeeBranchIds(ctx),
+    listOrganizationBranches(ctx),
   ]);
 
-  const availability = combineAvailability(master, list, branchIds);
+  const availability = combineAvailability(master, list, branches);
   const result = list.data;
   const canCreate = canHr(ctx, HR_PERMISSIONS.employeeCreate);
-
-  const branchOptions = [
-    ...(ctx.branch ? [{ id: ctx.branch.id, label: ctx.branch.name }] : []),
-    ...branchIds.data
-      .filter((id) => id !== ctx.branch?.id)
-      .map((id) => ({ id, label: `สาขา ${id.slice(0, 8)}` })),
-  ];
+  const branchOptions = branches.data;
 
   return (
     <HrShell ctx={ctx} active="employees">
       <div className="hr-page-head">
         <div>
           <h1>พนักงาน</h1>
-          <p>ทั้งหมด {result.total} คน</p>
+          <p>ทั้งหมด {result.total} คน — กด + เพื่อเพิ่มพนักงาน</p>
         </div>
-        {canCreate ? (
-          <Link className="btn btn-primary" href="/hr/employees/new">
-            เพิ่มพนักงาน
-          </Link>
-        ) : null}
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />
@@ -94,7 +84,7 @@ export default async function EmployeesPage({
               id="q"
               name="q"
               defaultValue={search}
-              placeholder="ชื่อ / รหัสพนักงาน / เบอร์โทร"
+              placeholder="ชื่อ / เบอร์โทร"
             />
           </div>
 
@@ -153,45 +143,65 @@ export default async function EmployeesPage({
       {result.rows.length === 0 ? (
         <p className="empty">ไม่พบข้อมูลพนักงานตามเงื่อนไขที่เลือก</p>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>รหัส</th>
-                <th>ชื่อ</th>
-                <th>แผนก</th>
-                <th>ตำแหน่ง</th>
-                <th>ประเภทการจ้าง</th>
-                <th>สถานะ</th>
-                <th>วันเริ่มงาน</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.rows.map((employee) => (
-                <tr key={employee.id}>
-                  <td className="nowrap">{employee.employeeCode}</td>
-                  <td>
-                    <Link href={`/hr/employees/${employee.id}`}>
-                      {employee.displayName}
-                    </Link>
-                  </td>
-                  <td>{employee.departmentNameTh ?? "—"}</td>
-                  <td>{employee.positionNameTh ?? "—"}</td>
-                  <td>{employee.employmentTypeNameTh}</td>
-                  <td>
-                    <span
-                      className={
-                        employee.isActive ? "badge badge-active" : "badge badge-inactive"
-                      }
-                    >
-                      {employee.statusNameTh}
-                    </span>
-                  </td>
-                  <td className="nowrap">{formatThaiDate(employee.hireDate)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="hr-card-grid">
+          {result.rows.map((employee) => (
+            <article
+              key={employee.id}
+              className={
+                employee.isActive
+                  ? "card hr-entity-card"
+                  : "card hr-entity-card hr-entity-card--inactive"
+              }
+            >
+              <div className="hr-entity-card-top">
+                <div className="hr-employee-card-head">
+                  <EmployeeAvatar
+                    displayName={employee.displayName}
+                    photoUrl={employee.photoUrl}
+                    size="md"
+                  />
+                  <div className="hr-entity-card-title-wrap">
+                    <h2 className="hr-entity-card-title">
+                      <Link
+                        className="hr-employee-card-name"
+                        href={`/hr/employees/${employee.id}?tab=general`}
+                      >
+                        {employee.displayName}
+                      </Link>
+                    </h2>
+                  </div>
+                </div>
+                <span
+                  className={
+                    employee.isActive
+                      ? "badge badge-active"
+                      : "badge badge-inactive"
+                  }
+                >
+                  {employee.statusNameTh}
+                </span>
+              </div>
+
+              <dl className="hr-entity-card-meta">
+                <div>
+                  <dt>แผนก</dt>
+                  <dd>{employee.departmentNameTh ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>ตำแหน่ง</dt>
+                  <dd>{employee.positionNameTh ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt>ประเภทการจ้าง</dt>
+                  <dd>{employee.employmentTypeNameTh}</dd>
+                </div>
+                <div>
+                  <dt>วันเริ่มงาน</dt>
+                  <dd>{formatThaiDate(employee.hireDate)}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
         </div>
       )}
 
@@ -210,6 +220,17 @@ export default async function EmployeesPage({
           </Link>
         ) : null}
       </nav>
+
+      {canCreate ? (
+        <Link
+          className="hr-fab"
+          href="/hr/employees/new"
+          aria-label="เพิ่มพนักงาน"
+          title="เพิ่มพนักงาน"
+        >
+          <span aria-hidden="true">+</span>
+        </Link>
+      ) : null}
     </HrShell>
   );
 }

@@ -27,6 +27,7 @@ import {
   createHarness,
   employeeData,
   expectHrError,
+  memberContext,
   ORG_A,
 } from "./helpers/hr-fixtures";
 
@@ -207,19 +208,20 @@ describe("Phase 8B API security", () => {
     );
   });
 
-  it("never grants compensation access through an admin role", async () => {
+  it("never grants compensation access through a plain member role", async () => {
     const { store, repository } = createHarness();
-    const ctx = adminContext();
+    const admin = adminContext();
     const employee = await createEmployee(
       repository,
-      ctx,
+      admin,
       employeeData(store),
     );
+    const member = memberContext();
 
-    assert.ok(!ctx.permissions.includes(HR_PERMISSIONS.compensationRead));
-    assert.ok(!ctx.permissions.includes(HR_PERMISSIONS.compensationManage));
+    assert.ok(!member.permissions.includes(HR_PERMISSIONS.compensationRead));
+    assert.ok(!member.permissions.includes(HR_PERMISSIONS.compensationManage));
     await expectHrError("FORBIDDEN", () =>
-      listCompensations(repository, ctx, employee.id),
+      listCompensations(repository, member, employee.id),
     );
   });
 

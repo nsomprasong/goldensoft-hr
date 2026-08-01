@@ -296,17 +296,20 @@ model Employee {
   workLocations     EmployeeWorkLocation[]
   assignmentHistory EmployeeAssignmentHistory[]
   shiftAssignments  ShiftAssignment[]
+  coveredShiftAssignments ShiftAssignment[] @relation("ShiftCoversFor")
   attendanceEvents  AttendanceEvent[]
   attendanceDays    AttendanceDay[]
   attendanceAdjustments AttendanceAdjustment[]
   leaveBalances     EmployeeLeaveBalance[]
   leaveRequests     LeaveRequest[]
+  leaveCoverRequests LeaveRequest[] @relation("LeaveCoverEmployee")
   overtimeRequests  OvertimeRequest[]
   recurringPayItems EmployeeRecurringPayItem[]
   payrollAdjustments PayrollAdjustment[]
   payrollRunEmployees PayrollRunEmployee[]
   payslips          Payslip[]
   notifications     Notification[]
+  documents         EmployeeDocument[]
 
   @@unique([organizationId, employeeCode])
   // PostgreSQL treats NULLs as distinct, so unlinked employees do not collide.
@@ -319,6 +322,29 @@ model Employee {
   @@index([departmentId])
   @@index([positionId])
   @@map("employees")
+  @@schema("hr")
+}
+
+/// Supporting files attached to an employee (ID card, contract, etc.).
+model EmployeeDocument {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  employeeId           String   @map("employee_id") @db.Uuid
+  title                String
+  category             String   @default("OTHER")
+  fileName             String   @map("file_name")
+  contentType          String   @map("content_type")
+  byteSize             Int      @map("byte_size")
+  storageKey           String   @map("storage_key")
+  uploadedByAuthUserId String?  @map("uploaded_by_auth_user_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, createdAt(sort: Desc)])
+  @@index([organizationId])
+  @@map("employee_documents")
   @@schema("hr")
 }
 
@@ -420,6 +446,7 @@ model Shift {
 
   shiftType ShiftType @relation(fields: [shiftTypeId], references: [id])
   assignments ShiftAssignment[]
+  periodShifts SchedulePeriodShift[]
 
   @@unique([organizationId, code])
   @@index([organizationId, isActive])
@@ -795,10 +822,29 @@ model SchedulePeriod {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   status SchedulePeriodStatus @relation(fields: [statusId], references: [id])
   shiftAssignments ShiftAssignment[]
+  periodShifts SchedulePeriodShift[]
   attendanceDays AttendanceDay[]
   @@unique([organizationId, code])
   @@index([organizationId, branchId, periodStart(sort: Desc), statusId])
   @@map("schedule_periods")
+  @@schema("hr")
+}
+
+/// Shifts enabled for a schedule period (before / alongside employee assignments).
+model SchedulePeriodShift {
+  id               String   @id @default(uuid()) @db.Uuid
+  schedulePeriodId String   @map("schedule_period_id") @db.Uuid
+  shiftId          String   @map("shift_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  schedulePeriod SchedulePeriod @relation(fields: [schedulePeriodId], references: [id], onDelete: Cascade)
+  shift          Shift          @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([schedulePeriodId, shiftId])
+  @@index([schedulePeriodId])
+  @@index([shiftId])
+  @@map("schedule_period_shifts")
   @@schema("hr")
 }
 
@@ -812,18 +858,22 @@ model ShiftAssignment {
   workLocationId String? @map("work_location_id") @db.Uuid
   isRestDay Boolean @default(false) @map("is_rest_day")
   isLeaveDay Boolean @default(false) @map("is_leave_day")
+  /// When set, this assignment is covering another employee's shift.
+  coversForEmployeeId String? @map("covers_for_employee_id") @db.Uuid
   notes String?
   createdByAuthUserId String? @map("created_by_auth_user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   schedulePeriod SchedulePeriod @relation(fields: [schedulePeriodId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  coversForEmployee Employee? @relation("ShiftCoversFor", fields: [coversForEmployeeId], references: [id], onDelete: SetNull)
   shift Shift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   workLocation WorkLocation? @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
   segments ShiftAssignmentSegment[]
   attendanceDays AttendanceDay[]
   @@unique([employeeId, workDate, sequenceNo])
   @@index([schedulePeriodId, workDate])
+  @@index([coversForEmployeeId])
   @@map("shift_assignments")
   @@schema("hr")
 }
@@ -952,6 +1002,8 @@ model LeavePolicy {
   id String @id @default(uuid()) @db.Uuid
   organizationId String @map("organization_id") @db.Uuid
   leaveTypeId String @map("leave_type_id") @db.Uuid
+  /// Null = organization default; set = branch override of that leave type.
+  branchId String? @map("branch_id") @db.Uuid
   code String
   name String
   annualEntitlement Decimal @default(0) @map("annual_entitlement") @db.Decimal(14, 2)
@@ -966,6 +1018,7 @@ model LeavePolicy {
   leaveType LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
   @@unique([organizationId, code])
   @@index([leaveTypeId, effectiveFrom(sort: Desc)])
+  @@index([organizationId, leaveTypeId, branchId, isActive])
   @@map("leave_policies")
   @@schema("hr")
 }
@@ -1023,6 +1076,8 @@ model LeaveRequest {
   requestedAmount Decimal @map("requested_amount") @db.Decimal(14, 2)
   reason String?
   attachmentUrl String? @map("attachment_url")
+  /// Employee assigned to cover shifts during this leave.
+  coverEmployeeId String? @map("cover_employee_id") @db.Uuid
   submittedAt DateTime? @map("submitted_at") @db.Timestamptz(6)
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   reviewedByAuthUserId String? @map("reviewed_by_auth_user_id") @db.Uuid
@@ -1030,6 +1085,7 @@ model LeaveRequest {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  coverEmployee Employee? @relation("LeaveCoverEmployee", fields: [coverEmployeeId], references: [id], onDelete: SetNull)
   leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
   status LeaveRequestStatus @relation(fields: [statusId], references: [id])
   startUnit LeaveUnit @relation("LeaveStartUnit", fields: [startUnitId], references: [id])
@@ -1037,6 +1093,7 @@ model LeaveRequest {
   balanceTransactions LeaveBalanceTransaction[]
   @@index([organizationId, statusId, createdAt(sort: Desc)])
   @@index([employeeId, startDate, endDate])
+  @@index([coverEmployeeId])
   @@map("leave_requests")
   @@schema("hr")
 }

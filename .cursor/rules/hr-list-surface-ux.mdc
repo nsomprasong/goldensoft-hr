@@ -1,0 +1,30 @@
+---
+description: HR list pages use cards + FAB + overlay create/edit (no cluttered inline forms)
+alwaysApply: true
+---
+
+# HR list surface UX
+
+When designing or changing list/management screens in `goldensoft-hr`:
+
+## Layout
+
+1. **Page head only** — title + one short description. No primary “เพิ่ม…” button in the header.
+2. **List as cards** — use `.hr-card-grid` + `.card.hr-entity-card` (not dense tables) for primary entity lists.
+3. **FAB `+`** — fixed bottom-right (`.hr-fab`) opens create. Hide FAB while an overlay is open.
+4. **Create/edit in overlay** — `.hr-overlay` + panel; Escape / backdrop / ปิด / ยกเลิก.
+5. **Card actions** — use **แก้ไข** / **ลบ** (or toggle) when needed. Employee list cards are an exception: no action buttons; open edit by clicking the employee name.
+
+## Card content
+
+- Lead with a human name; status badge when relevant.
+- Meta block with labeled facts only.
+- **Omit internal codes** on list cards (shift / schedule / location codes).
+- Schedule surfaces: **shift name only** (optional time range).
+- Sort time-based lists **newest first** (older toward the bottom).
+- **Schedule flow:** period (date range) → add shifts → open shift → assign unassigned employees only.
+
+## Reference
+
+- `locations-workspace.tsx`, `schedules-workspace.tsx`, `schedule-detail-workspace.tsx`
+- CSS: `.hr-fab`, `.hr-overlay*`, `.hr-card-grid`, `.hr-entity-card*`

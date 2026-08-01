@@ -141,7 +141,8 @@ async function main() {
     process.exit(1);
   }
 
-  process.env.SEED_MODE = process.env.SEED_MODE ?? "development-demo";
+  // This script is the demo seed — force mode even if .env has SEED_MODE=system.
+  process.env.SEED_MODE = "development-demo";
   const mode = resolveSeedMode();
   if (mode !== "development-demo") {
     console.error(

@@ -1,17 +1,15 @@
-import Link from "next/link";
-
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import DeleteSchedulePeriodButton from "@/components/hr/delete-schedule-period-button";
-import PublishScheduleButton from "@/components/hr/publish-schedule-button";
-import ScheduleComposer from "@/components/hr/schedule-composer";
+import ScheduleDetailWorkspace from "@/components/hr/schedule-detail-workspace";
 import HrShell from "@/components/hr-shell";
 import {
   getSchedulePeriod,
+  listOrganizationBranches,
   listScheduleComposerOptions,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
+import { formatThaiDateRange } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -22,49 +20,80 @@ export default async function ScheduleDetailPage({
 }) {
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.scheduleRead });
   const { id } = await params;
-  const [result, options] = await Promise.all([
+  const [result, options, branches] = await Promise.all([
     getSchedulePeriod(ctx, id),
-    listScheduleComposerOptions(ctx),
+    listScheduleComposerOptions(ctx, { shiftsOnly: true }),
+    listOrganizationBranches(ctx),
   ]);
   const period = result.data?.period ?? null;
-  const assignments = result.data?.assignments ?? [];
+  const periodShifts = result.data?.periodShifts ?? [];
   const canManage = canHr(ctx, HR_PERMISSIONS.scheduleManage);
   const canPublish = canHr(ctx, HR_PERMISSIONS.schedulePublish);
   const locked = period?.statusCode === "LOCKED";
   const unavailable = result.message || options.message;
+  const branchLabel =
+    (period?.branchId &&
+      branches.data.find((row) => row.id === period.branchId)?.label) ||
+    null;
+  const backHref = period?.branchId
+    ? `/hr/schedules?branchId=${encodeURIComponent(period.branchId)}`
+    : "/hr/schedules";
+
+  const statusClass =
+    period?.statusCode === "PUBLISHED"
+      ? "hr-schedule-hero-chip hr-schedule-hero-chip--ok"
+      : period?.statusCode === "LOCKED"
+        ? "hr-schedule-hero-chip hr-schedule-hero-chip--locked"
+        : "hr-schedule-hero-chip";
 
   return (
     <HrShell ctx={ctx} active="schedules">
-      <div className="hr-page-head">
-        <div>
-          <h1>{period?.name ?? "ตารางกะงาน"}</h1>
-          <p>
-            {period
-              ? `${formatThaiDateRange(period.periodStart, period.periodEnd)} · ${period.statusName}`
-              : `ช่วงตาราง ${id}`}
-          </p>
+      <header className="hr-schedule-hero">
+        <div className="hr-schedule-hero-top">
+          <a className="hr-schedule-hero-back" href={backHref} aria-label="กลับ">
+            ←
+          </a>
+          <div className="hr-schedule-hero-actions">
+            {canManage && period ? (
+              <DeleteSchedulePeriodButton
+                scheduleId={period.id}
+                name={period.name}
+                statusCode={period.statusCode}
+                disabled={!result.available}
+              />
+            ) : null}
+          </div>
         </div>
-        <span className="inline-actions">
-          <Link className="btn btn-sm" href="/hr/schedules">
-            กลับ
-          </Link>
-          {canPublish && period ? (
-            <PublishScheduleButton
-              scheduleId={period.id}
-              statusCode={period.statusCode}
-              disabled={!result.available}
-            />
-          ) : null}
-          {canManage && period ? (
-            <DeleteSchedulePeriodButton
-              scheduleId={period.id}
-              name={period.name}
-              statusCode={period.statusCode}
-              disabled={!result.available}
-            />
-          ) : null}
-        </span>
-      </div>
+
+        <h1 className="hr-schedule-hero-title">
+          {period
+            ? formatThaiDateRange(period.periodStart, period.periodEnd)
+            : "ตารางกะงาน"}
+        </h1>
+
+        {period ? (
+          <div className="hr-schedule-hero-chips" aria-label="ข้อมูลช่วงตาราง">
+            {branchLabel ? (
+              <span className="hr-schedule-hero-chip" title="สาขา">
+                <span aria-hidden="true">📍</span>
+                {branchLabel}
+              </span>
+            ) : null}
+            <span className={statusClass} title="สถานะ">
+              <span aria-hidden="true">
+                {period.statusCode === "PUBLISHED"
+                  ? "●"
+                  : period.statusCode === "LOCKED"
+                    ? "🔒"
+                    : "○"}
+              </span>
+              {period.statusName}
+            </span>
+          </div>
+        ) : (
+          <p className="muted">ช่วงตาราง {id}</p>
+        )}
+      </header>
 
       <DatabaseUnavailableNotice message={unavailable} />
 
@@ -72,57 +101,25 @@ export default async function ScheduleDetailPage({
         <p className="empty">ไม่พบตารางนี้</p>
       ) : null}
 
-      {period ? (
-        <section className="card">
-          <h2>รายการกะ ({assignments.length})</h2>
-          {assignments.length === 0 ? (
-            <p className="empty">ยังไม่มีรายการกะในตารางนี้</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>วันที่</th>
-                    <th>พนักงาน</th>
-                    <th>กะงาน</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assignments.map((row) => (
-                    <tr key={row.id}>
-                      <td className="nowrap">{formatThaiDate(row.workDate)}</td>
-                      <td>{row.employeeLabel}</td>
-                      <td>{row.shiftLabel}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+      {period && !period.branchId ? (
+        <p className="empty">ช่วงตารางนี้ยังไม่มีสาขา — สร้างใหม่โดยเลือกสาขาก่อน</p>
       ) : null}
 
-      {period && canManage && !locked ? (
-        <div style={{ marginTop: "1rem" }}>
-          <ScheduleComposer
-            mode="add"
-            scheduleId={period.id}
-            lockedPeriod={{
-              periodStart: period.periodStart,
-              periodEnd: period.periodEnd,
-              name: period.name,
-            }}
-            employees={options.data.employees}
-            shifts={options.data.shifts}
-            disabled={!result.available || !options.available}
-          />
-        </div>
-      ) : null}
-
-      {period && locked ? (
-        <p className="muted" style={{ marginTop: "1rem" }}>
-          ตารางถูกล็อกแล้ว แก้ไขหรือเพิ่มกะไม่ได้
-        </p>
+      {period && period.branchId ? (
+        <ScheduleDetailWorkspace
+          scheduleId={period.id}
+          periodName={period.name}
+          periodStart={period.periodStart}
+          periodEnd={period.periodEnd}
+          statusCode={period.statusCode}
+          statusName={period.statusName}
+          locked={locked}
+          canManage={canManage}
+          canPublish={canPublish}
+          periodShifts={periodShifts}
+          shifts={options.data.shifts}
+          available={result.available && options.available}
+        />
       ) : null}
     </HrShell>
   );

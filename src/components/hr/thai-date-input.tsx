@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import {
   formatThaiDate,
@@ -35,6 +35,7 @@ export default function ThaiDateInput({
   const autoId = useId();
   const textId = id ?? autoId;
   const pickerId = `${textId}-picker`;
+  const pickerRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(() =>
     value ? formatThaiDate(value, "") : "",
   );
@@ -58,6 +59,20 @@ export default function ThaiDateInput({
     }
     setText(formatThaiDate(iso, ""));
     onChange(iso);
+  }
+
+  function openPicker() {
+    const el = pickerRef.current;
+    if (!el || disabled) return;
+    try {
+      if (typeof el.showPicker === "function") {
+        el.showPicker();
+        return;
+      }
+    } catch {
+      // showPicker can throw if not triggered by a user gesture in some browsers.
+    }
+    el.click();
   }
 
   return (
@@ -84,20 +99,45 @@ export default function ThaiDateInput({
         aria-describedby={ariaDescribedBy}
       />
       {!readOnly ? (
-        <input
-          id={pickerId}
-          className="thai-date-picker"
-          type="date"
-          value={value}
-          tabIndex={-1}
-          aria-label="เลือกวันที่จากปฏิทิน"
-          disabled={disabled}
-          onChange={(e) => {
-            const iso = e.target.value;
-            setText(iso ? formatThaiDate(iso, "") : "");
-            onChange(iso);
-          }}
-        />
+        <>
+          <button
+            type="button"
+            className="thai-date-picker-btn"
+            onClick={openPicker}
+            disabled={disabled}
+            aria-label="เลือกวันที่จากปฏิทิน"
+            title="เลือกวันที่จากปฏิทิน"
+          >
+            <svg
+              className="thai-date-picker-icon"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 8H5v10h14V10ZM6 8h12V6H6v2Z"
+              />
+            </svg>
+          </button>
+          <input
+            ref={pickerRef}
+            id={pickerId}
+            className="thai-date-picker-native"
+            type="date"
+            value={value}
+            tabIndex={-1}
+            aria-hidden="true"
+            disabled={disabled}
+            onChange={(e) => {
+              const iso = e.target.value;
+              setText(iso ? formatThaiDate(iso, "") : "");
+              onChange(iso);
+            }}
+          />
+        </>
       ) : null}
     </div>
   );

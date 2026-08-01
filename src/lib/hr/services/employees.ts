@@ -1,9 +1,9 @@
 /**
  * Employee domain service.
  *
- * HR owns employee records only. It never creates Supabase auth users and an
- * employee is perfectly valid with no email and no Platform account — the link
- * to a platform user is an explicit, separately-permissioned action.
+ * HR owns employee records and never creates Supabase auth users. Linking a
+ * Platform account is a separate action. When a linked employee's home branch
+ * changes, HR syncs Platform membership scope so login lands on that branch.
  */
 import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
@@ -357,7 +357,31 @@ export async function updateEmployee(
     patch.notes = optionalText(data.notes, 2000);
   }
 
-  const after = await repository.employees.update(employeeId, patch);
+  let after = await repository.employees.update(employeeId, patch);
+
+  if (
+    after.branchId !== before.branchId &&
+    after.platformUserId
+  ) {
+    try {
+      const { syncPlatformHomeBranch } = await import(
+        "@/lib/platform/sync-home-branch"
+      );
+      await syncPlatformHomeBranch({
+        organizationId: ctx.organizationId,
+        platformUserId: after.platformUserId,
+        branchId: after.branchId,
+        actorAuthUserId: ctx.actorAuthUserId,
+      });
+    } catch (error) {
+      // Keep HR and Platform aligned: roll back the home-branch change.
+      after = await repository.employees.update(employeeId, {
+        branchId: before.branchId,
+        updatedBy: ctx.actorAuthUserId,
+      });
+      throw error;
+    }
+  }
 
   if (
     after.branchId !== before.branchId ||
@@ -485,6 +509,25 @@ export async function linkPlatformUser(
     authUserId: input.authUserId ?? null,
     updatedBy: ctx.actorAuthUserId,
   });
+
+  try {
+    const { syncPlatformHomeBranch } = await import(
+      "@/lib/platform/sync-home-branch"
+    );
+    await syncPlatformHomeBranch({
+      organizationId: ctx.organizationId,
+      platformUserId: after.platformUserId!,
+      branchId: after.branchId,
+      actorAuthUserId: ctx.actorAuthUserId,
+    });
+  } catch (error) {
+    await repository.employees.update(employeeId, {
+      platformUserId: before.platformUserId,
+      authUserId: before.authUserId,
+      updatedBy: ctx.actorAuthUserId,
+    });
+    throw error;
+  }
 
   await writeHrAudit(repository, {
     organizationId: ctx.organizationId,

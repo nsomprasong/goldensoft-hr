@@ -4,16 +4,24 @@
  * tables and must not silently discard operational fields.
  */
 import { prisma } from "@/lib/prisma";
-import { assertHrPermission } from "@/lib/hr/authorize";
+import { assertBranchInScope, assertHrPermission, hrCan } from "@/lib/hr/authorize";
 import { nextCodeFromList } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
 import { insideGeofence } from "@/lib/hr/geo";
 import { calculateAttendanceDay } from "@/lib/hr/attendance-calc";
 import { calculatePayroll } from "@/lib/hr/payroll-calc";
+import {
+  attendanceEventPhotoPublicPath,
+  decodePhotoBase64,
+  saveAttendancePhoto,
+} from "@/lib/hr/attendance-photos";
 import { findOverlappingAssignments } from "@/lib/hr/schedule-conflicts";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
-import type { HrServiceContext } from "@/lib/hr/services/shared";
-import { formatThaiDateRange } from "@/lib/hr/thai-date";
+import {
+  resolveBranchScope,
+  type HrServiceContext,
+} from "@/lib/hr/services/shared";
+import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
 import {
   fromBuddhistYear,
   hasBuddhistHolidayTable,
@@ -32,6 +40,30 @@ const db = prisma as Db;
 const date = (value: string | Date) => new Date(value);
 const actor = (ctx: HrServiceContext) => ctx.actorAuthUserId;
 
+function requireIsoDate(value: unknown, label: string): Date {
+  const raw = String(value ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    throw new HrError("VALIDATION_ERROR", { message: `กรุณาระบุ${label}` });
+  }
+  const parsed = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HrError("VALIDATION_ERROR", { message: `${label}ไม่ถูกต้อง` });
+  }
+  return parsed;
+}
+
+function requireDateTime(value: unknown, label: string): Date {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    throw new HrError("VALIDATION_ERROR", { message: `กรุณาระบุ${label}` });
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HrError("VALIDATION_ERROR", { message: `${label}ไม่ถูกต้อง` });
+  }
+  return parsed;
+}
+
 async function master(model: string, code: string) {
   const row = await db[model].findFirst({ where: { code, isActive: true } });
   if (!row) throw new HrError("NOT_FOUND", { message: `ไม่พบสถานะ ${code}` });
@@ -49,12 +81,42 @@ export async function listWorkLocations(ctx: HrServiceContext, branchId?: string
   assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
   return db.workLocation.findMany({ where: { organizationId: ctx.organizationId, ...(branchId ? { branchId } : {}) }, orderBy: { name: "asc" } });
 }
+function parseRequiredGpsCoord(
+  value: unknown,
+  kind: "latitude" | "longitude",
+): number {
+  if (value === "" || value == null) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องระบุพิกัด GPS ของสถานที่ทำงาน",
+    });
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: kind === "latitude" ? "ละติจูดไม่ถูกต้อง" : "ลองจิจูดไม่ถูกต้อง",
+    });
+  }
+  if (kind === "latitude" && (n < -90 || n > 90)) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ละติจูดต้องอยู่ระหว่าง -90 ถึง 90",
+    });
+  }
+  if (kind === "longitude" && (n < -180 || n > 180)) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ลองจิจูดต้องอยู่ระหว่าง -180 ถึง 180",
+    });
+  }
+  return n;
+}
+
 export async function createWorkLocation(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
   const branchId = input.branchId ?? ctx.branchId;
   if (!branchId) {
     throw new HrError("VALIDATION_ERROR", { message: "ต้องระบุสาขาของสถานที่ทำงาน" });
   }
+  const latitude = parseRequiredGpsCoord(input.latitude, "latitude");
+  const longitude = parseRequiredGpsCoord(input.longitude, "longitude");
   const existing = await db.workLocation.findMany({
     where: { organizationId: ctx.organizationId },
     select: { code: true },
@@ -65,22 +127,53 @@ export async function createWorkLocation(ctx: HrServiceContext, input: any) {
         existing.map((row: { code: string }) => row.code),
         "LOC-",
       );
+  const radius = Number(input.geofenceRadiusMeters);
   return db.workLocation.create({
     data: {
       organizationId: ctx.organizationId,
       branchId,
       code,
       name: String(input.name ?? "สถานที่ทำงาน").trim(),
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
-      geofenceRadiusMeters: input.geofenceRadiusMeters ?? 50,
-      timezone: input.timezone ?? "Asia/Bangkok",
+      latitude,
+      longitude,
+      geofenceRadiusMeters:
+        Number.isFinite(radius) && radius >= 1 ? Math.round(radius) : 50,
+      timezone: String(input.timezone ?? "").trim() || "Asia/Bangkok",
     },
   });
 }
 export async function updateWorkLocation(ctx: HrServiceContext, id: string, input: any) {
-  assertHrPermission(ctx, HR_PERMISSIONS.locationManage); await owned("workLocation", ctx, id);
-  return db.workLocation.update({ where: { id }, data: input });
+  assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
+  const current = await owned("workLocation", ctx, id);
+  const data: Record<string, unknown> = {};
+  if (input.name !== undefined) {
+    data.name = String(input.name ?? "").trim() || "สถานที่ทำงาน";
+  }
+  if (input.latitude !== undefined || input.longitude !== undefined) {
+    data.latitude = parseRequiredGpsCoord(
+      input.latitude !== undefined ? input.latitude : current.latitude,
+      "latitude",
+    );
+    data.longitude = parseRequiredGpsCoord(
+      input.longitude !== undefined ? input.longitude : current.longitude,
+      "longitude",
+    );
+  }
+  if (input.geofenceRadiusMeters !== undefined) {
+    const radius = Number(input.geofenceRadiusMeters);
+    data.geofenceRadiusMeters =
+      Number.isFinite(radius) && radius >= 1 ? Math.round(radius) : 50;
+  }
+  if (input.timezone !== undefined) {
+    data.timezone = String(input.timezone ?? "").trim() || "Asia/Bangkok";
+  }
+  if (input.branchId !== undefined && input.branchId) {
+    data.branchId = String(input.branchId);
+  }
+  if (input.isActive !== undefined) {
+    data.isActive = Boolean(input.isActive);
+  }
+  return db.workLocation.update({ where: { id }, data });
 }
 export async function assignEmployeeWorkLocation(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
@@ -328,37 +421,464 @@ export async function copyHolidayYear(ctx: HrServiceContext, input: { fromYear: 
   return preview;
 }
 
-export async function listSchedulePeriods(ctx: HrServiceContext) {
+export async function listSchedulePeriods(
+  ctx: HrServiceContext,
+  input: { branchId?: string | null } = {},
+) {
   assertHrPermission(ctx, [HR_PERMISSIONS.scheduleRead, HR_PERMISSIONS.scheduleManage]);
+  const requested = String(input.branchId ?? "").trim() || null;
+  const scope = resolveBranchScope(ctx, requested);
+  const where: {
+    organizationId: string;
+    branchId?: string | { in: string[] };
+  } = { organizationId: ctx.organizationId };
+  if (scope.branchId) {
+    where.branchId = scope.branchId;
+  } else if (scope.branchIds != null) {
+    where.branchId = { in: [...scope.branchIds] };
+  }
   return db.schedulePeriod.findMany({
-    where: { organizationId: ctx.organizationId },
+    where,
     include: { status: true },
     orderBy: [{ periodStart: "desc" }, { code: "asc" }],
   });
 }
 
+function requirePeriodBranchId(period: { branchId: string | null }): string {
+  if (!period.branchId) {
+    throw new HrError("VALIDATION_ERROR", {
+      message:
+        "ช่วงตารางนี้ยังไม่ได้ระบุสาขา — สร้างช่วงตารางใหม่โดยเลือกสาขาก่อน",
+    });
+  }
+  return period.branchId;
+}
+
+async function assertEmployeesBelongToBranch(
+  ctx: HrServiceContext,
+  employeeIds: string[],
+  branchId: string,
+) {
+  const unique = [...new Set(employeeIds.map(String).filter(Boolean))];
+  if (unique.length === 0) return;
+  const rows = await db.employee.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      id: { in: unique },
+    },
+    select: { id: true, branchId: true },
+  });
+  if (rows.length !== unique.length) {
+    throw new HrError("NOT_FOUND", { message: "ไม่พบพนักงานบางราย" });
+  }
+  if (
+    (rows as Array<{ branchId: string }>).some((row) => row.branchId !== branchId)
+  ) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "จัดตารางได้เฉพาะพนักงานในสาขาของช่วงตารางนี้",
+    });
+  }
+}
+
+async function ensurePeriodShiftLink(schedulePeriodId: string, shiftId: string) {
+  if (db.schedulePeriodShift?.upsert) {
+    await db.schedulePeriodShift.upsert({
+      where: {
+        schedulePeriodId_shiftId: { schedulePeriodId, shiftId },
+      },
+      create: { schedulePeriodId, shiftId },
+      update: {},
+    });
+    return;
+  }
+  await db.$executeRaw`
+    INSERT INTO hr.schedule_period_shifts (id, schedule_period_id, shift_id)
+    VALUES (gen_random_uuid(), ${schedulePeriodId}::uuid, ${shiftId}::uuid)
+    ON CONFLICT (schedule_period_id, shift_id) DO NOTHING
+  `;
+}
+
+async function loadPeriodShiftRows(schedulePeriodId: string) {
+  if (db.schedulePeriodShift?.findMany) {
+    return db.schedulePeriodShift.findMany({
+      where: { schedulePeriodId },
+      include: {
+        shift: {
+          select: {
+            id: true,
+            name: true,
+            startTime: true,
+            endTime: true,
+            crossesMidnight: true,
+            isActive: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+  const rows = await db.$queryRaw<
+    Array<{
+      id: string;
+      shift_id: string;
+      name: string;
+      start_time: Date;
+      end_time: Date;
+      crosses_midnight: boolean;
+      is_active: boolean;
+    }>
+  >`
+    SELECT
+      sps.id::text AS id,
+      sps.shift_id::text AS shift_id,
+      s.name,
+      s.start_time,
+      s.end_time,
+      s.crosses_midnight,
+      s.is_active
+    FROM hr.schedule_period_shifts sps
+    JOIN hr.shifts s ON s.id = sps.shift_id
+    WHERE sps.schedule_period_id = ${schedulePeriodId}::uuid
+    ORDER BY sps.created_at ASC
+  `;
+  return rows.map((row) => ({
+    id: row.id,
+    schedulePeriodId,
+    shiftId: row.shift_id,
+    shift: {
+      id: row.shift_id,
+      name: row.name,
+      startTime: row.start_time,
+      endTime: row.end_time,
+      crossesMidnight: row.crosses_midnight,
+      isActive: row.is_active,
+    },
+  }));
+}
+
+/** Lean period load: header + shifts + headcounts (no per-day assignment dump). */
 export async function getSchedulePeriod(ctx: HrServiceContext, id: string) {
   assertHrPermission(ctx, [HR_PERMISSIONS.scheduleRead, HR_PERMISSIONS.scheduleManage]);
   const row = await db.schedulePeriod.findFirst({
     where: { id, organizationId: ctx.organizationId },
-    include: {
-      status: true,
-      shiftAssignments: {
-        include: {
-          employee: { select: { id: true, employeeCode: true, firstNameTh: true, lastNameTh: true } },
-          shift: { select: { id: true, code: true, name: true } },
-        },
-        orderBy: [{ workDate: "asc" }, { sequenceNo: "asc" }],
-        take: 200,
-      },
-    },
+    include: { status: true },
   });
   if (!row) throw new HrError("NOT_FOUND");
-  return row;
+  if (row.branchId) assertBranchInScope(ctx, row.branchId);
+
+  let periodShifts: unknown[] = [];
+  try {
+    periodShifts = await loadPeriodShiftRows(id);
+  } catch {
+    periodShifts = [];
+  }
+
+  let employeeCountByShift = new Map<string, number>();
+  let assignmentCount = 0;
+  try {
+    const [distinctRows, total] = await Promise.all([
+      db.$queryRaw<Array<{ shift_id: string; employee_count: number }>>`
+        SELECT shift_id::text AS shift_id, COUNT(DISTINCT employee_id)::int AS employee_count
+        FROM hr.shift_assignments
+        WHERE schedule_period_id = ${id}::uuid
+          AND shift_id IS NOT NULL
+        GROUP BY shift_id
+      `,
+      db.shiftAssignment.count({ where: { schedulePeriodId: id } }),
+    ]);
+    assignmentCount = total;
+    employeeCountByShift = new Map(
+      distinctRows.map((c) => [c.shift_id, Number(c.employee_count)]),
+    );
+  } catch {
+    assignmentCount = 0;
+  }
+
+  return {
+    ...row,
+    assignmentCount,
+    periodShifts: (periodShifts as Array<{ shiftId: string }>).map((link) => ({
+      ...link,
+      employeeCount: employeeCountByShift.get(link.shiftId) ?? 0,
+    })),
+    // Keep empty for API compatibility; shift board uses getScheduleShiftBoard.
+    shiftAssignments: [],
+  };
+}
+
+/** Shift page board: people on this shift + employees still free in the period. */
+export async function getScheduleShiftBoard(
+  ctx: HrServiceContext,
+  scheduleId: string,
+  shiftId: string,
+) {
+  assertHrPermission(ctx, [HR_PERMISSIONS.scheduleRead, HR_PERMISSIONS.scheduleManage]);
+  const period = await db.schedulePeriod.findFirst({
+    where: { id: scheduleId, organizationId: ctx.organizationId },
+    include: { status: true },
+  });
+  if (!period) throw new HrError("NOT_FOUND");
+  const periodBranchId = requirePeriodBranchId(period);
+  assertBranchInScope(ctx, periodBranchId);
+
+  const shift = await db.shift.findFirst({
+    where: { id: shiftId, organizationId: ctx.organizationId },
+    select: {
+      id: true,
+      name: true,
+      startTime: true,
+      endTime: true,
+    },
+  });
+  if (!shift) throw new HrError("NOT_FOUND", { message: "ไม่พบกะงาน" });
+
+  // Prefer linked period-shift; allow board if assignments already exist for this shift.
+  let linked = false;
+  try {
+    if (db.schedulePeriodShift?.findFirst) {
+      linked = Boolean(
+        await db.schedulePeriodShift.findFirst({
+          where: { schedulePeriodId: scheduleId, shiftId },
+          select: { id: true },
+        }),
+      );
+    } else {
+      const rows = await db.$queryRaw<Array<{ id: string }>>`
+        SELECT id::text AS id FROM hr.schedule_period_shifts
+        WHERE schedule_period_id = ${scheduleId}::uuid
+          AND shift_id = ${shiftId}::uuid
+        LIMIT 1
+      `;
+      linked = rows.length > 0;
+    }
+  } catch {
+    linked = false;
+  }
+
+  const [assignmentDates, assignedInPeriod, employees, periodShiftRows] =
+    await Promise.all([
+      db.shiftAssignment.findMany({
+        where: { schedulePeriodId: scheduleId, shiftId },
+        select: {
+          employeeId: true,
+          workDate: true,
+          isLeaveDay: true,
+          notes: true,
+          coversForEmployee: {
+            select: {
+              id: true,
+              displayName: true,
+              firstNameTh: true,
+              lastNameTh: true,
+            },
+          },
+          employee: {
+            select: {
+              id: true,
+              firstNameTh: true,
+              lastNameTh: true,
+              displayName: true,
+            },
+          },
+        },
+        orderBy: { workDate: "asc" },
+      }),
+      db.shiftAssignment.findMany({
+        where: { schedulePeriodId: scheduleId },
+        select: { employeeId: true },
+        distinct: ["employeeId"],
+      }),
+      db.employee.findMany({
+        where: {
+          organizationId: ctx.organizationId,
+          branchId: periodBranchId,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          firstNameTh: true,
+          lastNameTh: true,
+        },
+        orderBy: [{ firstNameTh: "asc" }, { lastNameTh: "asc" }],
+        take: 500,
+      }),
+      loadPeriodShiftRows(scheduleId).catch(() => []),
+    ]);
+
+  type BoardRow = {
+    employeeId: string;
+    workDate: Date;
+    isLeaveDay: boolean;
+    notes: string | null;
+    coversForEmployee: {
+      id: string;
+      displayName: string;
+      firstNameTh: string;
+      lastNameTh: string;
+    } | null;
+    employee: {
+      id: string;
+      firstNameTh: string;
+      lastNameTh: string;
+      displayName: string;
+    };
+  };
+
+  const byEmployee = new Map<
+    string,
+    {
+      label: string;
+      workDates: string[];
+      /** Person being covered → cover duty dates */
+      coverDatesByName: Map<string, string[]>;
+      /** Previous shift name → dates moved into this shift */
+      fromShiftDatesByName: Map<string, string[]>;
+      /** Original dates before date-move */
+      movedFromDates: string[];
+      leaveDates: number;
+    }
+  >();
+  for (const row of assignmentDates as BoardRow[]) {
+    const name =
+      row.employee.displayName?.trim() ||
+      `${row.employee.firstNameTh} ${row.employee.lastNameTh}`.trim();
+    const entry = byEmployee.get(row.employeeId) ?? {
+      label: name,
+      workDates: [],
+      coverDatesByName: new Map<string, string[]>(),
+      fromShiftDatesByName: new Map<string, string[]>(),
+      movedFromDates: [],
+      leaveDates: 0,
+    };
+    const iso = row.workDate.toISOString().slice(0, 10);
+    if (!row.isLeaveDay) {
+      entry.workDates.push(iso);
+    } else {
+      entry.leaveDates += 1;
+    }
+    if (row.coversForEmployee) {
+      const coverName =
+        row.coversForEmployee.displayName?.trim() ||
+        `${row.coversForEmployee.firstNameTh} ${row.coversForEmployee.lastNameTh}`.trim();
+      if (coverName) {
+        const dates = entry.coverDatesByName.get(coverName) ?? [];
+        dates.push(iso);
+        entry.coverDatesByName.set(coverName, dates);
+      }
+    }
+    const fromShiftName = parseFromShiftName(row.notes);
+    if (fromShiftName) {
+      const dates = entry.fromShiftDatesByName.get(fromShiftName) ?? [];
+      dates.push(iso);
+      entry.fromShiftDatesByName.set(fromShiftName, dates);
+    }
+    const fromDates = parseFromDates(row.notes);
+    if (fromDates.length > 0) {
+      entry.movedFromDates.push(...fromDates);
+    }
+    byEmployee.set(row.employeeId, entry);
+  }
+
+  const onShift = [...byEmployee.entries()]
+    .filter(([, entry]) => entry.workDates.length > 0 || entry.leaveDates > 0)
+    .map(([employeeId, entry]) => {
+      const coverParts = [...entry.coverDatesByName.entries()].map(
+        ([coverName, dates]) => {
+          const label = formatDutyDatesLabel(dates);
+          return label ? `แทน ${coverName} · ${label}` : `แทน ${coverName}`;
+        },
+      );
+      const moveParts = [
+        ...[...entry.fromShiftDatesByName.entries()].map(
+          ([shiftName, dates]) => {
+            const label = formatDutyDatesLabel(dates);
+            return label
+              ? `ย้ายจาก ${shiftName} · ${label}`
+              : `ย้ายจาก ${shiftName}`;
+          },
+        ),
+        ...(entry.movedFromDates.length > 0
+          ? [
+              `ย้ายมาจาก ${formatDutyDatesLabel(entry.movedFromDates)}`,
+            ]
+          : []),
+      ];
+      const coverNote = coverParts.length > 0 ? coverParts.join(" · ") : null;
+      const moveNote = moveParts.length > 0 ? moveParts.join(" · ") : null;
+      const leaveNote =
+        entry.workDates.length === 0 && entry.leaveDates > 0 ? "ลา" : null;
+      return {
+        employeeId,
+        label: entry.label,
+        dayCount: entry.workDates.length || entry.leaveDates,
+        workDates: entry.workDates,
+        coverNote,
+        moveNote,
+        leaveNote,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  if (!linked && onShift.length === 0) {
+    throw new HrError("NOT_FOUND", { message: "ยังไม่ได้เพิ่มกะนี้ในช่วงตาราง" });
+  }
+
+  const assignedIds = new Set(
+    assignedInPeriod.map((r: { employeeId: string }) => r.employeeId),
+  );
+  const unassigned = employees
+    .filter((e: { id: string }) => !assignedIds.has(e.id))
+    .map((e: { id: string; firstNameTh: string; lastNameTh: string }) => ({
+      id: e.id,
+      label: `${e.firstNameTh} ${e.lastNameTh}`.trim(),
+    }));
+
+  const employeeOptions = employees.map(
+    (e: { id: string; firstNameTh: string; lastNameTh: string }) => ({
+      id: e.id,
+      label: `${e.firstNameTh} ${e.lastNameTh}`.trim(),
+    }),
+  );
+
+  const otherShifts = (
+    periodShiftRows as Array<{
+      shiftId: string;
+      shift: {
+        id: string;
+        name: string;
+        startTime: Date;
+        endTime: Date;
+      };
+    }>
+  )
+    .filter((link) => link.shiftId !== shiftId)
+    .map((link) => {
+      const start = formatShiftClock(link.shift.startTime);
+      const end = formatShiftClock(link.shift.endTime);
+      return {
+        id: link.shiftId,
+        label: `${link.shift.name}${start && end ? ` · ${start}–${end}` : ""}`,
+      };
+    });
+
+  return {
+    period,
+    shift,
+    onShift,
+    unassigned,
+    otherShifts,
+    employeeOptions,
+  };
 }
 
 export async function createSchedulePeriod(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, HR_PERMISSIONS.scheduleManage);
+  const branchId = String(input.branchId ?? "").trim() || ctx.branchId || null;
+  if (!branchId) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องเลือกสาขาก่อนสร้างช่วงตาราง",
+    });
+  }
+  assertBranchInScope(ctx, branchId);
   const draft = await master("schedulePeriodStatus", "DRAFT");
   const existing = await db.schedulePeriod.findMany({
     where: { organizationId: ctx.organizationId },
@@ -383,7 +903,7 @@ export async function createSchedulePeriod(ctx: HrServiceContext, input: any) {
   return db.schedulePeriod.create({
     data: {
       organizationId: ctx.organizationId,
-      branchId: input.branchId ?? ctx.branchId ?? null,
+      branchId,
       code,
       name,
       periodStart,
@@ -448,16 +968,260 @@ export async function deleteSchedulePeriod(ctx: HrServiceContext, id: string) {
   });
   mutable(status?.code ?? "DRAFT");
 
-  await db.$transaction([
-    db.shiftAssignment.deleteMany({ where: { schedulePeriodId: id } }),
-    db.schedulePeriod.delete({ where: { id } }),
-  ]);
+  await db.shiftAssignment.deleteMany({ where: { schedulePeriodId: id } });
+  try {
+    await db.schedulePeriodShift.deleteMany({ where: { schedulePeriodId: id } });
+  } catch {
+    // Table may not exist until migration 0003 is applied.
+  }
+  await db.schedulePeriod.delete({ where: { id } });
   return { ok: true, id };
+}
+
+function normalizeWorkDates(input: { workDates?: unknown; workDate?: unknown }): string[] {
+  const raw = Array.isArray(input.workDates)
+    ? input.workDates
+    : input.workDate
+      ? [input.workDate]
+      : [];
+  return [...new Set(raw.map((d) => String(d).slice(0, 10)).filter(Boolean))].sort();
+}
+
+async function assertShiftInOrg(ctx: HrServiceContext, shiftId: string) {
+  const shift = await db.shift.findFirst({
+    where: { id: shiftId, organizationId: ctx.organizationId },
+  });
+  if (!shift) throw new HrError("NOT_FOUND", { message: "ไม่พบกะงาน" });
+  return shift;
+}
+
+async function assertEmployeeInOrg(ctx: HrServiceContext, employeeId: string) {
+  const employee = await db.employee.findFirst({
+    where: { id: employeeId, organizationId: ctx.organizationId, isActive: true },
+    select: { id: true },
+  });
+  if (!employee) throw new HrError("NOT_FOUND", { message: "ไม่พบพนักงาน" });
+  return employee;
+}
+
+const NOTE_FROM_SHIFT = "GS:fromShift";
+const NOTE_FROM_DATES = "GS:fromDates";
+
+function encodeFromShiftNote(shiftName: string): string {
+  return `${NOTE_FROM_SHIFT}|name:${shiftName.replace(/[\n|]/g, " ").trim() || "กะอื่น"}`;
+}
+
+function mergeScheduleNotes(
+  existing: string | null | undefined,
+  nextLine: string,
+): string {
+  const prefix = nextLine.split("|")[0] ?? nextLine;
+  const kept = String(existing ?? "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith(prefix));
+  kept.push(nextLine);
+  return kept.join("\n");
+}
+
+function parseFromShiftName(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const match = new RegExp(
+    `(?:^|\\n)${NOTE_FROM_SHIFT}\\|name:([^\\n]+)`,
+  ).exec(notes);
+  return match?.[1]?.trim() || null;
+}
+
+function parseFromDates(notes: string | null | undefined): string[] {
+  if (!notes) return [];
+  const match = new RegExp(
+    `(?:^|\\n)${NOTE_FROM_DATES}\\|([^\\n]+)`,
+  ).exec(notes);
+  if (!match?.[1]) return [];
+  return match[1]
+    .split(",")
+    .map((d) => d.trim())
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+}
+
+function formatDutyDatesLabel(dates: string[]): string {
+  const sorted = [...new Set(dates)].sort();
+  if (sorted.length === 0) return "";
+  if (sorted.length === 1) return formatThaiDate(sorted[0]!);
+  return `${formatThaiDateRange(sorted[0], sorted[sorted.length - 1])} (${sorted.length} วัน)`;
+}
+
+/** เปลี่ยนกะ / ย้ายไปกะอื่น ในวันที่เลือก */
+async function changeShiftOnDates(
+  ctx: HrServiceContext,
+  schedulePeriodId: string,
+  input: any,
+) {
+  const employeeId = String(input.employeeId ?? "");
+  const fromShiftId = String(input.fromShiftId ?? input.shiftId ?? "");
+  const toShiftId = String(input.toShiftId ?? "");
+  const workDates = normalizeWorkDates(input);
+  if (!employeeId || !fromShiftId || !toShiftId) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องระบุพนักงาน กะเดิม และกะใหม่",
+    });
+  }
+  if (fromShiftId === toShiftId) {
+    throw new HrError("VALIDATION_ERROR", { message: "กะใหม่ต้องต่างจากกะเดิม" });
+  }
+  if (workDates.length === 0) {
+    throw new HrError("VALIDATION_ERROR", { message: "เลือกอย่างน้อย 1 วัน" });
+  }
+  await assertEmployeeInOrg(ctx, employeeId);
+  await assertShiftInOrg(ctx, toShiftId);
+  const period = await owned("schedulePeriod", ctx, schedulePeriodId);
+  const periodBranchId = requirePeriodBranchId(period);
+  assertBranchInScope(ctx, periodBranchId);
+  await assertEmployeesBelongToBranch(ctx, [employeeId], periodBranchId);
+  await ensurePeriodShiftLink(schedulePeriodId, toShiftId);
+
+  const dateValues = workDates.map((d) => date(d));
+  const [existing, fromShift] = await Promise.all([
+    db.shiftAssignment.findMany({
+      where: {
+        schedulePeriodId,
+        employeeId,
+        shiftId: fromShiftId,
+        workDate: { in: dateValues },
+      },
+      select: { id: true, notes: true },
+    }),
+    db.shift.findFirst({
+      where: { id: fromShiftId, organizationId: ctx.organizationId },
+      select: { name: true },
+    }),
+  ]);
+  if (existing.length === 0) {
+    throw new HrError("NOT_FOUND", {
+      message: "ไม่พบกะของพนักงานในวันที่เลือก",
+    });
+  }
+
+  const fromShiftNote = encodeFromShiftNote(fromShift?.name ?? "กะอื่น");
+  await db.$transaction(
+    existing.map((row: { id: string; notes: string | null }) =>
+      db.shiftAssignment.update({
+        where: { id: row.id },
+        data: {
+          shiftId: toShiftId,
+          notes: mergeScheduleNotes(row.notes, fromShiftNote),
+        },
+      }),
+    ),
+  );
+  return { ok: true, count: existing.length, action: "changeShift" };
+}
+
+/** คนอื่นทำงานแทนในวันที่เลือก (กะเดิม) */
+async function substituteOnDates(
+  ctx: HrServiceContext,
+  schedulePeriodId: string,
+  input: any,
+) {
+  const employeeId = String(input.employeeId ?? "");
+  const substituteEmployeeId = String(input.substituteEmployeeId ?? "");
+  const shiftId = String(input.shiftId ?? "");
+  const workDates = normalizeWorkDates(input);
+  if (!employeeId || !substituteEmployeeId || !shiftId) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องระบุพนักงานเดิม คนทำงานแทน และกะ",
+    });
+  }
+  if (employeeId === substituteEmployeeId) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "คนทำงานแทนต้องเป็นคนละคน",
+    });
+  }
+  if (workDates.length === 0) {
+    throw new HrError("VALIDATION_ERROR", { message: "เลือกอย่างน้อย 1 วัน" });
+  }
+  await assertEmployeeInOrg(ctx, employeeId);
+  await assertEmployeeInOrg(ctx, substituteEmployeeId);
+  await assertShiftInOrg(ctx, shiftId);
+  const period = await owned("schedulePeriod", ctx, schedulePeriodId);
+  const periodBranchId = requirePeriodBranchId(period);
+  assertBranchInScope(ctx, periodBranchId);
+  await assertEmployeesBelongToBranch(
+    ctx,
+    [employeeId, substituteEmployeeId],
+    periodBranchId,
+  );
+
+  const dateValues = workDates.map((d) => date(d));
+  const sourceRows = await db.shiftAssignment.findMany({
+    where: {
+      schedulePeriodId,
+      employeeId,
+      shiftId,
+      workDate: { in: dateValues },
+    },
+  });
+  if (sourceRows.length === 0) {
+    throw new HrError("NOT_FOUND", {
+      message: "ไม่พบกะของพนักงานในวันที่เลือก",
+    });
+  }
+
+  // Auto-move: clear the substitute's existing assignments on those days
+  // so users don't need to cancel their prior shift first.
+  await db.$transaction(async (tx) => {
+    await tx.shiftAssignment.deleteMany({
+      where: {
+        schedulePeriodId,
+        employeeId,
+        shiftId,
+        workDate: { in: dateValues },
+      },
+    });
+    await tx.shiftAssignment.deleteMany({
+      where: {
+        employeeId: substituteEmployeeId,
+        workDate: { in: dateValues },
+      },
+    });
+    await tx.shiftAssignment.createMany({
+      data: sourceRows.map(
+        (row: {
+          workDate: Date;
+          sequenceNo: number;
+          workLocationId: string | null;
+          isRestDay: boolean;
+          isLeaveDay: boolean;
+          notes: string | null;
+        }) => ({
+          schedulePeriodId,
+          employeeId: substituteEmployeeId,
+          shiftId,
+          workDate: row.workDate,
+          sequenceNo: row.sequenceNo,
+          workLocationId: row.workLocationId,
+          isRestDay: row.isRestDay,
+          isLeaveDay: false,
+          coversForEmployeeId: employeeId,
+          notes: row.notes,
+          createdByAuthUserId: actor(ctx),
+        }),
+      ),
+      skipDuplicates: true,
+    });
+  });
+
+  return {
+    ok: true,
+    count: sourceRows.length,
+    action: "substitute",
+  };
 }
 
 export async function scheduleAction(ctx: HrServiceContext, id: string, input: any) {
   const period = await owned("schedulePeriod", ctx, id); const status = await db.schedulePeriodStatus.findUnique({ where: { id: period.statusId } });
   mutable(status?.code ?? "DRAFT"); assertConfirmed(input.confirm);
+  if (period.branchId) assertBranchInScope(ctx, period.branchId);
   if (input.action === "publish" || input.action === "unpublish" || input.action === "lock") {
     assertHrPermission(ctx, input.action === "publish" ? HR_PERMISSIONS.schedulePublish : HR_PERMISSIONS.scheduleManage);
     const code = input.action === "publish" ? "PUBLISHED" : input.action === "lock" ? "LOCKED" : "DRAFT";
@@ -465,48 +1229,2060 @@ export async function scheduleAction(ctx: HrServiceContext, id: string, input: a
     return db.schedulePeriod.update({ where: { id }, data: { statusId: next.id, publishedAt: code === "PUBLISHED" ? new Date() : null, publishedByAuthUserId: code === "PUBLISHED" ? actor(ctx) : null, lockedAt: code === "LOCKED" ? new Date() : null, lockedByAuthUserId: code === "LOCKED" ? actor(ctx) : null } });
   }
   assertHrPermission(ctx, HR_PERMISSIONS.scheduleManage);
-  if (input.action === "delete") return db.shiftAssignment.deleteMany({ where: { schedulePeriodId: id, ...(input.assignmentId ? { id: input.assignmentId } : { employeeId: input.employeeId, workDate: date(input.workDate) }) } });
-  const employees: string[] = input.employeeIds ?? [input.employeeId];
+
+  if (input.action === "addShift") {
+    const shiftId = String(input.shiftId ?? "");
+    if (!shiftId) {
+      throw new HrError("VALIDATION_ERROR", { message: "ต้องเลือกกะ" });
+    }
+    const shift = await db.shift.findFirst({
+      where: { id: shiftId, organizationId: ctx.organizationId, isActive: true },
+    });
+    if (!shift) throw new HrError("NOT_FOUND", { message: "ไม่พบกะงาน" });
+    await ensurePeriodShiftLink(id, shiftId);
+    return { ok: true, shiftId };
+  }
+
+  if (input.action === "removeShift") {
+    const shiftId = String(input.shiftId ?? "");
+    if (!shiftId) {
+      throw new HrError("VALIDATION_ERROR", { message: "ต้องระบุกะ" });
+    }
+    await db.shiftAssignment.deleteMany({
+      where: { schedulePeriodId: id, shiftId },
+    });
+    if (db.schedulePeriodShift?.deleteMany) {
+      await db.schedulePeriodShift.deleteMany({
+        where: { schedulePeriodId: id, shiftId },
+      });
+    } else {
+      await db.$executeRaw`
+        DELETE FROM hr.schedule_period_shifts
+        WHERE schedule_period_id = ${id}::uuid
+          AND shift_id = ${shiftId}::uuid
+      `;
+    }
+    return { ok: true, shiftId };
+  }
+
+  if (input.action === "delete") {
+    const where: Record<string, unknown> = { schedulePeriodId: id };
+    if (input.assignmentId) where.id = input.assignmentId;
+    if (input.employeeId) where.employeeId = input.employeeId;
+    if (input.shiftId) where.shiftId = input.shiftId;
+    if (input.workDate) where.workDate = date(input.workDate);
+    if (Array.isArray(input.workDates) && input.workDates.length > 0) {
+      where.workDate = { in: input.workDates.map((d: string) => date(d)) };
+    }
+    if (
+      !input.assignmentId &&
+      !input.employeeId &&
+      !input.shiftId &&
+      !input.workDate &&
+      !(Array.isArray(input.workDates) && input.workDates.length > 0)
+    ) {
+      throw new HrError("VALIDATION_ERROR", {
+        message: "ต้องระบุรายการที่จะลบ",
+      });
+    }
+    return db.shiftAssignment.deleteMany({ where });
+  }
+
+  if (input.action === "changeShift") {
+    return changeShiftOnDates(ctx, id, input);
+  }
+  if (input.action === "substitute") {
+    return substituteOnDates(ctx, id, input);
+  }
+  if (input.action === "moveDates") {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ฟังก์ชันย้ายวันถูกเลิกใช้แล้ว — ใช้ย้ายไปกะอื่นแทน",
+    });
+  }
+
+  const employees: string[] = (input.employeeIds ?? [input.employeeId]).filter(
+    Boolean,
+  );
   const dates: string[] = input.workDates ?? [input.workDate];
-  const assignments = employees.flatMap(employeeId => dates.map(workDate => ({ schedulePeriodId: id, employeeId, workDate: date(workDate), shiftId: input.shiftId ?? null, workLocationId: input.workLocationId ?? null, isRestDay: !!input.isRestDay, isLeaveDay: !!input.isLeaveDay, createdByAuthUserId: actor(ctx) })));
-  const existing = await db.shiftAssignment.findMany({ where: { employeeId: { in: employees }, workDate: { gte: period.periodStart, lte: period.periodEnd } }, include: { shift: true } });
-  const conflicts = findOverlappingAssignments(existing.filter((x: any) => x.shift).map((x: any) => ({ id: x.id, workDate: x.workDate.toISOString().slice(0, 10), startTime: x.shift.startTime, endTime: x.shift.endTime, crossesMidnight: x.shift.crossesMidnight })));
-  if (conflicts.length) throw new HrError("INVALID_SHIFT", { details: { conflicts } });
-  await db.shiftAssignment.createMany({ data: assignments, skipDuplicates: true }); return { count: assignments.length };
+  const shiftId = input.shiftId ?? null;
+  const periodBranchId = requirePeriodBranchId(period);
+  await assertEmployeesBelongToBranch(ctx, employees, periodBranchId);
+  if (shiftId) {
+    const shift = await db.shift.findFirst({
+      where: { id: shiftId, organizationId: ctx.organizationId },
+    });
+    if (!shift) throw new HrError("NOT_FOUND", { message: "ไม่พบกะงาน" });
+    await ensurePeriodShiftLink(id, shiftId);
+  }
+  const assignments = employees.flatMap((employeeId) =>
+    dates.map((workDate) => ({
+      schedulePeriodId: id,
+      employeeId,
+      workDate: date(workDate),
+      shiftId,
+      workLocationId: input.workLocationId ?? null,
+      isRestDay: !!input.isRestDay,
+      isLeaveDay: !!input.isLeaveDay,
+      createdByAuthUserId: actor(ctx),
+    })),
+  );
+  const workDateValues = dates.map((d) => date(d));
+  const existing = await db.shiftAssignment.findMany({
+    where: {
+      employeeId: { in: employees },
+      workDate: { in: workDateValues },
+    },
+    include: { shift: true },
+  });
+  const conflicts = findOverlappingAssignments(
+    existing
+      .filter((x: { shift: unknown }) => x.shift)
+      .map((x: any) => ({
+        id: x.id,
+        workDate: x.workDate.toISOString().slice(0, 10),
+        startTime: x.shift.startTime,
+        endTime: x.shift.endTime,
+        crossesMidnight: x.shift.crossesMidnight,
+      })),
+  );
+  if (conflicts.length) {
+    throw new HrError("INVALID_SHIFT", { details: { conflicts } });
+  }
+  const created = await db.shiftAssignment.createMany({
+    data: assignments,
+    skipDuplicates: true,
+  });
+  if (created.count === 0) {
+    throw new HrError("VALIDATION_ERROR", {
+      message:
+        "ไม่สามารถเพิ่มได้ — พนักงานเหล่านี้อาจถูกจัดวันซ้ำแล้วในช่วงอื่น",
+    });
+  }
+  return { count: created.count, requested: assignments.length };
+}
+
+function bangkokDayBounds(at = new Date()) {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+  return {
+    day,
+    start: new Date(`${day}T00:00:00+07:00`),
+    end: new Date(`${day}T23:59:59.999+07:00`),
+  };
+}
+
+async function resolvePrimaryWorkLocation(employeeId: string) {
+  const { day } = bangkokDayBounds();
+  const asOf = date(day);
+  const link = await db.employeeWorkLocation.findFirst({
+    where: {
+      employeeId,
+      isPrimary: true,
+      effectiveFrom: { lte: asOf },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
+    },
+    include: {
+      workLocation: true,
+    },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  if (link?.workLocation?.isActive) return link.workLocation;
+  const fallback = await db.employeeWorkLocation.findFirst({
+    where: {
+      employeeId,
+      effectiveFrom: { lte: asOf },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
+      workLocation: { isActive: true },
+    },
+    include: { workLocation: true },
+    orderBy: [{ isPrimary: "desc" }, { effectiveFrom: "desc" }],
+  });
+  return fallback?.workLocation ?? null;
+}
+
+function serializeWorkLocation(location: {
+  id: string;
+  code: string;
+  name: string;
+  latitude: { toString(): string } | number | null;
+  longitude: { toString(): string } | number | null;
+  geofenceRadiusMeters: number;
+} | null) {
+  if (!location) return null;
+  return {
+    id: location.id,
+    code: location.code,
+    name: location.name,
+    latitude: location.latitude == null ? null : Number(location.latitude),
+    longitude: location.longitude == null ? null : Number(location.longitude),
+    geofenceRadiusMeters: location.geofenceRadiusMeters,
+  };
+}
+
+function wallClockMinutes(time: Date): number {
+  return time.getUTCHours() * 60 + time.getUTCMinutes();
+}
+
+function bangkokScheduleInstant(workDate: string, minutesFromMidnight: number): number {
+  return (
+    new Date(`${workDate}T00:00:00+07:00`).getTime() +
+    minutesFromMidnight * 60_000
+  );
+}
+
+function computeLateEarlyMinutes(input: {
+  workDate: string;
+  clockInAt: Date | null;
+  clockOutAt: Date | null;
+  startTime?: Date | null;
+  endTime?: Date | null;
+  graceLateMinutes?: number | null;
+  graceEarlyLeaveMinutes?: number | null;
+  crossesMidnight?: boolean | null;
+}): { lateMinutes: number; earlyLeaveMinutes: number } {
+  if (!input.clockInAt || !input.startTime) {
+    return { lateMinutes: 0, earlyLeaveMinutes: 0 };
+  }
+  const startMin = wallClockMinutes(input.startTime);
+  const endMin = input.endTime ? wallClockMinutes(input.endTime) : startMin;
+  const crosses =
+    input.crossesMidnight ?? endMin <= startMin;
+  const span = crosses
+    ? 24 * 60 - startMin + endMin
+    : Math.max(0, endMin - startMin);
+  const scheduledStart = bangkokScheduleInstant(input.workDate, startMin);
+  const scheduledEnd = scheduledStart + span * 60_000;
+  const lateMinutes = Math.max(
+    0,
+    Math.floor((input.clockInAt.getTime() - scheduledStart) / 60_000) -
+      (input.graceLateMinutes ?? 0),
+  );
+  const earlyLeaveMinutes = input.clockOutAt
+    ? Math.max(
+        0,
+        Math.floor((scheduledEnd - input.clockOutAt.getTime()) / 60_000) -
+          (input.graceEarlyLeaveMinutes ?? 0),
+      )
+    : 0;
+  return { lateMinutes, earlyLeaveMinutes };
+}
+
+function formatMinutesLabel(minutes: number | null | undefined): string {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return "—";
+  return `${Math.round(minutes)} นาที`;
+}
+
+type SelfAttendanceAssignment = {
+  id: string;
+  workDate: Date;
+  isRestDay: boolean;
+  isLeaveDay: boolean;
+  shift: {
+    name: string;
+    startTime: Date;
+    endTime: Date;
+    graceLateMinutes: number;
+    graceEarlyLeaveMinutes: number;
+    crossesMidnight: boolean;
+  } | null;
+  schedulePeriod: {
+    id: string;
+    name: string;
+    periodStart: Date;
+    periodEnd: Date;
+    status: { code: string; name: string };
+  };
+};
+
+/** Pick the published/locked period that covers today (else nearest). */
+function pickCurrentSchedulePeriod(
+  rows: SelfAttendanceAssignment[],
+  todayIso: string,
+): SelfAttendanceAssignment["schedulePeriod"] | null {
+  const byId = new Map<string, SelfAttendanceAssignment["schedulePeriod"]>();
+  for (const row of rows) {
+    byId.set(row.schedulePeriod.id, row.schedulePeriod);
+  }
+  const periods = [...byId.values()].sort((a, b) =>
+    a.periodStart.getTime() - b.periodStart.getTime(),
+  );
+  if (periods.length === 0) return null;
+
+  const covering = periods.filter((period) => {
+    const start = period.periodStart.toISOString().slice(0, 10);
+    const end = period.periodEnd.toISOString().slice(0, 10);
+    return start <= todayIso && todayIso <= end;
+  });
+  if (covering.length > 0) {
+    return covering[covering.length - 1]!;
+  }
+
+  const upcoming = periods.find(
+    (period) => period.periodStart.toISOString().slice(0, 10) > todayIso,
+  );
+  if (upcoming) return upcoming;
+
+  return periods[periods.length - 1]!;
+}
+
+/**
+ * Self-service attendance history aligned to the current published schedule
+ * period (same window as ตารางงานของฉัน). Falls back to today if no schedule.
+ */
+export async function listSelfAttendanceToday(ctx: HrServiceContext) {
+  assertHrPermission(ctx, HR_PERMISSIONS.attendanceSelf);
+  const employee = await resolveSelfEmployee(ctx);
+  const { day: today } = bangkokDayBounds();
+  const workLocation = await resolvePrimaryWorkLocation(employee.id);
+
+  const scheduleRows = (await db.shiftAssignment.findMany({
+    where: { employeeId: employee.id },
+    include: {
+      shift: {
+        select: {
+          name: true,
+          startTime: true,
+          endTime: true,
+          graceLateMinutes: true,
+          graceEarlyLeaveMinutes: true,
+          crossesMidnight: true,
+        },
+      },
+      schedulePeriod: {
+        select: {
+          id: true,
+          name: true,
+          periodStart: true,
+          periodEnd: true,
+          status: { select: { code: true, name: true } },
+        },
+      },
+    },
+    orderBy: [{ workDate: "asc" }, { sequenceNo: "asc" }],
+    take: 400,
+  })) as SelfAttendanceAssignment[];
+
+  const visibleStatuses = new Set(["PUBLISHED", "LOCKED"]);
+  const visible = scheduleRows.filter((row) =>
+    visibleStatuses.has(row.schedulePeriod.status.code),
+  );
+  const currentPeriod = pickCurrentSchedulePeriod(visible, today);
+  const periodAssignments = currentPeriod
+    ? visible.filter((row) => row.schedulePeriod.id === currentPeriod.id)
+    : [];
+
+  // No published schedule — keep a today-only row when the employee clocked.
+  if (!currentPeriod || periodAssignments.length === 0) {
+    const { start, end, day } = bangkokDayBounds();
+    const workDate = date(day);
+    const [dayRow, events, assignment] = await Promise.all([
+      db.attendanceDay.findUnique({
+        where: {
+          employeeId_workDate: { employeeId: employee.id, workDate },
+        },
+      }),
+      db.attendanceEvent.findMany({
+        where: {
+          employeeId: employee.id,
+          occurredAt: { gte: start, lte: end },
+        },
+        include: { eventType: { select: { code: true } } },
+        orderBy: { occurredAt: "asc" },
+      }),
+      db.shiftAssignment.findFirst({
+        where: { employeeId: employee.id, workDate },
+        include: { shift: true },
+        orderBy: { sequenceNo: "asc" },
+      }),
+    ]);
+
+    const clockInFromEvents =
+      events.find(
+        (row: { eventType: { code: string } }) =>
+          row.eventType.code === "CLOCK_IN",
+      )?.occurredAt ?? null;
+    const clockOutFromEvents =
+      [...events]
+        .reverse()
+        .find(
+          (row: { eventType: { code: string } }) =>
+            row.eventType.code === "CLOCK_OUT",
+        )?.occurredAt ?? null;
+    const clockInAt = dayRow?.clockInAt ?? clockInFromEvents;
+    const clockOutAt = dayRow?.clockOutAt ?? clockOutFromEvents;
+    const computed = computeLateEarlyMinutes({
+      workDate: day,
+      clockInAt,
+      clockOutAt,
+      startTime: assignment?.shift?.startTime ?? null,
+      endTime: assignment?.shift?.endTime ?? null,
+      graceLateMinutes: assignment?.shift?.graceLateMinutes ?? 0,
+      graceEarlyLeaveMinutes: assignment?.shift?.graceEarlyLeaveMinutes ?? 0,
+      crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+    });
+    const lateMinutes =
+      dayRow?.lateMinutes && dayRow.lateMinutes > 0
+        ? dayRow.lateMinutes
+        : computed.lateMinutes;
+    const earlyLeaveMinutes =
+      dayRow?.earlyLeaveMinutes && dayRow.earlyLeaveMinutes > 0
+        ? dayRow.earlyLeaveMinutes
+        : computed.earlyLeaveMinutes;
+
+    return {
+      workDate: day,
+      workLocation: serializeWorkLocation(workLocation),
+      schedulePeriod: null,
+      days:
+        clockInAt || clockOutAt
+          ? [
+              {
+                id: dayRow?.id ?? `today-${day}`,
+                workDate: day,
+                dutyLabel: assignment?.shift?.name ?? "—",
+                isRestDay: Boolean(assignment?.isRestDay),
+                isLeaveDay: Boolean(assignment?.isLeaveDay),
+                clockInAt: clockInAt ? clockInAt.toISOString() : null,
+                clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
+                lateMinutes,
+                earlyLeaveMinutes,
+                lateLabel: formatMinutesLabel(lateMinutes),
+                earlyLeaveLabel: formatMinutesLabel(earlyLeaveMinutes),
+              },
+            ]
+          : [],
+    };
+  }
+
+  const workDateIsos = [
+    ...new Set(
+      periodAssignments.map((row) => row.workDate.toISOString().slice(0, 10)),
+    ),
+  ].sort();
+  const firstDay = workDateIsos[0]!;
+  const lastDay = workDateIsos[workDateIsos.length - 1]!;
+  const rangeStart = new Date(`${firstDay}T00:00:00+07:00`);
+  const rangeEnd = new Date(`${lastDay}T23:59:59.999+07:00`);
+  const dateValues = workDateIsos.map((iso) => date(iso));
+
+  const [dayRows, events] = await Promise.all([
+    db.attendanceDay.findMany({
+      where: {
+        employeeId: employee.id,
+        workDate: { in: dateValues },
+      },
+    }),
+    db.attendanceEvent.findMany({
+      where: {
+        employeeId: employee.id,
+        occurredAt: { gte: rangeStart, lte: rangeEnd },
+      },
+      include: { eventType: { select: { code: true } } },
+      orderBy: { occurredAt: "asc" },
+    }),
+  ]);
+
+  const dayByIso = new Map<
+    string,
+    {
+      id: string;
+      clockInAt: Date | null;
+      clockOutAt: Date | null;
+      lateMinutes: number | null;
+      earlyLeaveMinutes: number | null;
+    }
+  >();
+  for (const row of dayRows as Array<{
+    id: string;
+    workDate: Date;
+    clockInAt: Date | null;
+    clockOutAt: Date | null;
+    lateMinutes: number | null;
+    earlyLeaveMinutes: number | null;
+  }>) {
+    dayByIso.set(row.workDate.toISOString().slice(0, 10), row);
+  }
+
+  const eventsByDay = new Map<
+    string,
+    Array<{ occurredAt: Date; eventType: { code: string } }>
+  >();
+  for (const event of events as Array<{
+    occurredAt: Date;
+    eventType: { code: string };
+  }>) {
+    const iso = bangkokDayBounds(event.occurredAt).day;
+    const list = eventsByDay.get(iso) ?? [];
+    list.push(event);
+    eventsByDay.set(iso, list);
+  }
+
+  // One row per schedule day (first assignment that day), same order as ตารางงาน.
+  const seenDates = new Set<string>();
+  const days = [];
+  for (const assignment of periodAssignments) {
+    const workDateIso = assignment.workDate.toISOString().slice(0, 10);
+    if (seenDates.has(workDateIso)) continue;
+    seenDates.add(workDateIso);
+
+    const dayRow = dayByIso.get(workDateIso) ?? null;
+    const dayEvents = eventsByDay.get(workDateIso) ?? [];
+    const clockInFromEvents =
+      dayEvents.find((row) => row.eventType.code === "CLOCK_IN")?.occurredAt ??
+      null;
+    const clockOutFromEvents =
+      [...dayEvents]
+        .reverse()
+        .find((row) => row.eventType.code === "CLOCK_OUT")?.occurredAt ?? null;
+    const clockInAt = dayRow?.clockInAt ?? clockInFromEvents;
+    const clockOutAt = dayRow?.clockOutAt ?? clockOutFromEvents;
+
+    let dutyLabel = assignment.shift?.name ?? "—";
+    if (assignment.isRestDay) dutyLabel = "วันหยุด";
+    else if (assignment.isLeaveDay) dutyLabel = "ลา";
+
+    const computed =
+      assignment.isRestDay || assignment.isLeaveDay
+        ? { lateMinutes: 0, earlyLeaveMinutes: 0 }
+        : computeLateEarlyMinutes({
+            workDate: workDateIso,
+            clockInAt,
+            clockOutAt,
+            startTime: assignment.shift?.startTime ?? null,
+            endTime: assignment.shift?.endTime ?? null,
+            graceLateMinutes: assignment.shift?.graceLateMinutes ?? 0,
+            graceEarlyLeaveMinutes:
+              assignment.shift?.graceEarlyLeaveMinutes ?? 0,
+            crossesMidnight: assignment.shift?.crossesMidnight ?? false,
+          });
+
+    const lateMinutes =
+      dayRow?.lateMinutes && dayRow.lateMinutes > 0
+        ? dayRow.lateMinutes
+        : computed.lateMinutes;
+    const earlyLeaveMinutes =
+      dayRow?.earlyLeaveMinutes && dayRow.earlyLeaveMinutes > 0
+        ? dayRow.earlyLeaveMinutes
+        : computed.earlyLeaveMinutes;
+
+    days.push({
+      id: dayRow?.id ?? `schedule-${workDateIso}`,
+      workDate: workDateIso,
+      dutyLabel,
+      isRestDay: assignment.isRestDay,
+      isLeaveDay: assignment.isLeaveDay,
+      clockInAt: clockInAt ? clockInAt.toISOString() : null,
+      clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
+      lateMinutes,
+      earlyLeaveMinutes,
+      lateLabel:
+        assignment.isRestDay || assignment.isLeaveDay
+          ? "—"
+          : formatMinutesLabel(lateMinutes),
+      earlyLeaveLabel:
+        assignment.isRestDay || assignment.isLeaveDay
+          ? "—"
+          : formatMinutesLabel(earlyLeaveMinutes),
+    });
+  }
+
+  return {
+    workDate: today,
+    workLocation: serializeWorkLocation(workLocation),
+    schedulePeriod: {
+      id: currentPeriod.id,
+      name: currentPeriod.name,
+      periodStart: currentPeriod.periodStart.toISOString().slice(0, 10),
+      periodEnd: currentPeriod.periodEnd.toISOString().slice(0, 10),
+      statusCode: currentPeriod.status.code,
+      statusName: currentPeriod.status.name,
+    },
+    days,
+  };
+}
+
+function photoError(code: string): HrError {
+  if (code === "PHOTO_TOO_LARGE") {
+    return new HrError("VALIDATION_ERROR", {
+      message: "ไฟล์รูปใหญ่เกิน 2.5 MB",
+    });
+  }
+  if (code === "UNSUPPORTED_PHOTO_TYPE") {
+    return new HrError("VALIDATION_ERROR", {
+      message: "รองรับเฉพาะไฟล์ JPG, PNG, WEBP หรือ GIF",
+    });
+  }
+  if (code === "EMPTY_PHOTO") {
+    return new HrError("VALIDATION_ERROR", {
+      message: "ต้องถ่ายรูปหลักฐานตอนลงเวลา",
+    });
+  }
+  return new HrError("VALIDATION_ERROR", { message: "อัปโหลดรูปหลักฐานไม่สำเร็จ" });
 }
 
 export async function clock(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, HR_PERMISSIONS.attendanceSelf);
   const employee = await db.employee.findFirst({ where: { organizationId: ctx.organizationId, platformUserId: input.platformUserId ?? undefined, authUserId: actor(ctx) ?? undefined } });
   if (!employee) throw new HrError("NOT_FOUND", { message: "ไม่พบข้อมูลพนักงานที่เชื่อมต่อ" });
-  const existing = await db.attendanceEvent.findFirst({ where: { employeeId: employee.id, idempotencyKey: input.idempotencyKey } }); if (existing) return existing;
-  let distance: number | null = null;
-  if (input.workLocationId) {
-    const location = await owned("workLocation", ctx, input.workLocationId);
-    if (location.latitude != null && location.longitude != null) {
-      const check = insideGeofence({ latitude: Number(location.latitude), longitude: Number(location.longitude) }, input, location.geofenceRadiusMeters);
-      distance = check.distanceMeters; if (!check.accepted) throw new HrError("FORBIDDEN", { message: "ตำแหน่งอยู่นอกพื้นที่ลงเวลา", details: { reason: check.reason } });
+  if (input.latitude == null || input.longitude == null) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องส่งตำแหน่ง GPS ตอนลงเวลา",
+    });
+  }
+
+  const photoBuffer = decodePhotoBase64(input.photoBase64 ?? input.photo);
+  if (!photoBuffer) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องถ่ายรูปหลักฐานตอนลงเวลา",
+    });
+  }
+
+  const idempotencyKey =
+    typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length >= 8
+      ? input.idempotencyKey.trim()
+      : crypto.randomUUID();
+  const existing = await db.attendanceEvent.findFirst({
+    where: { employeeId: employee.id, idempotencyKey },
+  });
+  if (existing) {
+    const meta = (existing.metadata ?? {}) as { photoUrl?: string };
+    return {
+      ...existing,
+      photoUrl: meta.photoUrl ?? attendanceEventPhotoPublicPath(existing.id),
+    };
+  }
+
+  const location = input.workLocationId
+    ? await owned("workLocation", ctx, input.workLocationId)
+    : await resolvePrimaryWorkLocation(employee.id);
+  if (!location) {
+    throw new HrError("NOT_FOUND", {
+      message: "ยังไม่ได้กำหนดสถานที่ลงเวลาให้พนักงานคนนี้",
+    });
+  }
+  if (location.latitude == null || location.longitude == null) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "สถานที่ลงเวลายังไม่มีพิกัด GPS",
+    });
+  }
+
+  const check = insideGeofence(
+    {
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+    },
+    {
+      latitude: Number(input.latitude),
+      longitude: Number(input.longitude),
+      accuracyMeters:
+        input.accuracyMeters == null ? undefined : Number(input.accuracyMeters),
+    },
+    Number(location.geofenceRadiusMeters),
+  );
+  const distance = check.distanceMeters;
+  if (!check.accepted) {
+    const reason =
+      check.reason === "ACCURACY_TOO_LOW"
+        ? "ความแม่นยำของ GPS ต่ำเกินไป"
+        : `อยู่นอกพื้นที่ลงเวลา (ห่างประมาณ ${Math.round(distance)} ม. จากรัศมี ${location.geofenceRadiusMeters} ม.)`;
+    throw new HrError("FORBIDDEN", {
+      message: reason,
+      details: {
+        reason: check.reason,
+        distanceMeters: Math.round(distance),
+        radiusMeters: location.geofenceRadiusMeters,
+        workLocationId: location.id,
+      },
+    });
+  }
+
+  const type = await master("attendanceEventType", input.action === "clockOut" ? "CLOCK_OUT" : input.action === "breakStart" ? "BREAK_START" : input.action === "breakEnd" ? "BREAK_END" : "CLOCK_IN");
+  const occurredAt = new Date();
+  const { day, start, end } = bangkokDayBounds(occurredAt);
+  const workDate = date(day);
+  const priorDay = await db.attendanceDay.findUnique({
+    where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+  });
+  const dayEvents = await db.attendanceEvent.findMany({
+    where: {
+      employeeId: employee.id,
+      occurredAt: { gte: start, lte: end },
+    },
+    include: { eventType: { select: { code: true } } },
+    orderBy: { occurredAt: "asc" },
+  });
+  const hasClockInToday =
+    Boolean(priorDay?.clockInAt) ||
+    dayEvents.some((row) => row.eventType.code === "CLOCK_IN");
+  const hasClockOutToday =
+    Boolean(priorDay?.clockOutAt) ||
+    dayEvents.some((row) => row.eventType.code === "CLOCK_OUT");
+
+  if (type.code === "CLOCK_IN" && hasClockInToday) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "วันนี้ลงเวลาเข้างานแล้ว ไม่สามารถลงซ้ำได้",
+    });
+  }
+  if (type.code === "CLOCK_OUT" && !hasClockInToday) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ยังไม่ได้ลงเวลาเข้างาน จึงยังออกงานไม่ได้",
+    });
+  }
+  if (type.code === "CLOCK_OUT" && hasClockOutToday) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "วันนี้ลงเวลาออกงานแล้ว ไม่สามารถลงซ้ำได้",
+    });
+  }
+
+  const created = await db.attendanceEvent.create({ data: { organizationId: ctx.organizationId, branchId: employee.branchId, employeeId: employee.id, eventTypeId: type.id, occurredAt, latitude: input.latitude ?? null, longitude: input.longitude ?? null, workLocationId: location.id, geofenceDistanceMeters: distance, idempotencyKey, source: "WEB" } });
+
+  let photoUrl = attendanceEventPhotoPublicPath(created.id);
+  try {
+    const saved = await saveAttendancePhoto({
+      organizationId: ctx.organizationId,
+      eventId: created.id,
+      buffer: photoBuffer,
+    });
+    photoUrl = saved.photoUrl;
+    await db.attendanceEvent.update({
+      where: { id: created.id },
+      data: {
+        metadata: {
+          photoUrl: saved.photoUrl,
+          photoBytes: saved.bytes,
+          photoContentType: saved.contentType,
+        },
+      },
+    });
+  } catch (err) {
+    await db.attendanceEvent.delete({ where: { id: created.id } }).catch(() => {});
+    const code = err instanceof Error ? err.message : "PHOTO_ERROR";
+    throw photoError(code);
+  }
+
+  // Keep AttendanceDay in sync so self-service / reports can show the day row.
+  const status = await master(
+    "attendanceStatus",
+    type.code === "CLOCK_OUT" ? "PRESENT" : "INCOMPLETE",
+  );
+  const prior = priorDay;
+  const nextClockIn =
+    type.code === "CLOCK_IN" ? (prior?.clockInAt ?? occurredAt) : prior?.clockInAt ?? null;
+  const nextClockOut =
+    type.code === "CLOCK_OUT" ? occurredAt : prior?.clockOutAt ?? null;
+  const assignment = await db.shiftAssignment.findFirst({
+    where: { employeeId: employee.id, workDate },
+    include: { shift: true },
+    orderBy: { sequenceNo: "asc" },
+  });
+  const metrics = computeLateEarlyMinutes({
+    workDate: day,
+    clockInAt: nextClockIn,
+    clockOutAt: nextClockOut,
+    startTime: assignment?.shift?.startTime ?? null,
+    endTime: assignment?.shift?.endTime ?? null,
+    graceLateMinutes: assignment?.shift?.graceLateMinutes ?? 0,
+    graceEarlyLeaveMinutes: assignment?.shift?.graceEarlyLeaveMinutes ?? 0,
+    crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+  });
+  await db.attendanceDay.upsert({
+    where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+    create: {
+      organizationId: ctx.organizationId,
+      branchId: employee.branchId,
+      employeeId: employee.id,
+      workDate,
+      statusId: status.id,
+      clockInAt: type.code === "CLOCK_IN" ? occurredAt : null,
+      clockOutAt: type.code === "CLOCK_OUT" ? occurredAt : null,
+      lateMinutes: metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+    },
+    update: {
+      statusId: status.id,
+      ...(type.code === "CLOCK_IN"
+        ? { clockInAt: prior?.clockInAt ?? occurredAt }
+        : {}),
+      ...(type.code === "CLOCK_OUT" ? { clockOutAt: occurredAt } : {}),
+      lateMinutes: metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+    },
+  });
+
+  return { ...created, photoUrl };
+}
+
+export async function listAttendanceDays(ctx: HrServiceContext, input: any = {}) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceRead,
+    HR_PERMISSIONS.attendanceManage,
+  ]);
+
+  const { day: today } = bangkokDayBounds();
+  const workDateIso = String(input.workDate || input.from || today).slice(0, 10);
+  const workDate = date(workDateIso);
+  const branchFilter =
+    ctx.allowedBranchIds == null
+      ? {}
+      : { branchId: { in: [...ctx.allowedBranchIds] } };
+
+  const rows = await db.attendanceDay.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      workDate,
+      ...branchFilter,
+      ...(input.employeeId ? { employeeId: input.employeeId } : {}),
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          firstNameTh: true,
+          lastNameTh: true,
+          photoUrl: true,
+        },
+      },
+      status: { select: { code: true, name: true } },
+    },
+    orderBy: [
+      { employee: { firstNameTh: "asc" } },
+      { employee: { lastNameTh: "asc" } },
+    ],
+  });
+
+  const { start, end } = (() => {
+    return {
+      start: new Date(`${workDateIso}T00:00:00+07:00`),
+      end: new Date(`${workDateIso}T23:59:59.999+07:00`),
+    };
+  })();
+
+  const employeeIds = rows.map(
+    (row: { employeeId: string }) => row.employeeId,
+  );
+  const events =
+    employeeIds.length === 0
+      ? []
+      : await db.attendanceEvent.findMany({
+          where: {
+            organizationId: ctx.organizationId,
+            employeeId: { in: employeeIds },
+            occurredAt: { gte: start, lte: end },
+          },
+          include: { eventType: { select: { code: true } } },
+          orderBy: { occurredAt: "asc" },
+        });
+
+  const photoByEmployee = new Map<
+    string,
+    { clockInPhotoUrl: string | null; clockOutPhotoUrl: string | null }
+  >();
+  for (const event of events as Array<{
+    employeeId: string;
+    id: string;
+    metadata: unknown;
+    eventType: { code: string };
+  }>) {
+    const meta = (event.metadata ?? {}) as { photoUrl?: string };
+    const url = meta.photoUrl ?? attendanceEventPhotoPublicPath(event.id);
+    const bucket = photoByEmployee.get(event.employeeId) ?? {
+      clockInPhotoUrl: null,
+      clockOutPhotoUrl: null,
+    };
+    if (event.eventType.code === "CLOCK_IN" && !bucket.clockInPhotoUrl) {
+      bucket.clockInPhotoUrl = url;
+    }
+    if (event.eventType.code === "CLOCK_OUT") {
+      bucket.clockOutPhotoUrl = url;
+    }
+    photoByEmployee.set(event.employeeId, bucket);
+  }
+
+  return {
+    workDate: workDateIso,
+    rows: rows.map(
+      (row: {
+        id: string;
+        employeeId: string;
+        clockInAt: Date | null;
+        clockOutAt: Date | null;
+        lateMinutes: number;
+        earlyLeaveMinutes: number;
+        employee: {
+          firstNameTh: string;
+          lastNameTh: string;
+          photoUrl: string | null;
+        };
+        status: { code: string; name: string };
+      }) => {
+        const photos = photoByEmployee.get(row.employeeId) ?? {
+          clockInPhotoUrl: null,
+          clockOutPhotoUrl: null,
+        };
+        const displayName =
+          `${row.employee.firstNameTh} ${row.employee.lastNameTh}`.trim();
+        return {
+          id: row.id,
+          employeeId: row.employeeId,
+          displayName,
+          photoUrl: row.employee.photoUrl,
+          statusCode: row.status.code,
+          statusName: row.status.name,
+          clockInAt: row.clockInAt ? row.clockInAt.toISOString() : null,
+          clockOutAt: row.clockOutAt ? row.clockOutAt.toISOString() : null,
+          lateMinutes: row.lateMinutes,
+          earlyLeaveMinutes: row.earlyLeaveMinutes,
+          lateLabel: formatMinutesLabel(row.lateMinutes),
+          earlyLeaveLabel: formatMinutesLabel(row.earlyLeaveMinutes),
+          clockInPhotoUrl: photos.clockInPhotoUrl,
+          clockOutPhotoUrl: photos.clockOutPhotoUrl,
+        };
+      },
+    ),
+  };
+}
+const adjustmentEmployeeSelect = {
+  id: true,
+  displayName: true,
+  employeeCode: true,
+  photoUrl: true,
+  branchId: true,
+  authUserId: true,
+} as const;
+
+async function applyAttendanceAdjustmentToDay(
+  ctx: HrServiceContext,
+  row: {
+    employeeId: string;
+    workDate: Date;
+    requestedClockInAt: Date | null;
+    requestedClockOutAt: Date | null;
+    attendanceDayId: string | null;
+    reason: string;
+  },
+) {
+  const workDate = row.workDate;
+  const workDateIso = isoDateOnly(workDate);
+  const employee = await db.employee.findFirst({
+    where: { id: row.employeeId, organizationId: ctx.organizationId },
+    select: { id: true, branchId: true },
+  });
+  if (!employee) throw new HrError("NOT_FOUND");
+
+  const existing =
+    (row.attendanceDayId
+      ? await db.attendanceDay.findFirst({
+          where: { id: row.attendanceDayId, organizationId: ctx.organizationId },
+        })
+      : null) ??
+    (await db.attendanceDay.findUnique({
+      where: {
+        employeeId_workDate: { employeeId: employee.id, workDate },
+      },
+    }));
+  if (existing?.isLocked) {
+    throw new HrError("PERIOD_LOCKED", {
+      message: "วันลงเวลานี้ถูกล็อกแล้ว แก้ไขไม่ได้",
+    });
+  }
+
+  const nextClockIn = row.requestedClockInAt ?? existing?.clockInAt ?? null;
+  const nextClockOut = row.requestedClockOutAt ?? existing?.clockOutAt ?? null;
+  const assignment = await db.shiftAssignment.findFirst({
+    where: { employeeId: employee.id, workDate },
+    include: { shift: true },
+    orderBy: { sequenceNo: "asc" },
+  });
+  const metrics = computeLateEarlyMinutes({
+    workDate: workDateIso,
+    clockInAt: nextClockIn,
+    clockOutAt: nextClockOut,
+    startTime: assignment?.shift?.startTime ?? null,
+    endTime: assignment?.shift?.endTime ?? null,
+    graceLateMinutes: assignment?.shift?.graceLateMinutes ?? 0,
+    graceEarlyLeaveMinutes: assignment?.shift?.graceEarlyLeaveMinutes ?? 0,
+    crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+  });
+  const status = await master(
+    "attendanceStatus",
+    nextClockIn && nextClockOut
+      ? metrics.lateMinutes > 0
+        ? "LATE"
+        : "PRESENT"
+      : nextClockIn
+        ? "INCOMPLETE"
+        : "ABSENT",
+  );
+  const workedMinutes =
+    nextClockIn && nextClockOut
+      ? Math.max(
+          0,
+          Math.round((nextClockOut.getTime() - nextClockIn.getTime()) / 60_000),
+        )
+      : 0;
+
+  await db.attendanceDay.upsert({
+    where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+    create: {
+      organizationId: ctx.organizationId,
+      branchId: employee.branchId,
+      employeeId: employee.id,
+      workDate,
+      statusId: status.id,
+      shiftAssignmentId: assignment?.id ?? null,
+      clockInAt: nextClockIn,
+      clockOutAt: nextClockOut,
+      lateMinutes: metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      workedMinutes,
+      notes: `ปรับเวลา: ${row.reason}`,
+    },
+    update: {
+      statusId: status.id,
+      clockInAt: nextClockIn,
+      clockOutAt: nextClockOut,
+      lateMinutes: metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      workedMinutes,
+      notes: `ปรับเวลา: ${row.reason}`,
+    },
+  });
+}
+
+function isoDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+export async function listAttendanceAdjustments(
+  ctx: HrServiceContext,
+  input: { status?: string | null; scope?: "self" | "org" | null } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceSelf,
+    HR_PERMISSIONS.attendanceRead,
+    HR_PERMISSIONS.attendanceManage,
+  ]);
+  const statusCode = input.status?.trim() || null;
+  const canSeeOrg =
+    hrCan(ctx, HR_PERMISSIONS.attendanceManage) ||
+    hrCan(ctx, HR_PERMISSIONS.attendanceRead);
+  const selfOnly = input.scope === "self" || !canSeeOrg;
+  const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  return db.attendanceAdjustment.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      ...(self ? { employeeId: self.id } : {}),
+      ...(statusCode ? { status: { code: statusCode } } : {}),
+    },
+    include: {
+      employee: { select: adjustmentEmployeeSelect },
+      status: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function createAttendanceAdjustment(
+  ctx: HrServiceContext,
+  input: any,
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceSelf,
+    HR_PERMISSIONS.attendanceManage,
+  ]);
+  const canManage = hrCan(ctx, HR_PERMISSIONS.attendanceManage);
+  let employeeId =
+    typeof input.employeeId === "string" ? input.employeeId.trim() : "";
+  if (!employeeId || !canManage) {
+    employeeId = (await resolveSelfEmployee(ctx)).id;
+  } else {
+    await owned("employee", ctx, employeeId);
+  }
+
+  const workDate = requireIsoDate(input.workDate, "วันที่ทำงาน");
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 2) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "กรุณาระบุเหตุผลอย่างน้อย 2 ตัวอักษร",
+    });
+  }
+  const requestedClockInAt = input.requestedClockInAt
+    ? requireDateTime(input.requestedClockInAt, "เวลาเข้าที่ขอ")
+    : null;
+  const requestedClockOutAt = input.requestedClockOutAt
+    ? requireDateTime(input.requestedClockOutAt, "เวลาออกที่ขอ")
+    : null;
+  if (!requestedClockInAt && !requestedClockOutAt) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องระบุเวลาเข้า หรือเวลาออกอย่างน้อยหนึ่งค่า",
+    });
+  }
+  if (
+    requestedClockInAt &&
+    requestedClockOutAt &&
+    requestedClockOutAt.getTime() <= requestedClockInAt.getTime()
+  ) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "เวลาออกต้องหลังเวลาเข้า",
+    });
+  }
+
+  const day = await db.attendanceDay.findUnique({
+    where: { employeeId_workDate: { employeeId, workDate } },
+  });
+  if (day?.isLocked) {
+    throw new HrError("PERIOD_LOCKED", {
+      message: "วันลงเวลานี้ถูกล็อกแล้ว ขอปรับปรุงไม่ได้",
+    });
+  }
+
+  const pending = await db.attendanceAdjustment.findFirst({
+    where: {
+      organizationId: ctx.organizationId,
+      employeeId,
+      workDate,
+      status: { code: "SUBMITTED" },
+    },
+  });
+  if (pending) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "มีคำขอปรับปรุงเวลารออนุมัติของวันนี้แล้ว",
+    });
+  }
+
+  const submitted = await master("leaveRequestStatus", "SUBMITTED");
+  return db.attendanceAdjustment.create({
+    data: {
+      organizationId: ctx.organizationId,
+      employeeId,
+      attendanceDayId: day?.id ?? null,
+      workDate,
+      requestedClockInAt,
+      requestedClockOutAt,
+      reason,
+      statusId: submitted.id,
+      requestedByAuthUserId: actor(ctx)!,
+    },
+    include: {
+      employee: { select: adjustmentEmployeeSelect },
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
+}
+
+export async function reviewAttendanceAdjustment(
+  ctx: HrServiceContext,
+  id: string,
+  approve: boolean,
+  note?: string,
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.attendanceManage,
+    HR_PERMISSIONS.approvalManage,
+  ]);
+  const row = await db.attendanceAdjustment.findFirst({
+    where: { id, organizationId: ctx.organizationId },
+    include: {
+      employee: { select: { authUserId: true } },
+      status: { select: { code: true } },
+    },
+  });
+  if (!row) throw new HrError("NOT_FOUND");
+  if (row.status?.code !== "SUBMITTED") {
+    throw new HrError("INVALID_STATUS_TRANSITION", {
+      message: "คำขอนี้ไม่อยู่ในสถานะรออนุมัติ",
+    });
+  }
+  assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
+
+  if (approve) {
+    await applyAttendanceAdjustmentToDay(ctx, row);
+  }
+
+  const status = await master(
+    "leaveRequestStatus",
+    approve ? "APPROVED" : "REJECTED",
+  );
+  return db.attendanceAdjustment.update({
+    where: { id },
+    data: {
+      statusId: status.id,
+      reviewedAt: new Date(),
+      reviewedByAuthUserId: actor(ctx),
+      reviewNote: note?.trim() || null,
+    },
+    include: {
+      employee: { select: adjustmentEmployeeSelect },
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
+}
+
+const leaveEmployeeSelect = {
+  id: true,
+  displayName: true,
+  employeeCode: true,
+  photoUrl: true,
+  branchId: true,
+  firstNameTh: true,
+  lastNameTh: true,
+} as const;
+
+async function enrichLeaveRowsWithShifts<
+  T extends {
+    id: string;
+    employeeId: string;
+    startDate: Date;
+    endDate: Date;
+  },
+>(rows: T[]) {
+  if (rows.length === 0) {
+    return rows.map((row) => ({ ...row, scheduledShifts: [] as Array<{
+      shiftId: string | null;
+      shiftName: string;
+      workDates: string[];
+      timeLabel: string | null;
+    }> }));
+  }
+
+  const employeeIds = [...new Set(rows.map((row) => row.employeeId))];
+  let minStart = rows[0]!.startDate;
+  let maxEnd = rows[0]!.endDate;
+  for (const row of rows) {
+    if (row.startDate < minStart) minStart = row.startDate;
+    if (row.endDate > maxEnd) maxEnd = row.endDate;
+  }
+
+  const assignments = await db.shiftAssignment.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      workDate: { gte: minStart, lte: maxEnd },
+      isRestDay: false,
+    },
+    include: {
+      shift: {
+        select: {
+          id: true,
+          name: true,
+          startTime: true,
+          endTime: true,
+          crossesMidnight: true,
+        },
+      },
+    },
+    orderBy: [{ workDate: "asc" }, { sequenceNo: "asc" }],
+  });
+
+  return rows.map((row) => {
+    const inRange = assignments.filter(
+      (assignment: {
+        employeeId: string;
+        workDate: Date;
+      }) =>
+        assignment.employeeId === row.employeeId &&
+        assignment.workDate >= row.startDate &&
+        assignment.workDate <= row.endDate,
+    );
+    const byShift = new Map<
+      string,
+      {
+        shiftId: string | null;
+        shiftName: string;
+        workDates: string[];
+        timeLabel: string | null;
+      }
+    >();
+    for (const assignment of inRange as Array<{
+      shiftId: string | null;
+      workDate: Date;
+      shift: {
+        id: string;
+        name: string;
+        startTime: Date;
+        endTime: Date;
+        crossesMidnight: boolean;
+      } | null;
+    }>) {
+      const key = assignment.shiftId ?? "none";
+      const start = formatShiftClock(assignment.shift?.startTime);
+      const end = formatShiftClock(assignment.shift?.endTime);
+      const entry = byShift.get(key) ?? {
+        shiftId: assignment.shiftId,
+        shiftName: assignment.shift?.name ?? "ไม่ระบุกะ",
+        workDates: [],
+        timeLabel:
+          start && end
+            ? `${start}–${end}${assignment.shift?.crossesMidnight ? " (+1)" : ""}`
+            : null,
+      };
+      entry.workDates.push(assignment.workDate.toISOString().slice(0, 10));
+      byShift.set(key, entry);
+    }
+    return { ...row, scheduledShifts: [...byShift.values()] };
+  });
+}
+
+const COVER_NOTE_PREFIX = "ทำงานแทนจากการลา";
+const COVER_FROM_SHIFT_RE = /\|fromShift:([0-9a-f-]{36})/i;
+const COVER_FROM_PERIOD_RE = /\|fromPeriod:([0-9a-f-]{36})/i;
+const COVER_FROM_LOC_RE = /\|fromLoc:([0-9a-f-]{36}|none)/i;
+const COVER_FROM_SEQ_RE = /\|fromSeq:(\d+)/i;
+const COVER_FROM_REST_RE = /\|fromRest:([01])/i;
+const COVER_FROM_LEAVE_RE = /\|fromLeave:([01])/i;
+const COVER_FROM_CREATED_RE = /\|fromCreated:1\b/i;
+
+type CoverAssignmentSnapshot = {
+  created: boolean;
+  shiftId: string | null;
+  schedulePeriodId: string | null;
+  workLocationId: string | null;
+  sequenceNo: number | null;
+  isRestDay: boolean;
+  isLeaveDay: boolean;
+};
+
+/** Stable YYYY-MM-DD for Prisma `@db.Date` values (UTC calendar day). */
+function toDateKey(value: Date): string {
+  const y = value.getUTCFullYear();
+  const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(value.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function encodeCoverNotes(snapshot: CoverAssignmentSnapshot): string {
+  if (snapshot.created) {
+    return `${COVER_NOTE_PREFIX}|fromCreated:1`;
+  }
+  const parts = [COVER_NOTE_PREFIX];
+  if (snapshot.shiftId) parts.push(`fromShift:${snapshot.shiftId}`);
+  if (snapshot.schedulePeriodId) {
+    parts.push(`fromPeriod:${snapshot.schedulePeriodId}`);
+  }
+  parts.push(`fromLoc:${snapshot.workLocationId ?? "none"}`);
+  if (snapshot.sequenceNo != null) {
+    parts.push(`fromSeq:${snapshot.sequenceNo}`);
+  }
+  parts.push(`fromRest:${snapshot.isRestDay ? "1" : "0"}`);
+  parts.push(`fromLeave:${snapshot.isLeaveDay ? "1" : "0"}`);
+  return parts.join("|");
+}
+
+function parseCoverFromShiftId(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const match = COVER_FROM_SHIFT_RE.exec(notes);
+  return match?.[1] ?? null;
+}
+
+function parseCoverSnapshot(
+  notes: string | null | undefined,
+): CoverAssignmentSnapshot | null {
+  if (!notes || !notes.includes(COVER_NOTE_PREFIX)) return null;
+  const created = COVER_FROM_CREATED_RE.test(notes);
+  const shiftId = parseCoverFromShiftId(notes);
+  const periodMatch = COVER_FROM_PERIOD_RE.exec(notes);
+  const locMatch = COVER_FROM_LOC_RE.exec(notes);
+  const seqMatch = COVER_FROM_SEQ_RE.exec(notes);
+  const restMatch = COVER_FROM_REST_RE.exec(notes);
+  const leaveMatch = COVER_FROM_LEAVE_RE.exec(notes);
+  return {
+    created,
+    shiftId,
+    schedulePeriodId: periodMatch?.[1] ?? null,
+    workLocationId:
+      !locMatch || locMatch[1] === "none" ? null : (locMatch[1] ?? null),
+    sequenceNo: seqMatch ? Number(seqMatch[1]) : null,
+    isRestDay: restMatch?.[1] === "1",
+    isLeaveDay: leaveMatch?.[1] === "1",
+  };
+}
+
+/**
+ * Restore previous cover people to their original shifts (as if cover never
+ * happened), or delete cover-only rows that were created for the leave.
+ */
+async function restorePriorCoverAssignments(
+  tx: any,
+  leave: { employeeId: string; startDate: Date; endDate: Date },
+) {
+  const prior = await tx.shiftAssignment.findMany({
+    where: {
+      coversForEmployeeId: leave.employeeId,
+      workDate: { gte: leave.startDate, lte: leave.endDate },
+    },
+  });
+  for (const row of prior as Array<{
+    id: string;
+    notes: string | null;
+  }>) {
+    const snapshot = parseCoverSnapshot(row.notes);
+    const fromShiftId = snapshot?.shiftId ?? parseCoverFromShiftId(row.notes);
+
+    // Cover-only rows created for this leave → remove so the day is blank again.
+    if (snapshot?.created || (!fromShiftId && !snapshot?.schedulePeriodId)) {
+      await tx.shiftAssignment.delete({ where: { id: row.id } });
+      continue;
+    }
+
+    await tx.shiftAssignment.update({
+      where: { id: row.id },
+      data: {
+        shiftId: fromShiftId,
+        ...(snapshot?.schedulePeriodId
+          ? { schedulePeriodId: snapshot.schedulePeriodId }
+          : {}),
+        ...(snapshot && COVER_FROM_LOC_RE.test(row.notes ?? "")
+          ? { workLocationId: snapshot.workLocationId }
+          : {}),
+        ...(snapshot?.sequenceNo != null
+          ? { sequenceNo: snapshot.sequenceNo }
+          : {}),
+        isRestDay: snapshot?.isRestDay ?? false,
+        isLeaveDay: snapshot?.isLeaveDay ?? false,
+        coversForEmployeeId: null,
+        notes: null,
+      },
+    });
+  }
+}
+
+/** Mark leave days and move a cover employee from another shift onto the leave shift. */
+async function applyLeaveCoverToSchedule(
+  ctx: HrServiceContext,
+  leave: {
+    id: string;
+    employeeId: string;
+    startDate: Date;
+    endDate: Date;
+  },
+  coverEmployeeId: string | null,
+) {
+  if (coverEmployeeId) {
+    if (coverEmployeeId === leave.employeeId) {
+      throw new HrError("VALIDATION_ERROR", {
+        message: "คนทำงานแทนต้องเป็นคนละคนกับผู้ลา",
+      });
+    }
+    await assertEmployeeInOrg(ctx, coverEmployeeId);
+  }
+
+  const sourceRows = await db.shiftAssignment.findMany({
+    where: {
+      employeeId: leave.employeeId,
+      workDate: { gte: leave.startDate, lte: leave.endDate },
+      isRestDay: false,
+      shiftId: { not: null },
+    },
+    orderBy: [{ workDate: "asc" }, { sequenceNo: "asc" }],
+  });
+
+  if (coverEmployeeId && sourceRows.length === 0) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ผู้ลาไม่มีกะในช่วงวันลา — ไม่สามารถจัดคนทำงานแทนได้",
+    });
+  }
+
+  const dateValues = [
+    ...new Map(
+      (sourceRows as Array<{ workDate: Date }>).map((row) => [
+        toDateKey(row.workDate),
+        row.workDate,
+      ]),
+    ).values(),
+  ];
+
+  await db.$transaction(async (tx) => {
+    await restorePriorCoverAssignments(tx, leave);
+
+    if (sourceRows.length > 0) {
+      await tx.shiftAssignment.updateMany({
+        where: { id: { in: sourceRows.map((row: { id: string }) => row.id) } },
+        data: { isLeaveDay: true },
+      });
+    }
+
+    if (coverEmployeeId && dateValues.length > 0) {
+      const coverRows = await tx.shiftAssignment.findMany({
+        where: {
+          employeeId: coverEmployeeId,
+          workDate: { in: dateValues },
+        },
+      });
+      const coverByDate = new Map<string, (typeof coverRows)[number]>();
+      for (const row of coverRows as Array<{
+        id: string;
+        workDate: Date;
+        shiftId: string | null;
+        schedulePeriodId: string;
+        workLocationId: string | null;
+        sequenceNo: number;
+        isRestDay: boolean;
+        isLeaveDay: boolean;
+      }>) {
+        coverByDate.set(toDateKey(row.workDate), row);
+      }
+
+      for (const source of sourceRows as Array<{
+        schedulePeriodId: string;
+        shiftId: string | null;
+        workDate: Date;
+        sequenceNo: number;
+        workLocationId: string | null;
+      }>) {
+        if (!source.shiftId) continue;
+        const iso = toDateKey(source.workDate);
+        const existing = coverByDate.get(iso) as
+          | {
+              id: string;
+              shiftId: string | null;
+              schedulePeriodId: string;
+              workLocationId: string | null;
+              sequenceNo: number;
+              isRestDay: boolean;
+              isLeaveDay: boolean;
+            }
+          | undefined;
+
+        if (existing) {
+          if (existing.shiftId && existing.shiftId === source.shiftId) {
+            throw new HrError("VALIDATION_ERROR", {
+              message:
+                "คนทำงานแทนอยู่ในกะเดียวกับผู้ลา — เลือกคนจากกะอื่นเท่านั้น",
+            });
+          }
+          await tx.shiftAssignment.update({
+            where: { id: existing.id },
+            data: {
+              schedulePeriodId: source.schedulePeriodId,
+              shiftId: source.shiftId,
+              workLocationId: source.workLocationId,
+              sequenceNo: source.sequenceNo,
+              isRestDay: false,
+              isLeaveDay: false,
+              coversForEmployeeId: leave.employeeId,
+              notes: encodeCoverNotes({
+                created: false,
+                shiftId: existing.shiftId,
+                schedulePeriodId: existing.schedulePeriodId,
+                workLocationId: existing.workLocationId,
+                sequenceNo: existing.sequenceNo,
+                isRestDay: existing.isRestDay,
+                isLeaveDay: existing.isLeaveDay,
+              }),
+            },
+          });
+        } else {
+          await tx.shiftAssignment.create({
+            data: {
+              schedulePeriodId: source.schedulePeriodId,
+              employeeId: coverEmployeeId,
+              shiftId: source.shiftId,
+              workDate: source.workDate,
+              sequenceNo: source.sequenceNo,
+              workLocationId: source.workLocationId,
+              isRestDay: false,
+              isLeaveDay: false,
+              coversForEmployeeId: leave.employeeId,
+              notes: encodeCoverNotes({
+                created: true,
+                shiftId: null,
+                schedulePeriodId: null,
+                workLocationId: null,
+                sequenceNo: null,
+                isRestDay: false,
+                isLeaveDay: false,
+              }),
+              createdByAuthUserId: actor(ctx),
+            },
+          });
+        }
+      }
+    }
+
+    await tx.leaveRequest.update({
+      where: { id: leave.id },
+      data: { coverEmployeeId },
+    });
+  });
+
+  if (coverEmployeeId && sourceRows.length > 0) {
+    const periodShiftPairs = new Set<string>();
+    for (const row of sourceRows as Array<{
+      schedulePeriodId: string;
+      shiftId: string | null;
+    }>) {
+      if (!row.shiftId) continue;
+      periodShiftPairs.add(`${row.schedulePeriodId}:${row.shiftId}`);
+    }
+    for (const pair of periodShiftPairs) {
+      const [schedulePeriodId, shiftId] = pair.split(":");
+      if (schedulePeriodId && shiftId) {
+        await ensurePeriodShiftLink(schedulePeriodId, shiftId);
+      }
     }
   }
-  const type = await master("attendanceEventType", input.action === "clockOut" ? "CLOCK_OUT" : input.action === "breakStart" ? "BREAK_START" : input.action === "breakEnd" ? "BREAK_END" : "CLOCK_IN");
-  return db.attendanceEvent.create({ data: { organizationId: ctx.organizationId, branchId: employee.branchId, employeeId: employee.id, eventTypeId: type.id, occurredAt: new Date(), latitude: input.latitude ?? null, longitude: input.longitude ?? null, workLocationId: input.workLocationId ?? null, geofenceDistanceMeters: distance, idempotencyKey: input.idempotencyKey, source: "WEB" } });
 }
-export async function listAttendanceDays(ctx: HrServiceContext, input: any = {}) {
-  assertHrPermission(ctx, [HR_PERMISSIONS.attendanceRead, HR_PERMISSIONS.attendanceSelf]);
-  return db.attendanceDay.findMany({ where: { organizationId: ctx.organizationId, ...(input.employeeId ? { employeeId: input.employeeId } : {}), ...(input.from ? { workDate: { gte: date(input.from), lte: date(input.to ?? input.from) } } : {}) }, orderBy: { workDate: "desc" } });
+
+async function clearLeaveScheduleEffects(
+  leave: { employeeId: string; startDate: Date; endDate: Date },
+) {
+  await db.$transaction(async (tx) => {
+    await restorePriorCoverAssignments(tx, leave);
+    await tx.shiftAssignment.updateMany({
+      where: {
+        employeeId: leave.employeeId,
+        workDate: { gte: leave.startDate, lte: leave.endDate },
+        isLeaveDay: true,
+      },
+      data: { isLeaveDay: false },
+    });
+  });
 }
-export async function createAttendanceAdjustment(ctx: HrServiceContext, input: any) {
-  assertHrPermission(ctx, [HR_PERMISSIONS.attendanceSelf, HR_PERMISSIONS.attendanceManage]);
-  const submitted = await master("leaveRequestStatus", "SUBMITTED");
-  return db.attendanceAdjustment.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), requestedClockInAt: input.requestedClockInAt ? date(input.requestedClockInAt) : null, requestedClockOutAt: input.requestedClockOutAt ? date(input.requestedClockOutAt) : null, statusId: submitted.id, requestedByAuthUserId: actor(ctx)! } });
+
+export async function listLeaveRequests(
+  ctx: HrServiceContext,
+  input: { status?: string | null; scope?: "self" | "org" | null } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.leaveRead,
+    HR_PERMISSIONS.leaveSelf,
+    HR_PERMISSIONS.leaveManage,
+  ]);
+  const statusCode = input.status?.trim() || null;
+  const canSeeOrg =
+    hrCan(ctx, HR_PERMISSIONS.leaveManage) ||
+    hrCan(ctx, HR_PERMISSIONS.leaveRead);
+  const selfOnly = input.scope === "self" || !canSeeOrg;
+  const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  const rows = await db.leaveRequest.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      ...(self ? { employeeId: self.id } : {}),
+      ...(statusCode ? { status: { code: statusCode } } : {}),
+    },
+    include: {
+      employee: { select: leaveEmployeeSelect },
+      coverEmployee: { select: leaveEmployeeSelect },
+      leaveType: { select: { id: true, code: true, name: true } },
+      status: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  return enrichLeaveRowsWithShifts(rows);
+}
+
+/**
+ * Cover candidates for a leave request: employees on a *different* shift
+ * on the leave dates (same-shift colleagues are excluded). Includes current shift label.
+ */
+export async function listLeaveCoverCandidates(
+  ctx: HrServiceContext,
+  input: { leaveRequestId: string },
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.leaveApprove,
+    HR_PERMISSIONS.leaveManage,
+    HR_PERMISSIONS.leaveRead,
+  ]);
+  const leaveRequestId = String(input.leaveRequestId ?? "").trim();
+  if (!leaveRequestId) {
+    throw new HrError("VALIDATION_ERROR", { message: "ไม่พบคำขอลา" });
+  }
+
+  const leave = await db.leaveRequest.findFirst({
+    where: { id: leaveRequestId, organizationId: ctx.organizationId },
+    select: {
+      id: true,
+      employeeId: true,
+      startDate: true,
+      endDate: true,
+      coverEmployeeId: true,
+      coverEmployee: {
+        select: {
+          id: true,
+          displayName: true,
+          employeeCode: true,
+          photoUrl: true,
+        },
+      },
+    },
+  });
+  if (!leave) throw new HrError("NOT_FOUND");
+
+  type Candidate = {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    photoUrl: string | null;
+    shiftId: string | null;
+    shiftName: string;
+    timeLabel: string | null;
+    workDates: string[];
+  };
+
+  const leaveAssignments = await db.shiftAssignment.findMany({
+    where: {
+      employeeId: leave.employeeId,
+      workDate: { gte: leave.startDate, lte: leave.endDate },
+      isRestDay: false,
+      shiftId: { not: null },
+    },
+    select: { workDate: true, shiftId: true },
+  });
+  if (leaveAssignments.length === 0) {
+    return [] as Candidate[];
+  }
+
+  const leaveShiftByDate = new Map<string, Set<string>>();
+  const leaveDates: Date[] = [];
+  for (const row of leaveAssignments as Array<{
+    workDate: Date;
+    shiftId: string | null;
+  }>) {
+    if (!row.shiftId) continue;
+    const iso = row.workDate.toISOString().slice(0, 10);
+    const set = leaveShiftByDate.get(iso) ?? new Set<string>();
+    set.add(row.shiftId);
+    leaveShiftByDate.set(iso, set);
+    leaveDates.push(row.workDate);
+  }
+
+  const others = await db.shiftAssignment.findMany({
+    where: {
+      workDate: { in: leaveDates },
+      employeeId: { not: leave.employeeId },
+      isRestDay: false,
+      isLeaveDay: false,
+      shiftId: { not: null },
+      employee: {
+        organizationId: ctx.organizationId,
+        isActive: true,
+      },
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          displayName: true,
+          employeeCode: true,
+          photoUrl: true,
+        },
+      },
+      shift: {
+        select: {
+          id: true,
+          name: true,
+          startTime: true,
+          endTime: true,
+          crossesMidnight: true,
+        },
+      },
+    },
+    orderBy: [{ workDate: "asc" }],
+  });
+
+  type Acc = {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    photoUrl: string | null;
+    shiftId: string | null;
+    shiftName: string;
+    timeLabel: string | null;
+    workDates: string[];
+    sameShiftDays: number;
+    otherShiftDays: number;
+  };
+  const byEmployee = new Map<string, Acc>();
+
+  for (const row of others as Array<{
+    employeeId: string;
+    workDate: Date;
+    shiftId: string | null;
+    employee: {
+      id: string;
+      displayName: string;
+      employeeCode: string;
+      photoUrl: string | null;
+    };
+    shift: {
+      id: string;
+      name: string;
+      startTime: Date;
+      endTime: Date;
+      crossesMidnight: boolean;
+    } | null;
+  }>) {
+    if (!row.shiftId) continue;
+    const iso = row.workDate.toISOString().slice(0, 10);
+    const leaveShifts = leaveShiftByDate.get(iso);
+    if (!leaveShifts) continue;
+
+    const entry = byEmployee.get(row.employeeId) ?? {
+      id: row.employee.id,
+      employeeCode: row.employee.employeeCode,
+      displayName: row.employee.displayName,
+      photoUrl: row.employee.photoUrl,
+      shiftId: row.shiftId,
+      shiftName: row.shift?.name ?? "ไม่ระบุกะ",
+      timeLabel: (() => {
+        const start = formatShiftClock(row.shift?.startTime);
+        const end = formatShiftClock(row.shift?.endTime);
+        return start && end
+          ? `${start}–${end}${row.shift?.crossesMidnight ? " (+1)" : ""}`
+          : null;
+      })(),
+      workDates: [],
+      sameShiftDays: 0,
+      otherShiftDays: 0,
+    };
+
+    if (leaveShifts.has(row.shiftId)) {
+      entry.sameShiftDays += 1;
+    } else {
+      entry.otherShiftDays += 1;
+      if (!entry.workDates.includes(iso)) entry.workDates.push(iso);
+      // Prefer showing the first other-shift seen as the "current" label.
+      if (entry.otherShiftDays === 1 && row.shift) {
+        entry.shiftId = row.shiftId;
+        entry.shiftName = row.shift.name;
+        const start = formatShiftClock(row.shift.startTime);
+        const end = formatShiftClock(row.shift.endTime);
+        entry.timeLabel =
+          start && end
+            ? `${start}–${end}${row.shift.crossesMidnight ? " (+1)" : ""}`
+            : null;
+      }
+    }
+    byEmployee.set(row.employeeId, entry);
+  }
+
+  const candidates = [...byEmployee.values()]
+    .filter((row) => row.otherShiftDays > 0 && row.sameShiftDays === 0)
+    .map(({ sameShiftDays: _s, otherShiftDays: _o, ...row }) => row)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "th"));
+
+  // Keep the currently assigned cover visible even after their shift was moved.
+  if (
+    leave.coverEmployee &&
+    !candidates.some((row) => row.id === leave.coverEmployee!.id)
+  ) {
+    candidates.unshift({
+      id: leave.coverEmployee.id,
+      employeeCode: leave.coverEmployee.employeeCode,
+      displayName: leave.coverEmployee.displayName,
+      photoUrl: leave.coverEmployee.photoUrl,
+      shiftId: null,
+      shiftName: "คนทำงานแทนที่เลือกไว้",
+      timeLabel: null,
+      workDates: [],
+    });
+  }
+
+  return candidates;
+}
+
+export async function assignLeaveCover(
+  ctx: HrServiceContext,
+  input: { id: string; coverEmployeeId?: string | null },
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.leaveApprove,
+    HR_PERMISSIONS.leaveManage,
+  ]);
+  const id = String(input.id ?? "").trim();
+  if (!id) throw new HrError("VALIDATION_ERROR", { message: "ไม่พบคำขอลา" });
+  const leave = await db.leaveRequest.findFirst({
+    where: { id, organizationId: ctx.organizationId },
+    include: {
+      employee: { select: { authUserId: true } },
+      status: { select: { code: true } },
+    },
+  });
+  if (!leave) throw new HrError("NOT_FOUND");
+  if (leave.status?.code === "REJECTED" || leave.status?.code === "CANCELLED") {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ไม่สามารถกำหนดคนแทนให้คำขอที่ถูกปฏิเสธแล้ว",
+    });
+  }
+
+  const coverEmployeeId =
+    typeof input.coverEmployeeId === "string" && input.coverEmployeeId.trim()
+      ? input.coverEmployeeId.trim()
+      : null;
+
+  if (coverEmployeeId) {
+    await applyLeaveCoverToSchedule(ctx, leave, coverEmployeeId);
+  } else if (leave.status?.code === "APPROVED") {
+    await db.$transaction(async (tx) => {
+      await restorePriorCoverAssignments(tx, leave);
+      await tx.leaveRequest.update({
+        where: { id: leave.id },
+        data: { coverEmployeeId: null },
+      });
+    });
+  } else {
+    await clearLeaveScheduleEffects(leave);
+    await db.leaveRequest.update({
+      where: { id: leave.id },
+      data: { coverEmployeeId: null },
+    });
+  }
+
+  const updated = await db.leaveRequest.findFirst({
+    where: { id },
+    include: {
+      employee: { select: leaveEmployeeSelect },
+      coverEmployee: { select: leaveEmployeeSelect },
+      leaveType: { select: { id: true, code: true, name: true } },
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
+  if (!updated) throw new HrError("NOT_FOUND");
+  const [enriched] = await enrichLeaveRowsWithShifts([updated]);
+  return enriched;
+}
+
+export async function listOvertimeRequests(
+  ctx: HrServiceContext,
+  input: { status?: string | null; scope?: "self" | "org" | null } = {},
+) {
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.overtimeRead,
+    HR_PERMISSIONS.overtimeSelf,
+    HR_PERMISSIONS.overtimeManage,
+  ]);
+  const statusCode = input.status?.trim() || null;
+  const canSeeOrg =
+    hrCan(ctx, HR_PERMISSIONS.overtimeManage) ||
+    hrCan(ctx, HR_PERMISSIONS.overtimeRead);
+  const selfOnly = input.scope === "self" || !canSeeOrg;
+  const self = selfOnly ? await resolveSelfEmployee(ctx) : null;
+  return db.overtimeRequest.findMany({
+    where: {
+      organizationId: ctx.organizationId,
+      ...(self ? { employeeId: self.id } : {}),
+      ...(statusCode ? { status: { code: statusCode } } : {}),
+    },
+    include: {
+      employee: {
+        select: {
+          id: true,
+          displayName: true,
+          employeeCode: true,
+          photoUrl: true,
+          branchId: true,
+        },
+      },
+      status: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ workDate: "desc" }, { createdAt: "desc" }],
+  });
 }
 
 export async function submitLeave(ctx: HrServiceContext, input: any) {
   assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
+  const canManage = hrCan(ctx, HR_PERMISSIONS.leaveManage);
+  let employeeId =
+    typeof input.employeeId === "string" ? input.employeeId.trim() : "";
+  if (!employeeId || !canManage) {
+    employeeId = (await resolveSelfEmployee(ctx)).id;
+  } else {
+    await owned("employee", ctx, employeeId);
+  }
+
+  const leaveTypeId =
+    typeof input.leaveTypeId === "string" ? input.leaveTypeId.trim() : "";
+  if (!leaveTypeId) {
+    throw new HrError("VALIDATION_ERROR", { message: "กรุณาเลือกประเภทการลา" });
+  }
+  const leaveType = await db.leaveType.findFirst({
+    where: {
+      id: leaveTypeId,
+      organizationId: ctx.organizationId,
+      isActive: true,
+    },
+  });
+  if (!leaveType) {
+    throw new HrError("VALIDATION_ERROR", { message: "ไม่พบประเภทการลา" });
+  }
+
+  const startDate = requireIsoDate(input.startDate, "วันเริ่มลา");
+  const endDate = requireIsoDate(input.endDate, "วันสิ้นสุดลา");
+  if (endDate.getTime() < startDate.getTime()) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "วันสิ้นสุดต้องไม่ก่อนวันเริ่มลา",
+    });
+  }
+
+  const startUnitId =
+    typeof input.startUnitId === "string" && input.startUnitId.trim()
+      ? input.startUnitId.trim()
+      : leaveType.unitId;
+  const endUnitId =
+    typeof input.endUnitId === "string" && input.endUnitId.trim()
+      ? input.endUnitId.trim()
+      : leaveType.unitId;
+  const parsedAmount = Number(input.requestedAmount);
+  const requestedAmount =
+    Number.isFinite(parsedAmount) && parsedAmount > 0
+      ? parsedAmount
+      : Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
+
+  const employee = await db.employee.findFirst({
+    where: { id: employeeId, organizationId: ctx.organizationId },
+    select: { id: true, branchId: true },
+  });
+  if (!employee) throw new HrError("NOT_FOUND");
+
+  const { assertLeaveBalanceAvailable } = await import(
+    "@/lib/hr/services/leave-entitlements"
+  );
+  await assertLeaveBalanceAvailable(ctx, {
+    employeeId: employee.id,
+    leaveTypeId: leaveType.id,
+    requestedAmount,
+    branchId: employee.branchId,
+  });
+
   const submitted = await master("leaveRequestStatus", "SUBMITTED");
-  const overlap = await db.leaveRequest.findFirst({ where: { employeeId: input.employeeId, status: { code: { in: ["SUBMITTED", "APPROVED"] } }, startDate: { lte: date(input.endDate) }, endDate: { gte: date(input.startDate) } } });
-  if (overlap) throw new HrError("VALIDATION_ERROR", { message: "วันลาซ้อนทับกับคำขอเดิม" });
-  return db.leaveRequest.create({ data: { ...input, organizationId: ctx.organizationId, startDate: date(input.startDate), endDate: date(input.endDate), statusId: submitted.id, submittedAt: new Date() } });
+  const overlap = await db.leaveRequest.findFirst({
+    where: {
+      employeeId,
+      status: { code: { in: ["SUBMITTED", "APPROVED"] } },
+      startDate: { lte: endDate },
+      endDate: { gte: startDate },
+    },
+  });
+  if (overlap) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "วันลาซ้อนทับกับคำขอเดิม",
+    });
+  }
+
+  return db.leaveRequest.create({
+    data: {
+      organizationId: ctx.organizationId,
+      employeeId,
+      leaveTypeId: leaveType.id,
+      startDate,
+      endDate,
+      startUnitId,
+      endUnitId,
+      requestedAmount,
+      reason:
+        typeof input.reason === "string" ? input.reason.trim() || null : null,
+      statusId: submitted.id,
+      submittedAt: new Date(),
+    },
+    include: {
+      leaveType: { select: { id: true, code: true, name: true } },
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
 }
 export async function listLeaveTypes(ctx: HrServiceContext) {
   assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
@@ -517,29 +3293,177 @@ export async function listLeaveTypes(ctx: HrServiceContext) {
   });
 }
 export async function listLeaveBalances(ctx: HrServiceContext, employeeId?: string) {
-  assertHrPermission(ctx, [HR_PERMISSIONS.leaveSelf, HR_PERMISSIONS.leaveManage]);
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.leaveSelf,
+    HR_PERMISSIONS.leaveManage,
+    HR_PERMISSIONS.leaveRead,
+  ]);
   if (employeeId) await owned("employee", ctx, employeeId);
   return db.employeeLeaveBalance.findMany({
     where: {
-      ...(employeeId ? { employeeId } : { employee: { organizationId: ctx.organizationId } }),
+      ...(employeeId
+        ? { employeeId }
+        : { employee: { organizationId: ctx.organizationId } }),
     },
-    include: { leaveType: true },
+    include: {
+      leaveType: { select: { id: true, code: true, name: true } },
+      employee: {
+        select: {
+          id: true,
+          displayName: true,
+          employeeCode: true,
+          photoUrl: true,
+        },
+      },
+    },
     orderBy: [{ balanceYear: "desc" }, { createdAt: "desc" }],
   });
 }
-export async function reviewLeave(ctx: HrServiceContext, id: string, approve: boolean, note?: string) {
-  assertHrPermission(ctx, HR_PERMISSIONS.leaveApprove); const row = await owned("leaveRequest", ctx, id); assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
-  const status = await master("leaveRequestStatus", approve ? "APPROVED" : "REJECTED");
-  return db.leaveRequest.update({ where: { id }, data: { statusId: status.id, reviewedAt: new Date(), reviewedByAuthUserId: actor(ctx), reviewNote: note ?? null } });
+export async function reviewLeave(
+  ctx: HrServiceContext,
+  id: string,
+  approve: boolean,
+  note?: string,
+  coverEmployeeId?: string | null,
+) {
+  assertHrPermission(ctx, HR_PERMISSIONS.leaveApprove);
+  const row = await db.leaveRequest.findFirst({
+    where: { id, organizationId: ctx.organizationId },
+    include: {
+      employee: { select: { authUserId: true, branchId: true } },
+      status: { select: { code: true } },
+    },
+  });
+  if (!row) throw new HrError("NOT_FOUND");
+  assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
+  const status = await master(
+    "leaveRequestStatus",
+    approve ? "APPROVED" : "REJECTED",
+  );
+
+  const {
+    applyApprovedLeaveUsage,
+    reverseLeaveUsageIfAny,
+  } = await import("@/lib/hr/services/leave-entitlements");
+
+  if (approve) {
+    const nextCover =
+      typeof coverEmployeeId === "string" && coverEmployeeId.trim()
+        ? coverEmployeeId.trim()
+        : (row.coverEmployeeId ?? null);
+    await applyLeaveCoverToSchedule(ctx, row, nextCover);
+    await applyApprovedLeaveUsage(ctx, {
+      leaveRequestId: row.id,
+      employeeId: row.employeeId,
+      leaveTypeId: row.leaveTypeId,
+      branchId: row.employee.branchId,
+      requestedAmount: Number(row.requestedAmount),
+      workDate: row.startDate,
+    });
+  } else {
+    await clearLeaveScheduleEffects(row);
+    await reverseLeaveUsageIfAny(row.id);
+  }
+
+  return db.leaveRequest.update({
+    where: { id },
+    data: {
+      statusId: status.id,
+      reviewedAt: new Date(),
+      reviewedByAuthUserId: actor(ctx),
+      reviewNote: note ?? null,
+      ...(approve
+        ? {}
+        : { coverEmployeeId: null }),
+    },
+    include: {
+      employee: { select: leaveEmployeeSelect },
+      coverEmployee: { select: leaveEmployeeSelect },
+      leaveType: { select: { id: true, code: true, name: true } },
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
 }
 export async function submitOvertime(ctx: HrServiceContext, input: any) {
-  assertHrPermission(ctx, [HR_PERMISSIONS.overtimeSelf, HR_PERMISSIONS.overtimeManage]);
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.overtimeSelf,
+    HR_PERMISSIONS.overtimeManage,
+  ]);
+  const canManage = hrCan(ctx, HR_PERMISSIONS.overtimeManage);
+  let employeeId =
+    typeof input.employeeId === "string" ? input.employeeId.trim() : "";
+  if (!employeeId || !canManage) {
+    employeeId = (await resolveSelfEmployee(ctx)).id;
+  } else {
+    await owned("employee", ctx, employeeId);
+  }
+
+  const workDate = requireIsoDate(input.workDate, "วันที่ทำ OT");
+  const startAt = requireDateTime(input.startAt, "เวลาเริ่ม OT");
+  const endAt = requireDateTime(input.endAt, "เวลาสิ้นสุด OT");
+  if (endAt.getTime() <= startAt.getTime()) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "เวลาสิ้นสุดต้องหลังเวลาเริ่ม",
+    });
+  }
+  const requestedMinutes = Math.max(
+    0,
+    Math.round((endAt.getTime() - startAt.getTime()) / 60_000),
+  );
+  if (requestedMinutes <= 0) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ระยะเวลา OT ต้องมากกว่า 0 นาที",
+    });
+  }
+
+  const employee = await db.employee.findFirst({
+    where: { id: employeeId, organizationId: ctx.organizationId },
+    select: { id: true, branchId: true },
+  });
+  if (!employee) throw new HrError("NOT_FOUND");
+
   const submitted = await master("overtimeRequestStatus", "SUBMITTED");
-  return db.overtimeRequest.create({ data: { ...input, organizationId: ctx.organizationId, workDate: date(input.workDate), startAt: date(input.startAt), endAt: date(input.endAt), requestedMinutes: Math.max(0, Math.round((date(input.endAt).getTime() - date(input.startAt).getTime()) / 60000)), statusId: submitted.id, submittedAt: new Date() } });
+  return db.overtimeRequest.create({
+    data: {
+      organizationId: ctx.organizationId,
+      employeeId: employee.id,
+      branchId:
+        typeof input.branchId === "string" && input.branchId.trim()
+          ? input.branchId.trim()
+          : employee.branchId,
+      workDate,
+      startAt,
+      endAt,
+      requestedMinutes,
+      reason:
+        typeof input.reason === "string" ? input.reason.trim() || null : null,
+      statusId: submitted.id,
+      submittedAt: new Date(),
+    },
+    include: {
+      status: { select: { id: true, code: true, name: true } },
+    },
+  });
 }
 export async function reviewOvertime(ctx: HrServiceContext, id: string, approve: boolean, note?: string) {
-  assertHrPermission(ctx, HR_PERMISSIONS.overtimeApprove); const status = await master("overtimeRequestStatus", approve ? "APPROVED" : "REJECTED");
-  return db.overtimeRequest.update({ where: { id }, data: { statusId: status.id, reviewedAt: new Date(), reviewedByAuthUserId: actor(ctx), reviewNote: note ?? null } });
+  assertHrPermission(ctx, HR_PERMISSIONS.overtimeApprove);
+  const row = await db.overtimeRequest.findFirst({
+    where: { id, organizationId: ctx.organizationId },
+    include: { employee: { select: { authUserId: true } } },
+  });
+  if (!row) throw new HrError("NOT_FOUND");
+  assertNoSelfApproval(row.employee?.authUserId, actor(ctx)!);
+  const status = await master("overtimeRequestStatus", approve ? "APPROVED" : "REJECTED");
+  return db.overtimeRequest.update({
+    where: { id },
+    data: {
+      statusId: status.id,
+      reviewedAt: new Date(),
+      reviewedByAuthUserId: actor(ctx),
+      reviewNote: note ?? null,
+      ...(approve ? { approvedMinutes: row.requestedMinutes } : {}),
+    },
+  });
 }
 
 export async function createPayrollRun(ctx: HrServiceContext, payrollPeriodId: string) {
@@ -608,12 +3532,50 @@ export async function saveRecurringPayItem(ctx: HrServiceContext, input: any, id
   return id ? db.employeeRecurringPayItem.update({ where: { id }, data }) : db.employeeRecurringPayItem.create({ data });
 }
 export async function approvalInbox(ctx: HrServiceContext) {
-  assertHrPermission(ctx, HR_PERMISSIONS.approvalRead);
-  const [leave, overtime, adjustments] = await Promise.all([
-    db.leaveRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
-    db.overtimeRequest.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
-    db.attendanceAdjustment.findMany({ where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } } }),
+  assertHrPermission(ctx, [
+    HR_PERMISSIONS.approvalRead,
+    HR_PERMISSIONS.leaveApprove,
+    HR_PERMISSIONS.overtimeApprove,
   ]);
+  const employeeSelect = {
+    id: true,
+    displayName: true,
+    employeeCode: true,
+    photoUrl: true,
+    authUserId: true,
+  };
+  const [leaveRows, overtime, adjustments] = await Promise.all([
+    db.leaveRequest.findMany({
+      where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } },
+      include: {
+        employee: { select: { ...employeeSelect, ...leaveEmployeeSelect } },
+        coverEmployee: { select: leaveEmployeeSelect },
+        leaveType: { select: { name: true, code: true } },
+        status: { select: { code: true, name: true } },
+      },
+      orderBy: { submittedAt: "desc" },
+    }),
+    db.overtimeRequest.findMany({
+      where: { organizationId: ctx.organizationId, status: { code: "SUBMITTED" } },
+      include: {
+        employee: { select: employeeSelect },
+        status: { select: { code: true, name: true } },
+      },
+      orderBy: { submittedAt: "desc" },
+    }),
+    db.attendanceAdjustment.findMany({
+      where: {
+        organizationId: ctx.organizationId,
+        status: { code: "SUBMITTED" },
+      },
+      include: {
+        employee: { select: adjustmentEmployeeSelect },
+        status: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  const leave = await enrichLeaveRowsWithShifts(leaveRows);
   return { leave, overtime, attendanceAdjustments: adjustments };
 }
 export async function resolveSelfEmployee(ctx: HrServiceContext, platformUserId?: string | null) {
@@ -621,11 +3583,143 @@ export async function resolveSelfEmployee(ctx: HrServiceContext, platformUserId?
   if (!employee) throw new HrError("NOT_FOUND", { message: "บัญชีนี้ยังไม่ได้เชื่อมกับข้อมูลพนักงาน" });
   return employee;
 }
+
+function formatShiftClock(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value.slice(0, 5);
+  const hh = String(value.getUTCHours()).padStart(2, "0");
+  const mm = String(value.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+/** Published (or locked) assignments for the signed-in employee. */
+export async function listMySchedule(ctx: HrServiceContext) {
+  assertHrPermission(ctx, HR_PERMISSIONS.scheduleRead);
+  const employee = await resolveSelfEmployee(ctx);
+  const rows = await db.shiftAssignment.findMany({
+    where: { employeeId: employee.id },
+    include: {
+      shift: {
+        select: {
+          name: true,
+          startTime: true,
+          endTime: true,
+          crossesMidnight: true,
+        },
+      },
+      coversForEmployee: {
+        select: {
+          id: true,
+          displayName: true,
+          firstNameTh: true,
+          lastNameTh: true,
+        },
+      },
+      schedulePeriod: {
+        select: {
+          id: true,
+          name: true,
+          periodStart: true,
+          periodEnd: true,
+          status: { select: { code: true, name: true } },
+        },
+      },
+    },
+    orderBy: [{ workDate: "asc" }, { sequenceNo: "asc" }],
+    take: 400,
+  });
+
+  const visibleStatuses = new Set(["PUBLISHED", "LOCKED"]);
+  const visible = rows.filter((row: {
+    schedulePeriod: { status: { code: string } };
+  }) => visibleStatuses.has(row.schedulePeriod.status.code));
+
+  const previousShiftIds = new Set<string>();
+  for (const row of visible as Array<{ notes?: string | null }>) {
+    const fromId = parseCoverFromShiftId(row.notes);
+    if (fromId) previousShiftIds.add(fromId);
+  }
+  const previousShiftNameById = new Map<string, string>();
+  if (previousShiftIds.size > 0) {
+    const previousShifts = await db.shift.findMany({
+      where: { id: { in: [...previousShiftIds] } },
+      select: { id: true, name: true },
+    });
+    for (const shift of previousShifts as Array<{ id: string; name: string }>) {
+      previousShiftNameById.set(shift.id, shift.name);
+    }
+  }
+
+  return {
+    pendingPublish: visible.length === 0 && rows.length > 0,
+    assignments: visible.map(
+      (row: {
+        id: string;
+        workDate: Date;
+        isRestDay: boolean;
+        isLeaveDay: boolean;
+        notes?: string | null;
+        coversForEmployee: {
+          displayName: string;
+          firstNameTh: string;
+          lastNameTh: string;
+        } | null;
+        shift: {
+          name: string;
+          startTime: Date;
+          endTime: Date;
+          crossesMidnight: boolean;
+        } | null;
+        schedulePeriod: {
+          id: string;
+          name: string;
+          periodStart: Date;
+          periodEnd: Date;
+          status: { code: string; name: string };
+        };
+      }) => {
+        const startTime = formatShiftClock(row.shift?.startTime);
+        const endTime = formatShiftClock(row.shift?.endTime);
+        const coversForName = row.coversForEmployee
+          ? row.coversForEmployee.displayName?.trim() ||
+            `${row.coversForEmployee.firstNameTh} ${row.coversForEmployee.lastNameTh}`.trim()
+          : null;
+        const fromShiftId = parseCoverFromShiftId(row.notes);
+        const previousShiftName = fromShiftId
+          ? (previousShiftNameById.get(fromShiftId) ?? null)
+          : null;
+        return {
+          id: row.id,
+          workDate: toDateKey(row.workDate),
+          isRestDay: row.isRestDay,
+          isLeaveDay: row.isLeaveDay,
+          coversForName,
+          previousShiftName,
+          isCoverDuty: Boolean(coversForName),
+          shiftName: row.shift?.name ?? null,
+          startTime,
+          endTime,
+          timeLabel:
+            startTime && endTime
+              ? `${startTime}–${endTime}${row.shift?.crossesMidnight ? " (+1)" : ""}`
+              : null,
+          periodId: row.schedulePeriod.id,
+          periodName: row.schedulePeriod.name,
+          periodStart: toDateKey(row.schedulePeriod.periodStart),
+          periodEnd: toDateKey(row.schedulePeriod.periodEnd),
+          statusCode: row.schedulePeriod.status.code,
+          statusName: row.schedulePeriod.status.name,
+        };
+      },
+    ),
+  };
+}
+
 export async function selfService(ctx: HrServiceContext, area: string, platformUserId?: string | null) {
   const employee = await resolveSelfEmployee(ctx, platformUserId);
   if (area === "profile") return employee;
-  if (area === "schedule") return db.shiftAssignment.findMany({ where: { employeeId: employee.id }, include: { shift: true }, orderBy: { workDate: "desc" } });
-  if (area === "attendance") return db.attendanceDay.findMany({ where: { employeeId: employee.id }, orderBy: { workDate: "desc" } });
+  if (area === "schedule") return listMySchedule(ctx);
+  if (area === "attendance") return listSelfAttendanceToday(ctx);
   if (area === "leave") return db.leaveRequest.findMany({ where: { employeeId: employee.id }, orderBy: { createdAt: "desc" } });
   if (area === "overtime") return db.overtimeRequest.findMany({ where: { employeeId: employee.id }, orderBy: { createdAt: "desc" } });
   if (area === "payslips") return db.payslip.findMany({ where: { employeeId: employee.id }, orderBy: { createdAt: "desc" } });

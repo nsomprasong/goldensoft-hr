@@ -37,7 +37,11 @@ export async function middleware(request: NextRequest) {
   const testAuth =
     process.env.ALLOW_TEST_AUTH === "true" &&
     Boolean(request.headers.get("x-test-auth-user-id"));
-  const signedIn = Boolean(user) || testAuth;
+  // Customer App already verified Platform bootstrap and forwards a signed bridge.
+  const customerShellTrusted =
+    request.headers.get("x-gs-customer-shell") === "1" &&
+    Boolean(request.headers.get("x-gs-platform-bootstrap"));
+  const signedIn = Boolean(user) || testAuth || customerShellTrusted;
 
   if (pathname === "/login" && signedIn) {
     const url = request.nextUrl.clone();
@@ -54,6 +58,11 @@ export async function middleware(request: NextRequest) {
         },
         { status: 401 },
       );
+    }
+    // Embedded under Customer App — never bounce the browser to HR's /login
+    // (that Location is relative and becomes App /login → Platform loop).
+    if (request.headers.get("x-gs-customer-shell") === "1") {
+      return new NextResponse("Unauthorized", { status: 401 });
     }
     const url = request.nextUrl.clone();
     url.pathname = "/login";

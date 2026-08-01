@@ -22,7 +22,39 @@ export type ScheduleComposerOption = {
   label: string;
 };
 
+/** Existing period assignments used to filter the employee roster by shift. */
+export type ScheduleComposerAssignment = {
+  employeeId: string;
+  shiftId: string | null;
+};
+
 type PeriodPreset = "week" | "month" | "custom";
+
+function filterEmployeesForShift(
+  employees: ScheduleComposerOption[],
+  assignments: ScheduleComposerAssignment[] | undefined,
+  shiftId: string,
+): ScheduleComposerOption[] {
+  if (!assignments || assignments.length === 0 || !shiftId) {
+    return employees;
+  }
+  const shiftIdsByEmployee = new Map<string, Set<string>>();
+  const assignedEmployeeIds = new Set<string>();
+  for (const row of assignments) {
+    assignedEmployeeIds.add(row.employeeId);
+    if (!row.shiftId) continue;
+    let set = shiftIdsByEmployee.get(row.employeeId);
+    if (!set) {
+      set = new Set();
+      shiftIdsByEmployee.set(row.employeeId, set);
+    }
+    set.add(row.shiftId);
+  }
+  return employees.filter((emp) => {
+    if (!assignedEmployeeIds.has(emp.id)) return true;
+    return shiftIdsByEmployee.get(emp.id)?.has(shiftId) ?? false;
+  });
+}
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -60,8 +92,12 @@ export default function ScheduleComposer({
   lockedPeriod,
   employees,
   shifts,
+  assignments,
   canPublish = false,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   mode?: "create" | "add";
   scheduleId?: string;
@@ -69,8 +105,13 @@ export default function ScheduleComposer({
   lockedPeriod?: { periodStart: string; periodEnd: string; name: string };
   employees: ScheduleComposerOption[];
   shifts: ScheduleComposerOption[];
+  /** When set, roster hides people already on a different shift. */
+  assignments?: ScheduleComposerAssignment[];
   canPublish?: boolean;
   disabled?: boolean;
+  embedded?: boolean;
+  onDone?: (scheduleId: string) => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [preset, setPreset] = useState<PeriodPreset>("week");
@@ -83,7 +124,9 @@ export default function ScheduleComposer({
   const [dayMode, setDayMode] = useState<ScheduleDayMode>("weekdays");
   const [shiftId, setShiftId] = useState(shifts[0]?.id ?? "");
   const [selected, setSelected] = useState<string[]>(() =>
-    employees.map((e) => e.id),
+    filterEmployeesForShift(employees, assignments, shifts[0]?.id ?? "").map(
+      (e) => e.id,
+    ),
   );
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -92,12 +135,18 @@ export default function ScheduleComposer({
     text: string;
   } | null>(null);
 
+  const visibleEmployees = useMemo(
+    () => filterEmployeesForShift(employees, assignments, shiftId),
+    [employees, assignments, shiftId],
+  );
+
   const workDates = useMemo(
     () => expandWorkDates(periodStart, periodEnd, dayMode),
     [periodStart, periodEnd, dayMode],
   );
 
   const previewCount = selected.length * workDates.length;
+  const filtersByShift = Boolean(assignments && assignments.length > 0);
 
   function applyPreset(next: PeriodPreset) {
     setPreset(next);
@@ -112,6 +161,23 @@ export default function ScheduleComposer({
     }
   }
 
+  function selectShift(nextShiftId: string) {
+    setShiftId(nextShiftId);
+    const nextVisible = filterEmployeesForShift(
+      employees,
+      assignments,
+      nextShiftId,
+    );
+    setSelected(nextVisible.map((e) => e.id));
+    setErrors((prev) => {
+      if (!prev.employees && !prev.shiftId) return prev;
+      const next = { ...prev };
+      delete next.employees;
+      delete next.shiftId;
+      return next;
+    });
+  }
+
   function toggleEmployee(id: string) {
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -119,9 +185,13 @@ export default function ScheduleComposer({
   }
 
   function toggleAllEmployees() {
-    setSelected((prev) =>
-      prev.length === employees.length ? [] : employees.map((e) => e.id),
-    );
+    setSelected((prev) => {
+      const visibleIds = visibleEmployees.map((e) => e.id);
+      const allVisibleSelected =
+        visibleIds.length > 0 &&
+        visibleIds.every((id) => prev.includes(id));
+      return allVisibleSelected ? [] : visibleIds;
+    });
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -172,13 +242,24 @@ export default function ScheduleComposer({
       }
     }
 
+    const visibleIds = new Set(visibleEmployees.map((e) => e.id));
+    const employeeIds = selected.filter((id) => visibleIds.has(id));
+    if (employeeIds.length === 0) {
+      setSaving(false);
+      setFeedback({
+        kind: "error",
+        text: "ไม่มีพนักงานที่จัดกะนี้ได้ในรายการที่เลือก",
+      });
+      return;
+    }
+
     const assigned = await submitHrJson(
       `/api/hr/schedules/${id}`,
       "POST",
       {
         action: "assign",
         confirm: true,
-        employeeIds: selected,
+        employeeIds,
         workDates,
         shiftId,
       },
@@ -213,6 +294,10 @@ export default function ScheduleComposer({
     }
 
     setSaving(false);
+    if (onDone && id) {
+      onDone(id);
+      return;
+    }
     setFeedback({
       kind: "success",
       text: publishedOk
@@ -226,8 +311,16 @@ export default function ScheduleComposer({
   const datesLocked = mode === "add" && !!lockedPeriod;
 
   return (
-    <form className="card schedule-composer" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "จัดตารางกะ" : "เพิ่มกะในตารางนี้"}</h2>
+    <form
+      className={
+        embedded ? "schedule-composer schedule-composer--embedded" : "card schedule-composer"
+      }
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <h2>{mode === "create" ? "จัดตารางกะ" : "เพิ่มกะในตารางนี้"}</h2>
+      )}
       <p className="muted" style={{ marginTop: 0 }}>
         {mode === "create"
           ? "เลือกช่วงวัน กะ และพนักงาน แล้วกดบันทึก — จบในขั้นตอนเดียว"
@@ -305,7 +398,7 @@ export default function ScheduleComposer({
             <select
               {...fieldProps("sc-shift", errors.shiftId)}
               value={shiftId}
-              onChange={(e) => setShiftId(e.target.value)}
+              onChange={(e) => selectShift(e.target.value)}
               disabled={saving || disabled}
             >
               {shifts.map((s) => (
@@ -336,11 +429,19 @@ export default function ScheduleComposer({
             type="button"
             className="btn btn-sm"
             onClick={toggleAllEmployees}
-            disabled={saving || disabled || employees.length === 0}
+            disabled={saving || disabled || visibleEmployees.length === 0}
           >
-            {selected.length === employees.length ? "ยกเลิกทั้งหมด" : "เลือกทั้งหมด"}
+            {visibleEmployees.length > 0 &&
+            visibleEmployees.every((e) => selected.includes(e.id))
+              ? "ยกเลิกทั้งหมด"
+              : "เลือกทั้งหมด"}
           </button>
         </div>
+        {filtersByShift ? (
+          <p className="muted schedule-roster-hint">
+            แสดงเฉพาะคนในกะที่เลือก และคนที่ยังไม่ได้จัดลงกะในตารางนี้
+          </p>
+        ) : null}
         {errors.employees ? (
           <p className="field-error" role="alert">
             {errors.employees}
@@ -350,9 +451,13 @@ export default function ScheduleComposer({
           <p className="empty">
             ยังไม่มีพนักงาน — <Link href="/hr/employees">เพิ่มพนักงานก่อน</Link>
           </p>
+        ) : visibleEmployees.length === 0 ? (
+          <p className="empty">
+            ไม่มีพนักงานที่จัดกะนี้ได้ — ทุกคนถูกจัดในกะอื่นแล้ว
+          </p>
         ) : (
           <ul className="schedule-roster-list">
-            {employees.map((emp) => {
+            {visibleEmployees.map((emp) => {
               const checked = selected.includes(emp.id);
               return (
                 <li key={emp.id}>
@@ -386,7 +491,7 @@ export default function ScheduleComposer({
           disabled={
             saving ||
             disabled ||
-            employees.length === 0 ||
+            visibleEmployees.length === 0 ||
             shifts.length === 0
           }
         >
@@ -398,6 +503,16 @@ export default function ScheduleComposer({
                 : "บันทึกตาราง"
               : "เพิ่มกะ"}
         </button>
+        {onCancel ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            ยกเลิก
+          </button>
+        ) : null}
       </div>
     </form>
   );

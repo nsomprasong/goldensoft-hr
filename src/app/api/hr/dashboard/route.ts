@@ -9,7 +9,8 @@ export async function GET(request: Request): Promise<Response> {
     const { service, repository } = await requireHrApi(request, {
       permission: HR_PERMISSIONS.employeeRead,
     });
-    const dashboard = await getHrDashboard(repository, service);
+    const branchId = new URL(request.url).searchParams.get("branchId");
+    const dashboard = await getHrDashboard(repository, service, { branchId });
     return jsonResponse({ dashboard });
   });
 }

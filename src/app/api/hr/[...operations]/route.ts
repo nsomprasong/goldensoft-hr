@@ -3,8 +3,8 @@ import { hrOperationSchema } from "@/lib/hr/schemas";
 import {
   approvalInbox, assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, deleteCalendar, deleteHoliday, deleteSchedulePeriod, getSchedulePeriod, issuePayslips,
-  listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveTypes, listNotifications, listPayItems, listSchedulePeriods, listWorkLocations,
-  markNotificationRead, payrollAction, report, reviewLeave, reviewOvertime, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
+  assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listWorkLocations,
+  markNotificationRead, payrollAction, report, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
   toCsv, updateSchedulePeriod, updateWorkLocation,
 } from "@/lib/hr/services/operations";
 
@@ -60,7 +60,11 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
   }
   if (path === "schedules") {
     if (request.method === "GET") {
-      return jsonResponse(await listSchedulePeriods(service));
+      return jsonResponse(
+        await listSchedulePeriods(service, {
+          branchId: new URL(request.url).searchParams.get("branchId"),
+        }),
+      );
     }
     return jsonResponse(await createSchedulePeriod(service, body), 201);
   }
@@ -77,17 +81,116 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     }
     return jsonResponse(await scheduleAction(service, id, body));
   }
-  if (path === "attendance/clock") return jsonResponse(await clock(service, body), 201);
+  if (path === "attendance/clock") {
+    if (request.method === "GET") {
+      return jsonResponse(await listSelfAttendanceToday(service));
+    }
+    return jsonResponse(await clock(service, body), 201);
+  }
   if (path === "attendance/days") return jsonResponse(await listAttendanceDays(service, Object.fromEntries(new URL(request.url).searchParams)));
-  if (path === "attendance/adjustments") return jsonResponse(await createAttendanceAdjustment(service, body), 201);
+  if (path === "attendance/adjustments") {
+    if (request.method === "GET") {
+      const params = new URL(request.url).searchParams;
+      const scopeRaw = params.get("scope");
+      return jsonResponse(
+        await listAttendanceAdjustments(service, {
+          status: params.get("status"),
+          scope: scopeRaw === "self" || scopeRaw === "org" ? scopeRaw : null,
+        }),
+      );
+    }
+    if (body.action === "approve" || body.action === "reject") {
+      return jsonResponse(
+        await reviewAttendanceAdjustment(
+          service,
+          body.id,
+          body.action === "approve",
+          body.reason,
+        ),
+      );
+    }
+    return jsonResponse(await createAttendanceAdjustment(service, body), 201);
+  }
   if (path === "leave/requests") {
-    if (body.action === "approve" || body.action === "reject") return jsonResponse(await reviewLeave(service, body.id, body.action === "approve", body.reason));
+    if (request.method === "GET") {
+      const params = new URL(request.url).searchParams;
+      const scopeRaw = params.get("scope");
+      return jsonResponse(
+        await listLeaveRequests(service, {
+          status: params.get("status"),
+          scope: scopeRaw === "self" || scopeRaw === "org" ? scopeRaw : null,
+        }),
+      );
+    }
+    if (body.action === "assignCover") {
+      return jsonResponse(await assignLeaveCover(service, body));
+    }
+    if (body.action === "approve" || body.action === "reject") {
+      return jsonResponse(
+        await reviewLeave(
+          service,
+          body.id,
+          body.action === "approve",
+          body.reason,
+          body.coverEmployeeId,
+        ),
+      );
+    }
     return jsonResponse(await submitLeave(service, body), 201);
   }
-  if (path === "leave/balances") return jsonResponse(await listLeaveBalances(service, new URL(request.url).searchParams.get("employeeId") ?? undefined));
+  if (path === "leave/balances") {
+    return jsonResponse(
+      await listLeaveBalances(
+        service,
+        new URL(request.url).searchParams.get("employeeId") ?? undefined,
+      ),
+    );
+  }
+  if (path === "leave/cover-candidates") {
+    const leaveRequestId =
+      new URL(request.url).searchParams.get("leaveRequestId") ?? "";
+    return jsonResponse(
+      await listLeaveCoverCandidates(service, { leaveRequestId }),
+    );
+  }
   if (path === "leave/types") return jsonResponse(await listLeaveTypes(service));
+  if (path === "leave/entitlements") {
+    const {
+      listLeaveEntitlementSettings,
+      upsertLeaveEntitlement,
+    } = await import("@/lib/hr/services/leave-entitlements");
+    if (request.method === "GET") {
+      return jsonResponse(await listLeaveEntitlementSettings(service));
+    }
+    return jsonResponse(await upsertLeaveEntitlement(service, body));
+  }
+  if (path === "leave/balances/self") {
+    const { listSelfLeaveBalances } = await import(
+      "@/lib/hr/services/leave-entitlements"
+    );
+    return jsonResponse(await listSelfLeaveBalances(service));
+  }
   if (path === "overtime/requests") {
-    if (body.action === "approve" || body.action === "reject") return jsonResponse(await reviewOvertime(service, body.id, body.action === "approve", body.reason));
+    if (request.method === "GET") {
+      const params = new URL(request.url).searchParams;
+      const scopeRaw = params.get("scope");
+      return jsonResponse(
+        await listOvertimeRequests(service, {
+          status: params.get("status"),
+          scope: scopeRaw === "self" || scopeRaw === "org" ? scopeRaw : null,
+        }),
+      );
+    }
+    if (body.action === "approve" || body.action === "reject") {
+      return jsonResponse(
+        await reviewOvertime(
+          service,
+          body.id,
+          body.action === "approve",
+          body.reason,
+        ),
+      );
+    }
     return jsonResponse(await submitOvertime(service, body), 201);
   }
   if (path === "pay-items") return jsonResponse(request.method === "GET" ? await listPayItems(service, new URL(request.url).searchParams.get("employeeId") ?? undefined) : await saveRecurringPayItem(service, body, body.id));

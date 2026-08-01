@@ -66,8 +66,19 @@ export async function resolveHrRequestContext(
     parseCookieValue(input.cookieHeader, PLATFORM_CONTEXT_COOKIE_NAME),
   );
 
-  const organizationId =
-    cookie?.organizationId ?? me.activeOrganization?.id ?? null;
+  const isSuper = me.platformRoles.includes("SUPER_ADMIN");
+  const cookieMembership = cookie?.organizationId
+    ? me.memberships.find((m) => m.organizationId === cookie.organizationId)
+    : null;
+  const cookieUsable =
+    !cookie ||
+    Boolean(cookieMembership) ||
+    (isSuper && cookie.mode === "platform_admin");
+
+  // Prefer bridge/Platform active org when gs_platform_ctx is from another user.
+  const organizationId = cookieUsable
+    ? (cookie?.organizationId ?? me.activeOrganization?.id ?? null)
+    : (me.activeOrganization?.id ?? null);
   if (!organizationId) {
     throw new PlatformIntegrationError("TENANT_CONTEXT_REQUIRED");
   }
@@ -79,12 +90,11 @@ export async function resolveHrRequestContext(
     throw new PlatformIntegrationError("CLIENT_ORG_MISMATCH");
   }
 
-  const isSuper = me.platformRoles.includes("SUPER_ADMIN");
   const membership = me.memberships.find(
     (m) => m.organizationId === organizationId,
   );
   const contextMode =
-    cookie?.mode === "platform_admin" && isSuper
+    cookieUsable && cookie?.mode === "platform_admin" && isSuper
       ? ("platform_admin" as const)
       : ("membership" as const);
 
@@ -92,7 +102,9 @@ export async function resolveHrRequestContext(
     throw new PlatformIntegrationError("FORBIDDEN");
   }
 
-  const branchId = cookie?.branchId ?? me.activeBranch?.id ?? null;
+  const branchId = cookieUsable
+    ? (cookie?.branchId ?? me.activeBranch?.id ?? null)
+    : (me.activeBranch?.id ?? null);
   if (input.requiredBranchId && contextMode !== "platform_admin") {
     const allowed = input.allowedBranchIds;
     if (allowed != null) {

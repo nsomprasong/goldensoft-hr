@@ -41,7 +41,7 @@ export function masterId(
   return masterIdByCode(store, kind, code);
 }
 
-/** OWNER/ADMIN context — note this deliberately excludes compensation access. */
+/** OWNER/ADMIN context — includes compensation for employment wage management. */
 export function adminContext(
   overrides: Partial<HrServiceContext> = {},
 ): HrServiceContext {

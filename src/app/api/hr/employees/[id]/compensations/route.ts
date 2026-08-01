@@ -40,7 +40,10 @@ export async function POST(
     const { id } = await context.params;
     const body = await parseJsonBody(request, compensationCreateSchema);
     const { service, repository } = await requireHrApi(request, {
-      permission: HR_PERMISSIONS.compensationManage,
+      permission: [
+        HR_PERMISSIONS.compensationManage,
+        HR_PERMISSIONS.employeeCreate,
+      ],
     });
     const compensation = await addCompensation(repository, service, id, body);
     return jsonResponse({ compensation }, 201);

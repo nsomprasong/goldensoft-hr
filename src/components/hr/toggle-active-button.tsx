@@ -11,7 +11,8 @@ export type HrResource =
   | "positions"
   | "shifts"
   | "overtime-rules"
-  | "payroll-schedules";
+  | "payroll-schedules"
+  | "work-locations";
 
 const RESOURCE_LABEL: Record<HrResource, string> = {
   employees: "พนักงาน",
@@ -20,6 +21,7 @@ const RESOURCE_LABEL: Record<HrResource, string> = {
   shifts: "กะงาน",
   "overtime-rules": "กฎ OT",
   "payroll-schedules": "รอบจ่าย",
+  "work-locations": "สถานที่ทำงาน",
 };
 
 /**

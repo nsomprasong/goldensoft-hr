@@ -18,10 +18,16 @@ export default function HolidayForm({
   calendarId,
   holidayTypes,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   calendarId: string;
   holidayTypes: HolidayTypeOption[];
   disabled?: boolean;
+  embedded?: boolean;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const defaultType =
@@ -72,6 +78,11 @@ export default function HolidayForm({
       return;
     }
 
+    if (onDone) {
+      onDone();
+      return;
+    }
+
     setHolidayDate("");
     setName("");
     setIsPaid(true);
@@ -80,8 +91,12 @@ export default function HolidayForm({
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>เพิ่มวันหยุด</h2>
+    <form
+      className={embedded ? "hr-holiday-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : <h2>เพิ่มวันหยุด</h2>}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
@@ -152,6 +167,16 @@ export default function HolidayForm({
         >
           {saving ? "กำลังบันทึก…" : "เพิ่มวันหยุด"}
         </button>
+        {onCancel ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={onCancel}
+            disabled={saving}
+          >
+            ยกเลิก
+          </button>
+        ) : null}
       </div>
     </form>
   );

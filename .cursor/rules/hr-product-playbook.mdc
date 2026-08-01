@@ -1,0 +1,19 @@
+---
+description: อ่านและอัปเดต HR_PRODUCT_PLAYBOOK ก่อน/หลังแก้ฟีเจอร์ HR
+alwaysApply: true
+---
+
+# HR Product Playbook
+
+Before changing HR features or UI in `goldensoft-hr`:
+
+1. Read `goldensoft-hr/docs/HR_PRODUCT_PLAYBOOK.md` (menu status, phase, pipeline, file map)
+2. Follow the active phase scope — do not skip ahead on blocked items
+3. Keep work short and data-linked: Employee → Schedule → Attendance → Leave/OT → Payroll
+
+After meaningful progress:
+
+1. Update the playbook matrix / phase status / changelog
+2. To **close a phase**: tests must pass, playbook updated, then **ask the user for approval** — never mark a phase `CLOSED` without approval
+
+Locked product decisions are in the playbook (clock 1C, GPS radius, EmployeeAvatar, tax/SSO 2B).

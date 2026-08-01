@@ -47,6 +47,7 @@ const HR100_PAGES = [
   "src/app/hr/me/payslips/[id]/page.tsx",
   "src/app/hr/schedules/page.tsx",
   "src/app/hr/schedules/[id]/page.tsx",
+  "src/app/hr/schedules/[id]/shifts/[shiftId]/page.tsx",
   "src/app/hr/calendars/page.tsx",
   "src/app/hr/locations/page.tsx",
   "src/app/hr/attendance/page.tsx",
@@ -54,6 +55,7 @@ const HR100_PAGES = [
   "src/app/hr/attendance/adjustments/page.tsx",
   "src/app/hr/leave/page.tsx",
   "src/app/hr/leave/balances/page.tsx",
+  "src/app/hr/settings/leave-entitlements/page.tsx",
   "src/app/hr/overtime/page.tsx",
   "src/app/hr/approvals/page.tsx",
   "src/app/hr/compensation/page.tsx",
@@ -72,7 +74,6 @@ const FORMS = [
   "src/components/hr/shift-form.tsx",
   "src/components/hr/overtime-rule-form.tsx",
   "src/components/hr/payroll-schedule-form.tsx",
-  "src/components/hr/link-platform-user-form.tsx",
   "src/components/hr/compensation-form.tsx",
   "src/components/hr/payroll-period-form.tsx",
   "src/components/hr/payroll-period-status-form.tsx",
@@ -112,13 +113,18 @@ describe("Phase 8B routes", () => {
 
   it("renders every page inside the HR shell", () => {
     for (const page of PAGES) {
-      assert.match(read(page), /<HrShell/, `${page} should render HrShell`);
+      const source = read(page);
+      // Redirect-only pages do not render chrome.
+      if (/redirect\(/.test(source) && !/<HrShell/.test(source)) continue;
+      assert.match(source, /<HrShell/, `${page} should render HrShell`);
     }
   });
 
   it("keeps user-facing copy in Thai", () => {
     for (const page of [...PAGES, ...FORMS]) {
-      assert.ok(THAI.test(read(page)), `${page} should contain Thai copy`);
+      const source = read(page);
+      if (/redirect\(/.test(source) && !THAI.test(source)) continue;
+      assert.ok(THAI.test(source), `${page} should contain Thai copy`);
     }
   });
 });
@@ -237,18 +243,24 @@ describe("Phase 8B actions are real", () => {
 });
 
 describe("Phase 8B permission gating", () => {
-  it("gates the compensation tab behind hr.compensation.read", () => {
+  it("gates compensation under employment behind hr.compensation.read", () => {
     const detail = read("src/app/hr/employees/[id]/page.tsx");
+    const employment = read("src/components/hr/employee-tab-sections.tsx");
     assert.match(detail, /HR_PERMISSIONS\.compensationRead/);
-    assert.match(detail, /canReadCompensation\s*\?\s*\[\.\.\.TABS, COMPENSATION_TAB\]/);
+    assert.match(detail, /documents/);
     assert.match(
       detail,
-      /activeTab === "compensation" && canReadCompensation/,
-      "compensation panel must require the read permission",
+      /activeTab === "employment"/,
+      "compensation lives under the employment tab",
     );
     assert.match(
-      detail,
-      /canManageCompensation\s*\?/,
+      employment,
+      /canReadCompensation/,
+      "compensation history must require the read permission",
+    );
+    assert.match(
+      employment,
+      /canManageCompensation/,
       "compensation form must require the manage permission",
     );
   });
@@ -298,6 +310,10 @@ describe("Phase 8B permission gating", () => {
   });
 
   it("only renders management controls for permitted roles", () => {
+    const workspaces: Record<string, string> = {
+      "src/app/hr/settings/shifts/page.tsx":
+        "src/components/hr/shifts-workspace.tsx",
+    };
     for (const page of [
       "src/app/hr/settings/departments/page.tsx",
       "src/app/hr/settings/positions/page.tsx",
@@ -307,7 +323,11 @@ describe("Phase 8B permission gating", () => {
     ]) {
       const source = read(page);
       assert.match(source, /canHr\(ctx, HR_PERMISSIONS\.\w+Manage\)/, page);
-      assert.match(source, /canManage \?/, page);
+      const workspacePath = workspaces[page];
+      const gateSource = workspacePath
+        ? `${source}\n${read(workspacePath)}`
+        : source;
+      assert.match(gateSource, /canManage \?/, page);
     }
   });
 });
@@ -330,8 +350,15 @@ describe("Phase 8B validation feedback", () => {
   });
 
   it("auto-generates business codes instead of asking users to type them", () => {
+    // Employee form never surfaces codes in UI; server assigns employeeCode.
+    const employeeForm = read("src/components/hr/employee-form.tsx");
+    assert.doesNotMatch(
+      employeeForm,
+      /employeeCode|รหัสพนักงาน|validateCode\(/,
+      "employee form must not show or require codes",
+    );
+
     for (const form of [
-      "src/components/hr/employee-form.tsx",
       "src/components/hr/department-form.tsx",
       "src/components/hr/position-form.tsx",
       "src/components/hr/shift-form.tsx",
@@ -389,8 +416,12 @@ describe("Phase 8B resilience without the migration", () => {
 
   it("tells the user when HR data is not ready", () => {
     for (const page of PAGES) {
+      const source = read(page);
+      if (/redirect\(/.test(source) && !/DatabaseUnavailableNotice/.test(source)) {
+        continue;
+      }
       assert.match(
-        read(page),
+        source,
         /DatabaseUnavailableNotice/,
         `${page} should render the migration notice`,
       );
@@ -445,7 +476,12 @@ describe("Phase 8B layout and styling", () => {
     assert.match(shell, /Debug Shell/);
     assert.match(shell, /standalone_debug/);
     assert.match(shell, /showProductNav=\{false\}/);
-    assert.doesNotMatch(css, /position: fixed/);
+    // Sticky page header only — overlays/FAB/pending may use fixed.
+    assert.doesNotMatch(
+      css,
+      /\.hr-header\s*\{[^}]*position:\s*fixed/s,
+      "hr-header must stay sticky, not fixed",
+    );
   });
 });
 

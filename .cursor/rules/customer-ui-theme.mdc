@@ -1,0 +1,30 @@
+---
+description: ใช้ธีมกลาง Customer UI (design-tokens) ใน app และ HR ทุกครั้งที่ออกแบบ UI
+alwaysApply: true
+---
+
+# Customer UI central theme
+
+When designing or changing UI in `goldensoft-app` or `goldensoft-hr`:
+
+## Source of truth
+
+- Canonical tokens: `goldensoft-app/src/app/design-tokens.css`
+- HR must keep an identical copy: `goldensoft-hr/src/app/design-tokens.css`
+- After editing tokens in the app, run `npm run sync:design-tokens` in `goldensoft-hr`
+- Contract: `goldensoft-app/docs/customer-ui-design-contract-v1.md`
+
+## Do
+
+- Use semantic tokens (`--color-*`, typography, space, radius, shadow)
+- In HR, prefer `--hr-*` aliases under `.hr-root` that map to the contract
+- Mobile-first; employee lists use circular `EmployeeAvatar`
+- Thai dates via `formatThaiDate` / `ThaiDateInput` (พ.ศ.)
+- HR list/management screens follow `.cursor/rules/hr-list-surface-ux.mdc` (cards + FAB + overlay)
+
+## Do not
+
+- Import CSS from `goldensoft-platform`
+- Invent a new purple/cream/AI-default palette
+- Hardcode one-off brand colors when a token exists
+- Add a second global header/sidebar inside HR when embedded in the customer shell

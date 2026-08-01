@@ -63,9 +63,9 @@ export const HR_PERMISSION_CODES: readonly HrPermission[] = Object.freeze(
 );
 
 /**
- * Pay data is a separate decision from tenant administration, so these codes
- * are never derived from an organization role. They must be granted explicitly
- * through Platform-issued permissions.
+ * Pay codes stay listed so Platform can grant them explicitly too.
+ * OWNER/ADMIN of an HR-entitled org also receive them implicitly (aligned with
+ * Platform product-admin grants) so employment wage setup is usable.
  */
 export const HR_COMPENSATION_PERMISSIONS: readonly HrPermission[] = [
   HR_PERMISSIONS.compensationRead,
@@ -77,9 +77,7 @@ export function isCompensationPermission(code: string): boolean {
 }
 
 /** Everything a tenant administrator (OWNER / ADMIN) receives implicitly. */
-const ADMIN_PERMISSIONS: HrPermission[] = HR_PERMISSION_CODES.filter(
-  (code) => !isCompensationPermission(code),
-);
+const ADMIN_PERMISSIONS: HrPermission[] = [...HR_PERMISSION_CODES];
 
 /** Self-service set for ordinary organization members. */
 const MEMBER_PERMISSIONS: HrPermission[] = [
@@ -96,7 +94,6 @@ export function hrPermissionsForOrganizationRoles(
 ): HrPermission[] {
   const roles = new Set(organizationRoles.map((r) => r.toUpperCase()));
 
-  // Administrators manage the tenant, but never see pay without an explicit grant.
   if (roles.has("OWNER") || roles.has("ADMIN")) {
     return [...ADMIN_PERMISSIONS];
   }

@@ -1,0 +1,21 @@
+---
+description: ตอนเปลี่ยนหน้า/องค์กร/สาขา ต้องแสดงหน้าจอรอแบบ platform — ห้ามปล่อยหน้าค้างเงียบ
+alwaysApply: true
+---
+
+# Navigation pending UI
+
+When the user changes screen (nav link, bottom tab, org/branch context), show a waiting state like Platform. Silent freezes feel like the app crashed.
+
+## Do
+
+- Show a top progress bar immediately; after ~320ms show the centered GS waiting card (“กำลังเปิดหน้าถัดไป” / “กำลังเปลี่ยนบริบท” + “โปรดรอสักครู่…”)
+- Customer embed shell owns the overlay when present; HR `NavigationPending` signals `gs:navigation-done` on route change
+- Soft navigation: clear pending when the route (pathname/search) changes
+- For context or soft-nav triggers from product code: `signalNavigationPending()` / `signalNavigationDone()`
+
+## Do not
+
+- Rely only on tiny inline text with no overlay
+- Leave the previous screen looking frozen with no feedback
+- Stack a second overlay on top of the Customer App shell pending UI
