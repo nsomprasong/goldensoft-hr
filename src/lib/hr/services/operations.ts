@@ -26,6 +26,7 @@ import {
   markAdvanceEffectsApplied,
   reopenAdvanceEffectsForRun,
 } from "@/lib/hr/services/salary-advances";
+import { assertFaceMatchForClock } from "@/lib/hr/services/face-matching";
 import {
   attendanceEventPhotoPublicPath,
   decodePhotoBase64,
@@ -2623,6 +2624,12 @@ export async function clock(ctx: HrServiceContext, input: any) {
     });
   }
 
+  const faceCheck = await assertFaceMatchForClock(
+    ctx,
+    employee.id,
+    input.faceDescriptor,
+  );
+
   const type = await master("attendanceEventType", input.action === "clockOut" ? "CLOCK_OUT" : input.action === "breakStart" ? "BREAK_START" : input.action === "breakEnd" ? "BREAK_END" : "CLOCK_IN");
   const occurredAt = new Date();
   const { day, start, end } = bangkokDayBounds(occurredAt);
@@ -2737,6 +2744,12 @@ export async function clock(ctx: HrServiceContext, input: any) {
           photoUrl: saved.photoUrl,
           photoBytes: saved.bytes,
           photoContentType: saved.contentType,
+          faceMatch: {
+            mode: faceCheck.mode,
+            matched: faceCheck.matched,
+            distance: faceCheck.distance,
+            warning: faceCheck.warning,
+          },
         },
       },
     });
@@ -2831,6 +2844,7 @@ export async function clock(ctx: HrServiceContext, input: any) {
     ...created,
     photoUrl,
     shiftMismatchPending: Boolean(mismatchForRequest),
+    faceMatch: faceCheck,
   };
 }
 

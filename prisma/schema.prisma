@@ -312,6 +312,7 @@ model Employee {
   salaryAdvances    SalaryAdvance[]
   notifications     Notification[]
   documents         EmployeeDocument[]
+  faceEnrollment    EmployeeFaceEnrollment?
 
   @@unique([organizationId, employeeCode])
   // PostgreSQL treats NULLs as distinct, so unlinked employees do not collide.
@@ -1491,5 +1492,42 @@ model NotificationOutbox {
   status NotificationStatus @relation(fields: [statusId], references: [id])
   @@index([statusId, availableAt])
   @@map("notification_outbox")
+  @@schema("hr")
+}
+
+/// Org-level face match policy for clock-in/out (Phase 8).
+model AttendanceFaceSettings {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @unique @map("organization_id") @db.Uuid
+  /// OFF | WARN | REQUIRE
+  mode                String   @default("OFF")
+  /// Max Euclidean distance for a match (face-api 128-d; typical ~0.6).
+  matchThreshold      Decimal  @default(0.55) @map("match_threshold") @db.Decimal(8, 4)
+  updatedByAuthUserId String?  @map("updated_by_auth_user_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("attendance_face_settings")
+  @@schema("hr")
+}
+
+/// Per-employee reference face descriptor + enrollment photo (Phase 8).
+model EmployeeFaceEnrollment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  employeeId           String   @unique @map("employee_id") @db.Uuid
+  /// 128-d float descriptor (face-api faceRecognitionNet).
+  descriptor           Json     @db.JsonB
+  descriptorVersion    String   @default("face-api-128") @map("descriptor_version")
+  photoUrl             String?  @map("photo_url")
+  enrolledAt           DateTime @default(now()) @map("enrolled_at") @db.Timestamptz(6)
+  enrolledByAuthUserId String?  @map("enrolled_by_auth_user_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("employee_face_enrollments")
   @@schema("hr")
 }

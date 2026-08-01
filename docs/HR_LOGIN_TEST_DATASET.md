@@ -181,6 +181,7 @@ npx tsx scripts/test-attendance-gps.ts
 - [ ] แดชบอร์ดมีแถบแจ้งเตือน + การ์ดเบิกรออนุมัติ (ถ้ามี)
 - [ ] `/hr/reports` เห็นการ์ดสรุปเดือน (ลงเวลา / ลา / OT / เบิก)
 - [ ] ทดสอบ GPS ตามหมวด 6
+- [ ] Face (Phase 8): migrate `0015` → ตั้ง `/hr/settings/face-matching` เป็น WARN หรือ REQUIRE → EMP ลงทะเบียนที่ `/hr/me/face` → ลงเวลาแล้วจับคู่ผ่าน (ค่าเริ่มต้นองค์กร = OFF ไม่กระทบ smoke เดิม)
 - [ ] หลังทดสอบ: รัน cleanup ทั้ง HR แล้ว Platform
 
 ---

@@ -3,7 +3,7 @@
 > **อ่านไฟล์นี้ก่อนแก้ HR ทุกครั้ง** — เป็นแหล่งอ้างอิงเดียว ไม่ต้องไล่โครงสร้างโปรเจกต์ใหม่  
 > อัปเดตไฟล์นี้ทุกครั้งที่ปิดงานย่อยหรือขออนุมัติปิดเฟส
 
-Last updated: 2026-08-01 (Phase 5 skipped — customer `/` already is employee home)  
+Last updated: 2026-08-02 (Phase 8 Track A Face matching CLOSED; Track B tax/SSO still open)  
 Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft-platform` (auth/permissions)
 
 ---
@@ -13,7 +13,7 @@ Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft
 | Topic | Decision |
 |-------|----------|
 | Org / branch | พนักงานและข้อมูลปฏิบัติการแยกตามองค์กรและสาขา (ของใครของมัน) |
-| Clock-in | **1C:** ถ่ายรูปเก็บหลักฐาน + GPS ตามรัศมีที่ตั้งได้ → บันทึกทันที; face matching = Phase 8 |
+| Clock-in | **1C:** ถ่ายรูป + GPS ตามรัศมี → บันทึกทันที; face matching = Phase 8 Track A (OFF/WARN/REQUIRE) |
 | GPS radius | แต่ละ `WorkLocation` ตั้ง `geofenceRadiusMeters` ได้; นอกรัศมี = ปฏิเสธ |
 | Employee list | แสดง **EmployeeAvatar** (รูปวงกลม) ข้างชื่อทุกครั้ง; ไม่มีรูป = อักษรย่อ |
 | OT / leave / late | ใช้งานง่าย; หักลา ขาด สาย เชื่อมจากสรุปรายวัน |
@@ -86,10 +86,10 @@ Legend: `working` | `partial` | `stub` | `missing`
 | การลา / OT / อนุมัติ | leave, overtime, approvals | working | 3 | รวมคิวลา/OT/ปรับเวลา/ย้ายกะผิดกะ; me leave/OT + ขอแก้เวลา |
 | ประมวลผล / สลิป / รายงาน | payroll runs, payslips, reports | partial | 4–7 | Run table: ค่าจ้าง/OT/จ่ายเบิก/รายได้อื่น + หักภาษี/SSO/หักเบิก/สาย/ขาด; sticky ชื่อ; reports ยัง stub |
 | งานของฉัน (home) | `/` (Customer App) | working | — | เมนูลัดพนักงาน — ไม่ทำ hub ซ้ำที่ `/hr/me` |
-| ลงเวลาของฉัน | `/hr/me/attendance` | working | 2 | รูป + GPS + รัศมี; face = Phase 8 |
-| me อื่นๆ | schedule/leave/OT/payslips/advances | working | 3–6 | leaf ครบ; เข้าจาก `/` + bottom tabs |
+| ลงเวลาของฉัน | `/hr/me/attendance` | working | 2 | รูป + GPS + รัศมี; face ตามโหมดองค์กร |
+| me อื่นๆ | schedule/leave/OT/payslips/advances/face | working | 3–8 | leaf ครบ; เข้าจาก `/` + bottom tabs |
 | เบิกล่วงหน้า | `/hr/advances`, `/hr/me/advances` | working | 6 | งวดหักคืน + วิธีรับเงิน + สลิป; notification center ยังค้าง |
-| Face matching | — | missing | 8 | |
+| Face matching | `/hr/settings/face-matching`, `/hr/me/face` | working | 8A | OFF/WARN/REQUIRE + enroll + clock compare — Track A CLOSED |
 | Tax/SSO legal | payroll-calc placeholders | partial | 4 then 8 | |
 
 Key API catch-all: `src/app/api/hr/[...operations]/route.ts`  
@@ -188,7 +188,15 @@ Status values: `OPEN` | `IN_PROGRESS` | `READY_FOR_APPROVAL` | `CLOSED`
 - Closed: 2026-08-01 — user approved close
 
 ### Phase 8 — Face matching + legal tax/SSO depth
-- Status: **OPEN** (separate approvals OK)
+- Status: **IN_PROGRESS** (Track A closed; Track B open)
+- Track A — Face matching MVP: **CLOSED** (2026-08-02 — user tested OFF/WARN/REQUIRE)
+  - Org mode: `OFF` | `WARN` | `REQUIRE` + match threshold
+  - Employee enrolls reference face (descriptor 128-d + photo)
+  - Clock-in/out compares punch face vs enrollment
+  - Client: face-api CDN + downscale/retry detect; server: Euclidean match
+  - Migration `0015_face_matching`; settings `/hr/settings/face-matching`; self `/hr/me/face`
+- Track B — legal-grade tax brackets / SSO depth: **OPEN** (2B stays until Track B closes)
+- Separate approvals OK between A and B — Phase 8 stays open until Track B closes (or user splits)
 
 **Phase close rule:** tests pass → update this playbook → ask user → **do not mark CLOSED without approval**
 
@@ -220,6 +228,7 @@ Per-phase: add checklist under Changelog when closing.
 | Geofence | `src/lib/hr/geo.ts`, `WorkLocation.geofenceRadiusMeters` |
 | Employee photo | `src/lib/hr/employee-photos.ts`, `api/hr/employees/[id]/photo`, `employee-photo-picker.tsx` |
 | Punch photo | `src/lib/hr/attendance-photos.ts`, `api/hr/attendance/events/[id]/photo`, `me-attendance-workspace.tsx` |
+| Face matching | `face-match.ts`, `services/face-matching.ts`, `client/face-descriptor.ts`, `/hr/settings/face-matching`, `/hr/me/face` |
 | Admin attendance day | `attendance-day-workspace.tsx`, `listAttendanceDays` in `operations.ts` |
 | Login-test dataset | `src/lib/seed/login-test-dataset.ts`, `docs/HR_LOGIN_TEST_DATASET.md` |
 | Demo dataset (legacy) | `src/lib/seed/demo-dataset.ts`, `docs/HR_DEMO_DATASET.md` |
@@ -235,13 +244,28 @@ Do **not** re-read whole repo if this map answers the question — update the ma
 
 ## 8. Changelog
 
+### 2026-08-02 — Phase 8 Track A CLOSED (Face matching)
+- User tested all modes OFF / WARN / REQUIRE — approved close Track A
+- Detector fix: downscale + multi inputSize/threshold + WebGL ready (มือถือถ่ายชัดแล้วยังไม่เจอใบหน้า)
+- Seed fix: schedulePeriod code sync + primary work-location re-seed
+- Face matrix → **working**; Phase 8 remains **IN_PROGRESS** for Track B (tax/SSO legal)
+- Next open: **Phase 8 Track B** — legal tax brackets / SSO depth
+
 ### 2026-08-01 — Phase 7 CLOSED
 - User approved close after smoke (notifications, reports, dashboard, leave cover same-branch)
 - Notifications: center UI + emit leave/OT/advance; dates in body/`dateLabel`; mark-read on open (`notify` query)
 - Approvals deep-link `focus=<id>`; empty POST body allowed for mark-read APIs
 - Dashboard: unread strip + เบิกรออนุมัติ; Reports hub month cards
 - Leave cover candidates + assign: same branch as leave employee only
-- Next open: **Phase 8** (Face matching + legal tax/SSO depth)
+
+### 2026-08-01 — Phase 8 Track A started (Face matching MVP)
+- Status Phase 8 → **IN_PROGRESS** (Track A face; Track B tax/SSO later)
+- Migration `0015_face_matching`: `attendance_face_settings` + `employee_face_enrollments`
+- Settings `/hr/settings/face-matching` — mode OFF|WARN|REQUIRE + threshold
+- Self enroll `/hr/me/face` — photo + face-api descriptor (CDN)
+- Clock: compare descriptor; REQUIRE blocks, WARN allows + warning in response/metadata
+- Default mode OFF — existing GPS smoke unaffected
+- Unit tests: `tests/face-match.test.ts`
 
 ### 2026-08-01 — Schedule overlap + workdays on assign
 - Assign: warn when employee+date already in another period (no silent skip)

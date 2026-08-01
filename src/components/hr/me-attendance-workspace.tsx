@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import Alert from "@/components/hr/alert";
@@ -7,7 +8,9 @@ import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import { createClientId } from "@/lib/hr/client-id";
+import { extractFaceDescriptor } from "@/lib/hr/client/face-descriptor";
 import { compressImageForUpload } from "@/lib/hr/compress-image-client";
+import type { SelfFaceMatchStatus } from "@/lib/hr/services/face-matching";
 import {
   formatThaiDate,
   formatThaiDateCompact,
@@ -193,6 +196,9 @@ export default function MeAttendanceWorkspace() {
     assigned: ShiftHint;
     suggested: ShiftHint | null;
   } | null>(null);
+  const [faceMatching, setFaceMatching] = useState<SelfFaceMatchStatus | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,10 +213,12 @@ export default function MeAttendanceWorkspace() {
         days?: AttendanceDayRow[];
         workLocation?: WorkLocationInfo | null;
         schedulePeriod?: SchedulePeriodInfo | null;
+        faceMatching?: SelfFaceMatchStatus | null;
       };
       setDays(Array.isArray(body.days) ? body.days : []);
       setWorkLocation(body.workLocation ?? null);
       setSchedulePeriod(body.schedulePeriod ?? null);
+      setFaceMatching(body.faceMatching ?? null);
     } catch {
       // keep prior
     } finally {
@@ -522,6 +530,30 @@ export default function MeAttendanceWorkspace() {
         });
         return;
       }
+
+      let faceDescriptor: number[] | undefined;
+      if (faceMatching?.requireDescriptor) {
+        if (faceMatching.mode === "REQUIRE" && !faceMatching.enrolled) {
+          setFeedback({
+            kind: "error",
+            message:
+              "ต้องลงทะเบียนใบหน้าก่อนลงเวลา — ไปที่หน้าลงทะเบียนใบหน้า",
+          });
+          return;
+        }
+        setFeedback({ kind: "info", message: "กำลังตรวจใบหน้า…" });
+        const extracted = await extractFaceDescriptor(photoBase64);
+        if (!extracted.ok) {
+          if (faceMatching.mode === "REQUIRE") {
+            setFeedback({ kind: "error", message: extracted.message });
+            return;
+          }
+          // WARN: continue without descriptor — server records warning
+        } else {
+          faceDescriptor = extracted.descriptor;
+        }
+      }
+
       setFeedback({ kind: "info", message: "กำลังส่งข้อมูล…" });
 
       const response = await fetch("/api/hr/attendance/clock", {
@@ -535,6 +567,7 @@ export default function MeAttendanceWorkspace() {
           longitude: location.longitude,
           accuracyMeters: location.accuracyMeters,
           workLocationId: location.workLocationId,
+          ...(faceDescriptor ? { faceDescriptor } : {}),
           ...(options?.confirmShiftMismatch
             ? {
                 confirmShiftMismatch: true,
@@ -580,16 +613,23 @@ export default function MeAttendanceWorkspace() {
       }
       const successBody = (await response.json().catch(() => ({}))) as {
         shiftMismatchPending?: boolean;
+        faceMatch?: { warning?: string | null };
       };
       setMismatchConfirm(null);
+      const faceWarning = successBody.faceMatch?.warning?.trim();
       setFeedback({
         kind: "success",
         title: successBody.shiftMismatchPending
           ? "เข้างานสำเร็จ"
           : "บันทึกสำเร็จ",
-        message: successBody.shiftMismatchPending
-          ? "บันทึกเวลาเข้างานแล้ว และส่งคำขออนุมัติย้ายกะให้หัวหน้าพิจารณา"
-          : "บันทึกเวลาเรียบร้อยแล้ว",
+        message: [
+          successBody.shiftMismatchPending
+            ? "บันทึกเวลาเข้างานแล้ว และส่งคำขออนุมัติย้ายกะให้หัวหน้าพิจารณา"
+            : "บันทึกเวลาเรียบร้อยแล้ว",
+          faceWarning ? `คำเตือนใบหน้า: ${faceWarning}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
       });
       if (cameraRef.current) cameraRef.current.value = "";
       await applyPhoto(null);
@@ -620,6 +660,20 @@ export default function MeAttendanceWorkspace() {
       {!isOnline ? (
         <Alert kind="warning">
           คุณกำลังออฟไลน์ — ระบบจะไม่สร้างเวลาเข้างานหรือออกงานแทนคุณ
+        </Alert>
+      ) : null}
+      {faceMatching && faceMatching.mode !== "OFF" && !faceMatching.enrolled ? (
+        <Alert kind={faceMatching.mode === "REQUIRE" ? "error" : "warning"}>
+          {faceMatching.mode === "REQUIRE"
+            ? "องค์กรบังคับตรวจใบหน้า — "
+            : "องค์กรเปิดตรวจใบหน้า — "}
+          <Link href="/hr/me/face">ลงทะเบียนใบหน้า</Link>
+          {faceMatching.mode === "REQUIRE" ? " ก่อนลงเวลา" : " (แนะนำ)"}
+        </Alert>
+      ) : faceMatching && faceMatching.mode !== "OFF" ? (
+        <Alert kind="info">
+          ตรวจใบหน้า: {faceMatching.mode === "REQUIRE" ? "บังคับ" : "เตือน"} ·{" "}
+          <Link href="/hr/me/face">จัดการใบหน้า</Link>
         </Alert>
       ) : null}
       <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />

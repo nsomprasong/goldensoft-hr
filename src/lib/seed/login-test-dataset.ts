@@ -801,7 +801,7 @@ export async function seedLoginTestHr(
     create: {
       organizationId,
       branchId: hqBranchId,
-      code: `${prefix}20260601_16`,
+      code: schedulePeriodCode,
       name: "ตารางงาน 1–16 มิถุนายน 2569",
       periodStart: demoStart,
       periodEnd: demoEnd,
@@ -856,22 +856,34 @@ export async function seedLoginTestHr(
         effectiveFrom: demoStart,
       },
     });
-    await db.employeeWorkLocation.upsert({
+    // One primary current location per employee (partial unique on employee_id).
+    // Prefer update-in-place when demoStart / location drift across re-seeds.
+    const existingPrimaryLoc = await db.employeeWorkLocation.findFirst({
       where: {
-        employeeId_workLocationId_effectiveFrom: {
+        employeeId: emp.id,
+        isPrimary: true,
+        effectiveTo: null,
+      },
+    });
+    if (existingPrimaryLoc) {
+      await db.employeeWorkLocation.update({
+        where: { id: existingPrimaryLoc.id },
+        data: {
+          workLocationId: location.id,
+          effectiveFrom: demoStart,
+          isPrimary: true,
+        },
+      });
+    } else {
+      await db.employeeWorkLocation.create({
+        data: {
           employeeId: emp.id,
           workLocationId: location.id,
           effectiveFrom: demoStart,
+          isPrimary: true,
         },
-      },
-      update: { isPrimary: true },
-      create: {
-        employeeId: emp.id,
-        workLocationId: location.id,
-        effectiveFrom: demoStart,
-        isPrimary: true,
-      },
-    });
+      });
+    }
     for (let day = 1; day <= 10; day += 1) {
       const workDate = demoDay(day);
       await db.shiftAssignment.upsert({

@@ -32,6 +32,7 @@ export type HrRouteKey =
   | "meOvertime"
   | "mePayslips"
   | "meAdvances"
+  | "meFace"
   | "mePayslipDetail"
   | "schedules"
   | "scheduleDetail"
@@ -54,6 +55,7 @@ export type HrRouteKey =
   | "payrollReview"
   | "payrollDeductions"
   | "attendancePay"
+  | "faceMatching"
   | "advances"
   | "payslips"
   | "payslipDetail"
@@ -187,6 +189,17 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
   },
   {
+    key: "faceMatching",
+    path: `${HR_ROUTE_PREFIX}/settings/face-matching`,
+    labelTh: "ตรวจใบหน้าตอนลงเวลา",
+    nav: true,
+    requiredPermissions: [
+      HR_PERMISSIONS.settingsManage,
+      HR_PERMISSIONS.attendanceManage,
+    ],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
+  {
     key: "leaveEntitlements",
     path: `${HR_ROUTE_PREFIX}/settings/leave-entitlements`,
     labelTh: "สิทธิ์วันลา",
@@ -256,6 +269,14 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     nav: false,
     requiredPermissions: [HR_PERMISSIONS.advanceSelf],
     requiredEntitlements: [HR_ENTITLEMENTS.access, HR_ENTITLEMENTS.payroll],
+  },
+  {
+    key: "meFace",
+    path: `${HR_ROUTE_PREFIX}/me/face`,
+    labelTh: "ลงทะเบียนใบหน้า",
+    nav: false,
+    requiredPermissions: [HR_PERMISSIONS.attendanceSelf],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
     key: "mePayslipDetail", path: `${HR_ROUTE_PREFIX}/me/payslips/[id]`, labelTh: "สลิปเงินเดือน", nav: false,

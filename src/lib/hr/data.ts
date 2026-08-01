@@ -1047,6 +1047,32 @@ export async function getPayrollDeductionSettings(
   );
 }
 
+export async function getAttendanceFaceSettings(
+  ctx: HrRequestContext,
+): Promise<
+  HrDataResult<
+    import("@/lib/hr/services/face-matching").AttendanceFaceSettingsRow | null
+  >
+> {
+  const { getAttendanceFaceSettings: getSettings } = await import(
+    "@/lib/hr/services/face-matching"
+  );
+  return safeRead(null, async () => getSettings(serviceContext(ctx)));
+}
+
+export async function getSelfFaceMatchStatus(
+  ctx: HrRequestContext,
+): Promise<
+  HrDataResult<
+    import("@/lib/hr/services/face-matching").SelfFaceMatchStatus | null
+  >
+> {
+  const { getSelfFaceMatchStatus: getStatus } = await import(
+    "@/lib/hr/services/face-matching"
+  );
+  return safeRead(null, async () => getStatus(serviceContext(ctx)));
+}
+
 export type { SalaryAdvanceRow };
 
 export async function listSalaryAdvances(

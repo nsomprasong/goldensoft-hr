@@ -20,6 +20,13 @@ import {
   upsertPayrollDeductionSettings,
 } from "@/lib/hr/services/payroll-deduction-settings";
 import {
+  clearMyFaceEnrollment,
+  enrollMyFace,
+  getAttendanceFaceSettings,
+  getSelfFaceMatchStatus,
+  upsertAttendanceFaceSettings,
+} from "@/lib/hr/services/face-matching";
+import {
   attachAdvanceTransferSlip,
   cancelSalaryAdvance,
   listAdvancePeriodOptions,
@@ -147,9 +154,28 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
   }
   if (path === "attendance/clock") {
     if (request.method === "GET") {
-      return jsonResponse(await listSelfAttendanceToday(service));
+      const [data, faceMatching] = await Promise.all([
+        listSelfAttendanceToday(service),
+        getSelfFaceMatchStatus(service),
+      ]);
+      return jsonResponse({ ...data, faceMatching });
     }
     return jsonResponse(await clock(service, body), 201);
+  }
+  if (path === "attendance/face-settings") {
+    if (request.method === "GET") {
+      return jsonResponse(await getAttendanceFaceSettings(service));
+    }
+    return jsonResponse(await upsertAttendanceFaceSettings(service, body));
+  }
+  if (path === "me/face") {
+    if (request.method === "GET") {
+      return jsonResponse(await getSelfFaceMatchStatus(service));
+    }
+    if (request.method === "DELETE") {
+      return jsonResponse(await clearMyFaceEnrollment(service));
+    }
+    return jsonResponse(await enrollMyFace(service, body), 201);
   }
   if (path === "attendance/days") return jsonResponse(await listAttendanceDays(service, Object.fromEntries(new URL(request.url).searchParams)));
   if (path === "attendance/adjustments") {

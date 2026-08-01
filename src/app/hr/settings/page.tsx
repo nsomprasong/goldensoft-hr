@@ -13,6 +13,7 @@ export default async function HrSettingsPage() {
     ["/hr/settings/payroll-schedules", "รอบจ่าย"],
     ["/hr/settings/payroll-deductions", "ภาษีและประกันสังคม"],
     ["/hr/settings/attendance-pay", "หักสาย / ขาดงาน"],
+    ["/hr/settings/face-matching", "ตรวจใบหน้าตอนลงเวลา"],
     ["/hr/settings/leave-entitlements", "สิทธิ์วันลา"],
     ["/hr/locations", "สถานที่ทำงาน"],
     ["/hr/calendars", "ปฏิทินทำงาน"],
