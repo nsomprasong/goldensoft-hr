@@ -52,54 +52,6 @@ jobs:
       - name: Ensure build context dirs exist
         run: mkdir -p public certs
 
-      - name: Ensure Dockerfile accepts NEXT_PUBLIC build-args and CA cert
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-          path = Path("Dockerfile")
-          text = path.read_text()
-          changed = False
-          if "ARG NEXT_PUBLIC_SUPABASE_URL" not in text:
-              old = (
-                  "ENV NEXT_TELEMETRY_DISABLED=1\n"
-                  "ENV NODE_ENV=production\n"
-                  "ENV HR_ASSET_PREFIX=\n"
-                  "RUN npx prisma generate && npm run build"
-              )
-              new = (
-                  "ENV NEXT_TELEMETRY_DISABLED=1\n"
-                  "ENV NODE_ENV=production\n"
-                  "ENV HR_ASSET_PREFIX=\n"
-                  "ARG NEXT_PUBLIC_SUPABASE_URL\n"
-                  "ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\n"
-                  "ARG NEXT_PUBLIC_APP_URL=https://hr.goldensoft.cloud\n"
-                  "ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL\n"
-                  "ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\n"
-                  "ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL\n"
-                  "RUN npx prisma generate && npm run build"
-              )
-              if old not in text:
-                  raise SystemExit("Dockerfile build marker not found for ARG injection")
-              text = text.replace(old, new, 1)
-              changed = True
-          if "COPY --from=builder /app/certs" not in text and "COPY --chown=nextjs:nodejs ./certs" not in text:
-              needle = "COPY --from=builder /app/public ./public\n"
-              insert = (
-                  "COPY --from=builder /app/public ./public\n"
-                  "COPY --from=builder --chown=nextjs:nodejs /app/certs ./certs\n"
-              )
-              if needle not in text:
-                  raise SystemExit("Dockerfile public copy marker not found")
-              text = text.replace(needle, insert, 1)
-              changed = True
-          if changed:
-              path.write_text(text)
-              print("Patched Dockerfile for GHCR build")
-          else:
-              print("Dockerfile already build-ready")
-          PY
-
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
@@ -116,6 +68,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.meta.outputs.full_sha }}
           build-args: |
+            HR_ASSET_PREFIX=/__hr_assets
             NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://hr.goldensoft.cloud' }}
