@@ -15,7 +15,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-ENV HR_ASSET_PREFIX=
+# Customer App serves HTML at /hr/* and proxies assets at /__hr_assets/_next/*
+ARG HR_ASSET_PREFIX=/__hr_assets
+ENV HR_ASSET_PREFIX=$HR_ASSET_PREFIX
 RUN npx prisma generate && npm run build
 
 FROM node:20-bookworm-slim AS runner
@@ -24,7 +26,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
-ENV HR_ASSET_PREFIX=
+ENV HR_ASSET_PREFIX=/__hr_assets
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs nextjs
