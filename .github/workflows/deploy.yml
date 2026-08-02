@@ -82,7 +82,6 @@ jobs:
             set -euo pipefail
             # Safety: never prune volumes; never touch resident-app / n8n.
             cd "${{ secrets.VPS_COMPOSE_DIR }}"
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
             PREV=$(docker inspect -f '{{ index .Config.Image }}' "$CONTAINER_NAME" 2>/dev/null || true)
             export "${IMAGE_TAG_ENV}=${IMAGE_TAG}"
             export GHCR_OWNER
@@ -90,7 +89,12 @@ jobs:
             grep -v "^${IMAGE_TAG_ENV}=" .env > .env.tmp || true
             echo "${IMAGE_TAG_ENV}=${IMAGE_TAG}" >> .env.tmp
             mv .env.tmp .env
-            docker compose -f docker-compose.yml pull "$COMPOSE_SERVICE"
+            # Prefer existing VPS GHCR credentials. Only login when pull fails —
+            # a bad GHCR_TOKEN must not wipe a working docker login.
+            if ! docker compose -f docker-compose.yml pull "$COMPOSE_SERVICE"; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
+              docker compose -f docker-compose.yml pull "$COMPOSE_SERVICE"
+            fi
             docker compose -f docker-compose.yml up -d --no-deps "$COMPOSE_SERVICE"
             echo "PREV_IMAGE=${PREV}" > "/tmp/gs-prev-${COMPOSE_SERVICE}.txt"
         env:
