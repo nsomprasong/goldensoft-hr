@@ -551,6 +551,25 @@ describe("Phase 8B project wiring", () => {
     }
   });
 
+  it("exposes /api/health as public without opening other API or HR routes", () => {
+    const middleware = read("middleware.ts");
+    assert.match(middleware, /PUBLIC_PREFIXES\s*=\s*\[[\s\S]*?"\/api\/health"/);
+    assert.match(
+      middleware,
+      /if\s*\(\s*!isPublicPath\(pathname\)\s*&&\s*!signedIn\s*\)/,
+    );
+    assert.match(
+      middleware,
+      /pathname\.startsWith\("\/api\/"\)[\s\S]*?UNAUTHENTICATED/,
+    );
+    const publicPrefixes = middleware.match(/PUBLIC_PREFIXES = \[(.*?)\]/s)?.[1] ?? "";
+    const listed = [...publicPrefixes.matchAll(/"(\/[^"]*)"/g)].map((m) => m[1]);
+    assert.ok(listed.includes("/api/health"), "/api/health must be public");
+    for (const guarded of ["/api", "/api/", "/api/hr", "/hr", "/hr/me", "/employees", "/payroll"]) {
+      assert.ok(!listed.includes(guarded), `${guarded} must not be a public prefix`);
+    }
+  });
+
   it("runs the UI suite from npm test", () => {
     const pkg = JSON.parse(read("package.json")) as {
       scripts: Record<string, string>;
