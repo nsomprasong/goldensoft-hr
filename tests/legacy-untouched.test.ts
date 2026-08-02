@@ -8,11 +8,12 @@ const LEGACY = path.resolve(ROOT, "..", "resident-legacy-reference");
 
 describe("Legacy untouched", () => {
   it("does not nest or modify the resident legacy reference from HR", () => {
-    assert.ok(fs.existsSync(LEGACY), "legacy reference folder should exist");
-    assert.ok(fs.existsSync(path.join(LEGACY, "package.json")));
-    // HR must not vendor legacy source.
+    // HR must not vendor legacy source (always check).
     assert.equal(fs.existsSync(path.join(ROOT, "resident-legacy-reference")), false);
     assert.equal(fs.existsSync(path.join(ROOT, "REFERENCE ONLY - Resident Legacy")), false);
+    // Sibling folder exists only in the local suite checkout.
+    if (!fs.existsSync(LEGACY)) return;
+    assert.ok(fs.existsSync(path.join(LEGACY, "package.json")));
   });
 
   it("keeps HR product code and entitlement names fail-closed by default catalog", () => {
