@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
   && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next standalone COPY expects this directory even when the repo has no assets.
+RUN mkdir -p public \
+  && test -s certs/prod-ca-2021.crt
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 # Customer App serves HTML at /hr/* and proxies assets at /__hr_assets/_next/*

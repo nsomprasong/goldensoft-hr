@@ -44,6 +44,8 @@ jobs:
       - name: Immutable image tag from commit SHA
         id: meta
         run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - name: Ensure build context dirs exist
+        run: mkdir -p public certs
       - name: Login GHCR
         uses: docker/login-action@v3
         with:
@@ -58,6 +60,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          build-args: |
+            HR_ASSET_PREFIX=/__hr_assets
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://hr.goldensoft.cloud' }}
 
   deploy:
     needs: build-and-push
