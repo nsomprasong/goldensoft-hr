@@ -7,16 +7,19 @@ import {
   clampPercent,
   parseLimitValue,
 } from "@/components/hr/dashboard-meter";
-import DashboardNotifyStrip from "@/components/hr/dashboard-notify-strip";
 import HrShell from "@/components/hr-shell";
-import { resolveAllowedBranchIds } from "@/lib/hr/api";
+import {
+  resolveAllowedBranchIds,
+  showEmployeeBranchLabel,
+} from "@/lib/hr/api";
 import { loadHrDashboard } from "@/lib/hr/data";
 import { HR_ENTITLEMENTS } from "@/lib/hr/entitlements";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { listNotifications } from "@/lib/hr/services/notify";
-import { toHrServiceContext } from "@/lib/hr/services/shared";
-import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
+import {
+  formatThaiDateReadable,
+  formatThaiDateRangeReadable,
+} from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +38,7 @@ function dashHref(branchId: string | null, path: string): string {
 function formatInboxWhen(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return formatThaiDate(iso.slice(0, 10));
+    return formatThaiDateReadable(iso.slice(0, 10));
   } catch {
     return "—";
   }
@@ -100,13 +103,7 @@ export default async function HrDashboardPage() {
       : allowedBranches?.length === 1
         ? allowedBranches[0]!
         : null;
-  const [dashboard, notifyPreview] = await Promise.all([
-    loadHrDashboard(ctx, { branchId }),
-    listNotifications(toHrServiceContext(ctx), {
-      unreadOnly: true,
-      limit: 5,
-    }).catch(() => ({ items: [], unreadCount: 0 })),
-  ]);
+  const dashboard = await loadHrDashboard(ctx, { branchId });
   const stats = dashboard.data;
   const actions = stats.actions;
   const canApproveAdvances = canHr(ctx, [
@@ -114,6 +111,7 @@ export default async function HrDashboardPage() {
     HR_PERMISSIONS.payrollManage,
     HR_PERMISSIONS.approvalRead,
   ]);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
   const employeeLimitRaw =
     ctx.entitlements[HR_ENTITLEMENTS.employeeLimit]?.value ?? "—";
   const employeeLimit = parseLimitValue(employeeLimitRaw);
@@ -164,18 +162,6 @@ export default async function HrDashboardPage() {
         </header>
 
         <DatabaseUnavailableNotice message={dashboard.message} />
-
-        <DashboardNotifyStrip
-          unreadCount={notifyPreview.unreadCount}
-          items={notifyPreview.items.map((row) => ({
-            id: row.id,
-            title: row.title,
-            body: row.body,
-            dateLabel: row.dateLabel,
-            href: row.href,
-            unread: row.unread,
-          }))}
-        />
 
         <section className="hr-dash-section" aria-label="ต้องทำวันนี้">
           <div className="hr-dash-section-head">
@@ -247,12 +233,6 @@ export default async function HrDashboardPage() {
         </section>
 
         <nav className="hr-dash-shortcuts" aria-label="ทางลัด">
-          <Link className="hr-dash-chip" href="/hr/notifications">
-            แจ้งเตือน
-            {notifyPreview.unreadCount > 0
-              ? ` (${notifyPreview.unreadCount})`
-              : ""}
-          </Link>
           {canApprove ? (
             <Link className="hr-dash-chip" href="/hr/approvals">
               คิวอนุมัติ
@@ -320,7 +300,11 @@ export default async function HrDashboardPage() {
                 <li key={`${row.kind}:${row.id}`}>
                   <div>
                     <strong>{row.employeeName}</strong>
-                    <span className="hr-dash-inbox-branch">{row.branchName}</span>
+                    {showBranchLabel ? (
+                      <span className="hr-dash-inbox-branch">
+                        {row.branchName}
+                      </span>
+                    ) : null}
                     <span>{row.label}</span>
                   </div>
                   <div className="hr-dash-inbox-meta">
@@ -351,7 +335,11 @@ export default async function HrDashboardPage() {
                 <li key={`decision:${row.kind}:${row.id}`}>
                   <div>
                     <strong>{row.employeeName}</strong>
-                    <span className="hr-dash-inbox-branch">{row.branchName}</span>
+                    {showBranchLabel ? (
+                      <span className="hr-dash-inbox-branch">
+                        {row.branchName}
+                      </span>
+                    ) : null}
                     <span>
                       {row.label} ·{" "}
                       {row.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
@@ -431,7 +419,7 @@ export default async function HrDashboardPage() {
                       <div>
                         <dt>ช่วงงวด</dt>
                         <dd>
-                          {formatThaiDateRange(
+                          {formatThaiDateRangeReadable(
                             stats.currentPeriod.periodStart,
                             stats.currentPeriod.periodEnd,
                           )}
@@ -439,7 +427,11 @@ export default async function HrDashboardPage() {
                       </div>
                       <div>
                         <dt>วันจ่าย</dt>
-                        <dd>{formatThaiDate(stats.currentPeriod.paymentDate)}</dd>
+                        <dd>
+                          {formatThaiDateReadable(
+                            stats.currentPeriod.paymentDate,
+                          )}
+                        </dd>
                       </div>
                       <div>
                         <dt>สถานะ</dt>

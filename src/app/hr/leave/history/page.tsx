@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listLeaveHistory } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -32,6 +33,7 @@ export default async function LeaveHistoryPage({
   const history = await listLeaveHistory(ctx, { page, pageSize: 10 });
   const result = history.data;
   const canApprove = canHr(ctx, HR_PERMISSIONS.leaveApprove);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
@@ -53,6 +55,7 @@ export default async function LeaveHistoryPage({
         <LeaveApprovalCards
           rows={result.rows}
           canApprove={canApprove}
+          showBranchLabel={showBranchLabel}
           emptyMessage="ยังไม่มีประวัติการลา"
         />
       </section>

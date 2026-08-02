@@ -1,7 +1,7 @@
 import { jsonResponse, parseJsonBody, requireHrApi, withHrApi } from "@/lib/hr/api";
 import { hrOperationSchema } from "@/lib/hr/schemas";
 import {
-  approvalInbox, assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
+  assignEmployeeWorkLocation, clock, copyHolidayYear, createAttendanceAdjustment,
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, deleteCalendar, deleteHoliday, deleteSchedulePeriod, getSchedulePeriod, issuePayslips,
   assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listShiftMismatchRequests, listWorkLocations,
   markAllNotificationsRead, markNotificationRead, payrollAction, report, resolveSelfEmployee, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, reviewShiftMismatchRequest, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
@@ -88,7 +88,7 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
       body = await parseJsonBody(request, hrOperationSchema);
     }
   }
-  const { service } = await requireHrApi(request);
+  const { service, ctx } = await requireHrApi(request);
   if (path === "work-locations") {
     if (request.method === "GET") return jsonResponse(await listWorkLocations(service, new URL(request.url).searchParams.get("branchId")));
     return jsonResponse(await createWorkLocation(service, body), 201);
@@ -410,7 +410,11 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
   if (path.startsWith("payslips/") && params.operations[1] !== "self") {
     return jsonResponse(await getPayslip(service, params.operations[1]));
   }
-  if (path === "approvals") return jsonResponse(await approvalInbox(service));
+  if (path === "approvals") {
+    const { getApprovalInbox } = await import("@/lib/hr/data");
+    const inbox = await getApprovalInbox(ctx);
+    return jsonResponse(inbox.data);
+  }
   if (path === "notifications") {
     if (request.method === "POST") {
       return jsonResponse(await createNotification(service, body));

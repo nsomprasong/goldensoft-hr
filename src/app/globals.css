@@ -321,13 +321,20 @@ body:has(.gs-customer-shell-slot) .hr-product-nav-bar {
   gap: 0.75rem;
   margin-bottom: 1rem;
   padding: var(--space-4);
-  background-color: #fffaf3;
-  background-color: var(--color-page-header-bg, #fffaf3);
+  background-color: var(--color-page-header-bg);
   background-image:
-    radial-gradient(420px 160px at 100% 0%, #ffe8c7 0%, transparent 60%),
-    linear-gradient(135deg, #fffdf9 0%, #fffaf3 55%, #fff7ed 100%);
-  border: 1px solid #e8ddd0;
-  border-color: var(--color-page-header-border, #e8ddd0);
+    radial-gradient(
+      420px 160px at 100% 0%,
+      color-mix(in srgb, var(--hr-accent-soft) 95%, var(--hr-accent)) 0%,
+      transparent 60%
+    ),
+    linear-gradient(
+      135deg,
+      var(--color-surface) 0%,
+      var(--color-page-header-bg) 55%,
+      var(--hr-accent-soft) 100%
+    );
+  border: 1px solid var(--color-page-header-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
@@ -339,8 +346,8 @@ body:has(.gs-customer-shell-slot) .hr-product-nav-bar {
   height: 2px;
   background: linear-gradient(
     90deg,
-    #b45309 0%,
-    rgba(217, 119, 6, 0.55) 35%,
+    var(--hr-accent) 0%,
+    color-mix(in srgb, var(--color-focus) 55%, transparent) 35%,
     transparent 78%
   );
   pointer-events: none;
@@ -349,6 +356,15 @@ body:has(.gs-customer-shell-slot) .hr-product-nav-bar {
 .hr-page-head > * {
   position: relative;
   z-index: 1;
+}
+
+.hr-page-head h1 {
+  margin: 0 0 var(--space-1);
+  color: var(--hr-accent);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-page-title);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
 }
 
 .hr-page-head p {
@@ -571,72 +587,225 @@ a.card p {
   font-size: var(--font-size-small);
 }
 
-.hr-dash-notify {
-  margin-bottom: var(--space-5);
-  padding: var(--space-4);
+.hr-notify-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hr-notify-bell-fallback {
+  position: fixed;
+  top: calc(var(--gs-shell-header, 62px) + 0.35rem);
+  right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 45;
+}
+
+.hr-debug-notify-mount {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.hr-notify-bell-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
   border: 1px solid var(--hr-border);
   border-radius: var(--radius-md);
   background: linear-gradient(
-    180deg,
-    var(--dashboard-amber-soft) 0%,
-    #fff 70%
+    145deg,
+    var(--hr-surface) 0%,
+    var(--color-primary-soft) 100%
   );
+  color: var(--hr-accent);
+  cursor: pointer;
 }
 
-.hr-dash-notify-head {
+.hr-notify-bell-btn:hover {
+  border-color: color-mix(in srgb, var(--hr-accent) 40%, var(--hr-border));
+}
+
+.hr-notify-bell-badge {
+  position: absolute;
+  top: -0.2rem;
+  right: -0.2rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--hr-accent);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+.hr-notify-bell-panel {
+  position: fixed;
+  top: calc(var(--gs-shell-header, 62px) + 0.35rem);
+  right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 80;
+  width: min(26rem, calc(100vw - 1rem));
+  max-height: min(78vh, 40rem);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--radius-lg);
+  background: var(--hr-surface);
+  box-shadow: 0 12px 28px rgb(21 32 51 / 0.12);
 }
 
-.hr-dash-notify-head h2 {
-  margin: 0;
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-section-title);
-}
-
-.hr-dash-notify-head p {
-  margin: 0.2rem 0 0;
-  color: var(--hr-text-muted);
-  font-size: var(--font-size-small);
-}
-
-.hr-dash-notify-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.hr-notify-bell-body {
+  overflow: auto;
+  padding: var(--space-2);
   display: grid;
+  gap: var(--space-3);
+}
+
+.hr-notify-bell-section-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--hr-text-muted);
+}
+
+.hr-notify-bell-panel .hr-leave-request-list,
+.hr-notify-bell-panel .hr-card-grid {
   gap: var(--space-2);
 }
 
-.hr-dash-notify-list a {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.65rem 0.75rem;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.78);
-  color: inherit;
-  text-decoration: none;
+.hr-notify-bell-panel .hr-leave-approval-item,
+.hr-notify-bell-panel .hr-entity-card {
+  margin: 0;
 }
 
-.hr-dash-notify-list a:hover {
-  background: #fff;
+.hr-notify-bell-panel .hr-leave-approval-head {
+  gap: var(--space-2);
 }
 
-.hr-dash-notify-list strong {
-  font-size: var(--font-size-body);
+.hr-notify-bell-panel .employee-avatar-lg {
+  width: 2.75rem;
+  height: 2.75rem;
 }
 
-.hr-dash-notify-list span {
+.hr-notify-bell-panel .hr-leave-approval-side {
+  flex: 0 0 auto;
+  align-items: flex-end;
+}
+
+.hr-notify-bell-panel .hr-leave-approval-actions {
+  flex-direction: column;
+  align-items: stretch;
+  width: auto;
+  min-width: 5.75rem;
+}
+
+.hr-notify-bell-panel .hr-leave-approval-actions .btn-primary {
+  order: 0;
+}
+
+.hr-notify-bell-panel .hr-leave-approval-actions .btn-danger {
+  order: 1;
+}
+
+.hr-notify-bell-panel .hr-leave-approval-body {
+  grid-template-columns: 1fr;
+}
+
+.hr-notify-bell-panel .hr-leave-approval-body .hr-leave-request-shift {
+  text-align: left;
+}
+
+.hr-notify-bell-panel .hr-leave-cover-panel {
+  margin-top: var(--space-2);
+}
+
+.hr-notify-bell-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--hr-border) 75%, transparent);
+  background: linear-gradient(
+    180deg,
+    var(--color-primary-soft) 0%,
+    var(--hr-surface) 100%
+  );
+}
+
+.hr-notify-bell-panel-head strong {
+  display: block;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-section-title);
+  color: var(--hr-text);
+}
+
+.hr-notify-bell-panel-head p {
+  margin: var(--space-1) 0 0;
   color: var(--hr-text-muted);
   font-size: var(--font-size-small);
 }
 
-.hr-dash-notify-list .hr-notify-date {
-  color: var(--hr-text);
-  font-weight: var(--font-weight-semibold);
+.hr-notify-bell-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.hr-notify-bell-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+  overflow: auto;
+}
+
+.hr-notify-bell-item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--radius-md);
+  background: var(--hr-surface);
+}
+
+.hr-notify-bell-item.is-unread {
+  border-color: color-mix(in srgb, var(--hr-accent) 35%, var(--hr-border));
+  background: linear-gradient(
+    90deg,
+    var(--color-primary-soft) 0%,
+    var(--hr-surface) 2.5rem
+  );
+}
+
+.hr-notify-bell-review,
+.hr-notify-bell-mark {
+  margin-top: var(--space-1);
+}
+
+.hr-notify-bell-review {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.hr-notify-bell-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  text-align: center;
+  color: var(--hr-text-muted);
+  font-size: var(--font-size-small);
 }
 
 .hr-notify-list {
@@ -644,22 +813,22 @@ a.card p {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .hr-notify-item {
   border: 1px solid var(--hr-border);
-  border-radius: var(--radius-md);
-  background: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--hr-surface);
   overflow: hidden;
 }
 
 .hr-notify-item--unread {
-  border-color: var(--color-warning-border);
+  border-color: color-mix(in srgb, var(--hr-accent) 35%, var(--hr-border));
   background: linear-gradient(
     90deg,
-    var(--dashboard-amber-soft) 0%,
-    #fff 2.5rem
+    var(--color-primary-soft) 0%,
+    var(--hr-surface) 2.75rem
   );
 }
 
@@ -680,19 +849,48 @@ a.card p {
 
 .hr-notify-main {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-2);
   min-width: 0;
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.hr-notify-employee {
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.hr-notify-title {
+  margin: 0;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--hr-accent) !important;
 }
 
 .hr-notify-body {
-  color: var(--hr-text-muted);
+  color: var(--color-text-secondary);
   font-size: var(--font-size-small);
+  line-height: var(--line-height-normal);
 }
 
 .hr-notify-date {
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
   color: var(--hr-text);
+  letter-spacing: 0.01em;
+}
+
+.hr-notify-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--hr-border) 70%, transparent);
 }
 
 .hr-notify-meta {
@@ -704,9 +902,9 @@ a.card p {
   flex: 0 0 auto;
   width: 0.55rem;
   height: 0.55rem;
-  margin-top: 0.35rem;
+  margin-top: var(--space-2);
   border-radius: 999px;
-  background: var(--color-primary);
+  background: var(--hr-accent);
 }
 
 .hr-report-hub {
@@ -946,6 +1144,41 @@ a.card p {
   color: var(--hr-text) !important;
   font-size: var(--font-size-caption) !important;
   font-weight: var(--font-weight-medium);
+}
+
+.hr-employee-name-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.hr-employee-name-label > strong,
+.hr-employee-name-label > h1,
+.hr-employee-name-label > h2,
+.hr-employee-name-label > span:not(.hr-employee-name-branch) {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hr-employee-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hr-employee-name-link:hover {
+  text-decoration: underline;
+}
+
+.hr-employee-name-branch {
+  display: block;
+  margin: 0;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-normal);
+  color: var(--hr-text-muted);
 }
 
 .hr-dash-inbox-meta {
@@ -1471,6 +1704,32 @@ a.card p {
   font-size: var(--font-size-small);
 }
 
+.hr-history-filters {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--radius-lg);
+  background: var(--hr-surface);
+}
+
+.hr-history-filters .filters {
+  margin: 0;
+}
+
+.hr-history-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--hr-text-muted);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-medium);
+}
+
+.hr-history-filters select {
+  min-width: min(100%, 16rem);
+  color: var(--hr-text);
+}
+
 .hr-leave-requests {
   margin-top: 1rem;
 }
@@ -1500,7 +1759,7 @@ a.card p {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 0.12rem;
+  gap: 0.1rem;
 }
 
 .hr-leave-request-main strong {
@@ -1511,16 +1770,20 @@ a.card p {
 .hr-leave-request-main > span {
   color: var(--hr-text-muted);
   font-size: 0.8rem;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .hr-leave-request-reason {
   color: var(--hr-text) !important;
+  font-size: 0.86rem;
+  line-height: 1.4;
 }
 
-.hr-leave-request-submitted {
+.hr-leave-request-submitted,
+.hr-leave-request-shift {
   color: var(--hr-text-muted);
-  font-size: 0.75rem !important;
+  font-size: 0.8rem !important;
+  line-height: 1.4;
 }
 
 .hr-leave-form {
@@ -1694,10 +1957,10 @@ a.card p {
 .hr-leave-approval-item {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.55rem 0.7rem 0.6rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--hr-border);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-lg);
   background: var(--hr-surface);
 }
 
@@ -1712,7 +1975,16 @@ a.card p {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 0.45rem 0.65rem;
+  gap: var(--space-3) var(--space-4);
+}
+
+.hr-leave-approval-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  min-width: 5.5rem;
 }
 
 .hr-leave-approval-status {
@@ -1723,15 +1995,109 @@ a.card p {
 
 .hr-leave-approval-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 100%;
 }
 
-.hr-leave-request-shift {
+.hr-leave-approval-actions .btn {
+  min-width: 5.5rem;
+  justify-content: center;
+}
+
+.hr-leave-approval-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-5);
+  padding-top: var(--space-2);
+  border-top: 1px solid color-mix(in srgb, var(--hr-border) 70%, transparent);
+}
+
+.hr-leave-approval-body > .hr-leave-request-reason {
+  grid-column: 1 / -1;
+}
+
+.hr-leave-request-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.hr-leave-request-type {
+  color: var(--hr-text);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.hr-leave-request-dates {
+  color: var(--hr-text);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+}
+
+.hr-leave-request-days {
+  color: var(--hr-text-muted);
+  font-weight: var(--font-weight-regular);
+}
+
+.hr-approval-employee-name {
+  color: var(--hr-accent) !important;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-card-title) !important;
+  font-weight: var(--font-weight-semibold) !important;
+  line-height: var(--line-height-tight);
+}
+
+.hr-leave-approval-item .hr-ot-approval-person {
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.hr-leave-approval-item .employee-avatar-lg {
+  width: 3.25rem;
+  height: 3.25rem;
+  font-size: var(--font-size-body);
+}
+
+/* Entity cards that lead with employee name use the same accent title. */
+.hr-entity-card .hr-approval-employee-name,
+.hr-entity-card-title.hr-approval-employee-name {
+  color: var(--hr-accent) !important;
+  font-family: var(--font-family-display);
+}
+
+@media (max-width: 560px) {
+  .hr-leave-approval-body {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-leave-approval-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .hr-leave-approval-actions .btn {
+    min-width: 0;
+  }
+}
+
+.hr-leave-approval-body .hr-leave-request-shift {
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .hr-leave-approval-body .hr-leave-request-shift {
+    text-align: left;
+  }
 }
 
 .hr-leave-cover-panel {
@@ -2182,11 +2548,21 @@ a.hr-fab:hover {
 .hr-schedule-hero {
   margin: 0 0 1rem;
   padding: 0.85rem 1rem 1rem;
-  border: 1px solid var(--hr-border);
-  border-radius: 1rem;
-  background:
-    radial-gradient(280px 140px at 100% 0%, #fff4e5 0%, transparent 55%),
-    var(--hr-surface);
+  border: 1px solid var(--color-page-header-border, var(--hr-border));
+  border-radius: var(--radius-lg);
+  background-color: var(--color-page-header-bg, var(--hr-surface));
+  background-image:
+    radial-gradient(
+      280px 140px at 100% 0%,
+      color-mix(in srgb, var(--hr-accent-soft) 90%, transparent) 0%,
+      transparent 55%
+    ),
+    linear-gradient(
+      135deg,
+      var(--color-surface) 0%,
+      var(--color-page-header-bg, var(--hr-surface)) 55%,
+      var(--hr-accent-soft) 100%
+    );
 }
 
 .hr-schedule-hero-top {
@@ -3325,6 +3701,10 @@ button.hr-schedule-empty-icon:disabled {
   justify-content: center;
 }
 
+.hr-overlay--elevated {
+  z-index: 120;
+}
+
 .hr-overlay-backdrop {
   position: absolute;
   inset: 0;
@@ -3662,10 +4042,11 @@ button.hr-schedule-empty-icon:disabled {
 
 .alert {
   border: 1px solid var(--hr-border);
-  border-radius: var(--hr-radius);
-  padding: 0.625rem 0.875rem;
-  margin-bottom: 0.875rem;
-  font-size: 0.9375rem;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-normal);
 }
 
 .alert-success {
@@ -3700,8 +4081,8 @@ button.hr-schedule-empty-icon:disabled {
   z-index: 100;
   display: grid;
   place-items: center;
-  padding: 1.25rem;
-  background: color-mix(in srgb, var(--color-text) 40%, transparent);
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--color-text-primary) 40%, transparent);
   animation: hr-feedback-fade-in 180ms ease-out;
 }
 
@@ -3709,11 +4090,11 @@ button.hr-schedule-empty-icon:disabled {
   display: grid;
   grid-template-columns: 1fr;
   justify-items: center;
-  gap: 0.85rem;
-  width: min(20.5rem, 100%);
-  padding: 1.45rem 1.35rem 1.25rem;
+  gap: var(--space-3);
+  width: min(21rem, 100%);
+  padding: var(--space-6) var(--space-5) var(--space-5);
   text-align: center;
-  border-radius: var(--radius-lg, 1rem);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--hr-border);
   background: var(--hr-surface);
   box-shadow: var(--shadow-lg, 0 18px 40px rgb(0 0 0 / 18%));
@@ -3721,7 +4102,7 @@ button.hr-schedule-empty-icon:disabled {
 }
 
 .hr-feedback-popup-card--auto {
-  padding-bottom: 1.45rem;
+  padding-bottom: var(--space-6);
 }
 
 .hr-feedback-popup-icon {
@@ -3734,23 +4115,23 @@ button.hr-schedule-empty-icon:disabled {
 }
 
 .hr-feedback-popup-icon--success {
-  background: color-mix(in srgb, var(--hr-success, #15803d) 14%, #fff);
-  color: var(--hr-success, #15803d);
+  background: color-mix(in srgb, var(--hr-success) 14%, var(--hr-surface));
+  color: var(--hr-success);
 }
 
 .hr-feedback-popup-icon--error {
-  background: color-mix(in srgb, var(--hr-danger, #b91c1c) 12%, #fff);
-  color: var(--hr-danger, #b91c1c);
+  background: color-mix(in srgb, var(--hr-danger) 12%, var(--hr-surface));
+  color: var(--hr-danger);
 }
 
 .hr-feedback-popup-icon--warning {
-  background: color-mix(in srgb, var(--hr-warning, #b45309) 14%, #fff);
-  color: var(--hr-warning, #b45309);
+  background: color-mix(in srgb, var(--hr-warning) 14%, var(--hr-surface));
+  color: var(--hr-warning);
 }
 
 .hr-feedback-popup-icon--info {
-  background: color-mix(in srgb, var(--color-info, #1d4ed8) 12%, #fff);
-  color: var(--color-info, #1d4ed8);
+  background: color-mix(in srgb, var(--color-info) 12%, var(--hr-surface));
+  color: var(--color-info);
 }
 
 .hr-feedback-check,
@@ -3778,34 +4159,35 @@ button.hr-schedule-empty-icon:disabled {
 }
 
 .hr-feedback-popup-copy {
-  max-width: 18rem;
+  max-width: 18.5rem;
 }
 
 .hr-feedback-popup-copy h3 {
   margin: 0;
-  font-family: var(--font-family-display, inherit);
-  font-size: 1.05rem;
-  font-weight: 650;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-card-title);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.01em;
+  line-height: var(--line-height-tight);
   color: var(--hr-text);
 }
 
 .hr-feedback-popup-copy p {
-  margin: 0.4rem 0 0;
-  font-size: 0.9375rem;
-  line-height: 1.5;
-  color: var(--hr-text-secondary, var(--hr-text-muted));
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
 }
 
 .hr-feedback-popup-actions {
   width: 100%;
-  margin-top: 0.15rem;
+  margin-top: var(--space-1);
 }
 
 .hr-feedback-popup-actions--pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .hr-feedback-popup-dismiss {

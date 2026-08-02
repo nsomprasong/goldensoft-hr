@@ -1,0 +1,43 @@
+---
+description: การ์ดรายชื่อพนักงาน + วันที่ ต้องตามแบบลา/OT และอ่านโทเคนจากธีมกลาง เท่านั้น
+alwaysApply: true
+---
+
+# HR person + date cards (strict)
+
+เมื่อออกแบบหรือแก้ UI ที่เป็นการ์ด/แถวรายการซึ่งแสดง **ชื่อพนักงาน** และ **วันที่** ใน `goldensoft-hr` ให้เคารพกฎนี้แบบเคร่งครัด — แบบอ้างอิงคือหน้าอนุมัติ **ลา / OT**.
+
+## ต้องทำ
+
+1. **ชื่อ** — ใช้ `EmployeeNameLabel` + คลาส `.hr-approval-employee-name` (สีจากธีม `--hr-accent` / `--color-primary`)
+2. **สาขาใต้ชื่อ** — เฉพาะเมื่อ `showEmployeeBranchLabel(ctx)` เป็นจริง
+3. **รูป** — `EmployeeAvatar` ขนาด `lg` บนการ์ดอนุมัติ/รายการคำขอ
+4. **วันที่ที่ผู้ใช้อ่าน** — ใช้เท่านั้น:
+   - `formatThaiDateReadable` → `3 ก.ค. 2569`
+   - `formatThaiDateRangeReadable` → วันเดียว / `3-5 ก.ค. 2569` / ข้ามเดือน
+5. **เลย์เอาต์** — ซ้าย: รูป + ชื่อ + headline (ประเภท/ช่วงเวลา) · ขวา: สถานะ แล้วปุ่มอนุมัติอยู่ใต้สถานะ · รายละเอียดรองกระจายใน `.hr-leave-approval-body`
+6. **สี/ระยะห่าง** — อ่านจาก `design-tokens.css` / alias `--hr-*` เท่านั้น ห้าม hardcode สีแบรนด์
+
+## แจ้งเตือน / กล่องข้อความ
+
+- วันที่ใน title/body/`dateLabel` ใช้ `formatThaiDateReadable` / `formatThaiDateRangeReadable`
+- ข้อความสั้น ชัด: `ไม่อนุมัติ · ลาป่วย · 3-5 ก.ค. 2569` (ไม่ใช้ประโยคยาวซ้ำ)
+- **ห้ามแจ้งเตือนเมื่ออนุมัติแล้ว** (`*_APPROVED`) — ผลอนุมัติดูจากรายการคำขอได้; แจ้งเฉพาะยื่นใหม่ / ไม่อนุมัติ
+- UI แจ้งเตือน: ไอคอนกระดิ่งใน header (`notification-bell.tsx`) กดแล้วเปิดแผงคิว **รออนุมัติจริง** (เฉพาะ `SUBMITTED`) — ฝังคอมโพเนนต์อนุมัติจริง (`LeaveApprovalCards`, `OvertimeApprovalList`, `AdvanceApprovalList` พร้อมเลือกวิธีจ่าย, ปรับเวลา, ย้ายกะ) ไม่สร้างปุ่มอนุมัติแยก
+- แผงกระดิ่งต้องห่อด้วย `.hr-root` เพื่อให้สไตล์ปุ่ม `btn-primary` / `btn-danger` ทำงาน; ปุ่มอยู่ใต้สถานะฝั่งขวาตามเลย์เอาต์ลา/OT
+- ไม่ใช้ inbox แจ้งเตือนเก่าเป็นแหล่งนับจำนวน; ไม่ใช้หน้า `/hr/notifications` หรือแถบ “เปิดทั้งหมด”
+- ป๊อปอัปผลลัพธ์ใช้ `FeedbackPopup` + โทเคนธีมกลางเท่านั้น (ดู `ui-feedback-popup.mdc`)
+
+## ห้าม
+
+- แสดงวันที่แบบ `07/08/2569` หรือ ISO บนการ์ดรายชื่อ+วันที่ / แจ้งเตือน
+- วางปุ่มอนุมัติเต็มความกว้างใต้การ์ดเมื่อมีพื้นที่ฝั่งสถานะ
+- ใช้สีม่วง/ครีม/glow หรือสีสุ่มนอกโทเคนธีมกลาง
+- สร้างรูปแบบการ์ดชื่อคนใหม่ที่ไม่สอดคล้องลา/OT
+
+## อ้างอิง
+
+- Components: `leave-approval-cards.tsx`, `overtime-approval-list.tsx`, `employee-name-label.tsx`, `notifications-workspace.tsx`, `feedback-popup.tsx`
+- Dates: `src/lib/hr/thai-date.ts`
+- Theme: `src/app/design-tokens.css` + `.cursor/rules/customer-ui-theme.mdc`
+- CSS: `.hr-leave-approval-*`, `.hr-approval-employee-name`, `.hr-notify-*`

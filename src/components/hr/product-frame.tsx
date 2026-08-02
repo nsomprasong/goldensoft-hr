@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import NotificationBell from "@/components/hr/notification-bell";
 import { HrNavIcon, hrNavIconForPath } from "@/components/ui/icons";
-import { canHr } from "@/lib/hr/permissions";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
+import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
 import {
   hrNavRegistry,
   hrNavRouteKey,
@@ -108,6 +110,18 @@ export default function HrProductFrame({
       data-hr-shell="product"
       data-hr-product-nav={showProductNav ? "1" : "0"}
     >
+      <NotificationBell
+        showBranchLabel={showEmployeeBranchLabel(ctx)}
+        permissions={{
+          leave: canHr(ctx, HR_PERMISSIONS.leaveApprove),
+          overtime: canHr(ctx, HR_PERMISSIONS.overtimeApprove),
+          advance: canHr(ctx, [
+            HR_PERMISSIONS.advanceApprove,
+            HR_PERMISSIONS.payrollManage,
+          ]),
+          attendance: canHr(ctx, HR_PERMISSIONS.attendanceManage),
+        }}
+      />
       {showProductNav ? (
         <div className="hr-product-nav-bar">
           <div className="hr-product-nav-desktop">

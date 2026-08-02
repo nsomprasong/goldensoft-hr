@@ -1,6 +1,7 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import AdjustmentApprovalList from "@/components/hr/adjustment-approval-list";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listAttendanceAdjustments } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -19,11 +20,16 @@ export default async function AttendanceAdjustmentsPage() {
     HR_PERMISSIONS.attendanceManage,
     HR_PERMISSIONS.approvalManage,
   ]);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
       <DatabaseUnavailableNotice message={list.message} />
-      <AdjustmentApprovalList rows={list.data} canApprove={canApprove} />
+      <AdjustmentApprovalList
+        rows={list.data}
+        canApprove={canApprove}
+        showBranchLabel={showBranchLabel}
+      />
     </HrShell>
   );
 }

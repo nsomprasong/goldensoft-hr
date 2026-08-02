@@ -1353,17 +1353,16 @@ export async function seedLoginTestHr(
     });
   }
 
-  const { formatThaiDate: formatNotifThaiDate } = await import(
-    "@/lib/hr/thai-date"
-  );
-  const leaveDateLabel = formatNotifThaiDate(inboxToday);
-  const leaveNotifBody = `นภา สุขใจ ส่งคำขอลาป่วย 1 วัน · ${leaveDateLabel}`;
+  const leaveNotifBody = "ลาป่วย · 1 วัน";
+  const staff1Name = "นภา สุขใจ";
   const notifLeave = await db.notification.findFirst({
     where: {
       organizationId,
+      recipientAuthUserId: actorId,
+      typeId: leaveNotifId,
       entityType: "LEAVE_REQUEST",
-      entityId: leaveSubmitted.id,
     },
+    orderBy: { createdAt: "desc" },
   });
   if (!notifLeave) {
     await db.notification.create({
@@ -1378,13 +1377,22 @@ export async function seedLoginTestHr(
         body: leaveNotifBody,
         entityType: "LEAVE_REQUEST",
         entityId: leaveSubmitted.id,
+        data: { employeeName: staff1Name, employeeId: staff1.id },
         deliveredAt: new Date(),
+        readAt: null,
       },
     });
   } else {
     await db.notification.update({
       where: { id: notifLeave.id },
-      data: { body: leaveNotifBody, readAt: null },
+      data: {
+        branchId: hqBranchId,
+        recipientEmployeeId: staff1.id,
+        body: leaveNotifBody,
+        entityId: leaveSubmitted.id,
+        data: { employeeName: staff1Name, employeeId: staff1.id },
+        readAt: null,
+      },
     });
   }
 
@@ -1395,11 +1403,14 @@ export async function seedLoginTestHr(
     const notifOt = await db.notification.findFirst({
       where: {
         organizationId,
+        recipientAuthUserId: actorId,
+        typeId: otNotifId,
         entityType: "OVERTIME_REQUEST",
-        entityId: pendingOtRow.id,
       },
+      orderBy: { createdAt: "desc" },
     });
-    const otNotifBody = `วราภรณ์ พักงาน ส่งคำขอ OT 3 ชั่วโมง · ${leaveDateLabel}`;
+    const otNotifBody = "OT · 3 ชม.";
+    const otEmpName = "วราภรณ์ พักงาน";
     if (!notifOt) {
       await db.notification.create({
         data: {
@@ -1413,13 +1424,22 @@ export async function seedLoginTestHr(
           body: otNotifBody,
           entityType: "OVERTIME_REQUEST",
           entityId: pendingOtRow.id,
+          data: { employeeName: otEmpName, employeeId: suspended.id },
           deliveredAt: new Date(),
+          readAt: null,
         },
       });
     } else {
       await db.notification.update({
         where: { id: notifOt.id },
-        data: { body: otNotifBody, readAt: null },
+        data: {
+          branchId: branches.BRANCH01,
+          recipientEmployeeId: suspended.id,
+          body: otNotifBody,
+          entityId: pendingOtRow.id,
+          data: { employeeName: otEmpName, employeeId: suspended.id },
+          readAt: null,
+        },
       });
     }
   }
@@ -1767,12 +1787,20 @@ export async function seedLoginTestHr(
         ${actorId}::uuid
       )
     `;
+    const { formatThaiDateReadable: formatAdvanceNotifDate } = await import(
+      "@/lib/hr/thai-date"
+    );
+    const advanceDateLabel = formatAdvanceNotifDate(demoStart);
+    const advanceEmpName = "จิราภรณ์ ใหม่งาน";
+    const advanceNotifBody = `เบิก 3,000 บาท`;
     const notifAdvance = await db.notification.findFirst({
       where: {
         organizationId,
+        recipientAuthUserId: actorId,
+        typeId: advanceNotifId,
         entityType: "SALARY_ADVANCE",
-        entityId: submittedId,
       },
+      orderBy: { createdAt: "desc" },
     });
     if (!notifAdvance) {
       await db.notification.create({
@@ -1784,10 +1812,35 @@ export async function seedLoginTestHr(
           typeId: advanceNotifId,
           statusId: deliveredNotifId,
           title: "คำขอเบิกล่วงหน้ารออนุมัติ",
-          body: `จิราภรณ์ ใหม่งาน ขอเบิก 3,000 บาท · ${demoStart.toISOString().slice(0, 10)}`,
+          body: advanceNotifBody,
           entityType: "SALARY_ADVANCE",
           entityId: submittedId,
+          data: {
+            employeeName: advanceEmpName,
+            employeeId: advanceEmpSubmit.id,
+            dateLabel: `เบิก ${advanceDateLabel}`,
+          },
           deliveredAt: new Date(),
+          readAt: null,
+        },
+      });
+    } else {
+      await db.notification.update({
+        where: { id: notifAdvance.id },
+        data: {
+          branchId: advanceEmpSubmit.branchId,
+          recipientEmployeeId: advanceEmpSubmit.id,
+          title: "คำขอเบิกล่วงหน้ารออนุมัติ",
+          body: advanceNotifBody,
+          entityType: "SALARY_ADVANCE",
+          entityId: submittedId,
+          data: {
+            employeeName: advanceEmpName,
+            employeeId: advanceEmpSubmit.id,
+            dateLabel: `เบิก ${advanceDateLabel}`,
+          },
+          deliveredAt: new Date(),
+          readAt: null,
         },
       });
     }

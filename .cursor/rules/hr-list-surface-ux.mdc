@@ -23,6 +23,7 @@ When designing or changing list/management screens in `goldensoft-hr`:
 - Schedule surfaces: **shift name only** (optional time range).
 - Sort time-based lists **newest first** (older toward the bottom).
 - **Schedule flow:** period (date range) → add shifts → open shift → assign unassigned employees only.
+- Cards that show **employee name + date** must follow `.cursor/rules/hr-person-date-cards.mdc` (leave/OT layout, readable Thai dates, theme tokens).
 
 ## Reference
 

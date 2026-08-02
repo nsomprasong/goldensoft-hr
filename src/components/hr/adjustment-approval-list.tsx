@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import type { AttendanceAdjustmentRow } from "@/lib/hr/data";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 function statusClass(code: string): string {
   if (code === "APPROVED") return "badge badge-active";
@@ -35,13 +36,19 @@ export default function AdjustmentApprovalList({
   canApprove,
   emptyMessage = "ยังไม่มีคำขอปรับปรุงเวลา",
   showHero = true,
+  showSectionHead = true,
   sectionTitle = "ปรับปรุงเวลา",
+  showBranchLabel = false,
+  onChanged,
 }: {
   rows: AttendanceAdjustmentRow[];
   canApprove: boolean;
   emptyMessage?: string;
   showHero?: boolean;
+  showSectionHead?: boolean;
   sectionTitle?: string;
+  showBranchLabel?: boolean;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
@@ -54,7 +61,7 @@ export default function AdjustmentApprovalList({
     setBusyId(row.id);
     setFeedback({
       kind: "info",
-      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังปฏิเสธ…",
+      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังไม่อนุมัติ…",
     });
     try {
       const response = await fetch("/api/hr/attendance/adjustments", {
@@ -67,7 +74,7 @@ export default function AdjustmentApprovalList({
         body: JSON.stringify({ action, id: row.id }),
       });
       if (!response.ok) {
-        let detail = "ดำเนินการไม่สำเร็จ";
+        let detail = "ทำรายการไม่สำเร็จ";
         try {
           const payload = (await response.json()) as {
             error?: { message?: string };
@@ -82,17 +89,15 @@ export default function AdjustmentApprovalList({
       }
       setFeedback({
         kind: "success",
-        message:
-          action === "approve"
-            ? "อนุมัติการปรับเวลาแล้ว"
-            : "ปฏิเสธคำขอปรับปรุงเวลาแล้ว",
+        message: action === "approve" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว",
       });
+      onChanged?.();
       router.refresh();
     } catch (error) {
       setFeedback({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "ดำเนินการไม่สำเร็จ",
+          error instanceof Error ? error.message : "ทำรายการไม่สำเร็จ",
       });
     } finally {
       setBusyId(null);
@@ -113,12 +118,14 @@ export default function AdjustmentApprovalList({
       ) : null}
 
       <section className="hr-ot-requests" aria-label={sectionTitle}>
-        <div className="hr-shift-board-head">
-          <h2>
-            <span aria-hidden="true">🕒</span> {sectionTitle}
-          </h2>
-          <span className="hr-shift-board-count">{rows.length}</span>
-        </div>
+        {showSectionHead ? (
+          <div className="hr-shift-board-head">
+            <h2>
+              <span aria-hidden="true">🕒</span> {sectionTitle}
+            </h2>
+            <span className="hr-shift-board-count">{rows.length}</span>
+          </div>
+        ) : null}
 
         {rows.length === 0 ? (
           <div className="hr-shift-empty">
@@ -130,56 +137,67 @@ export default function AdjustmentApprovalList({
               const pending = row.statusCode === "SUBMITTED";
               const busy = busyId === row.id;
               return (
-                <li key={row.id} className="hr-ot-approval-row">
-                  <div className="hr-ot-approval-main">
+                <li key={row.id} className="hr-leave-approval-item">
+                  <div className="hr-leave-approval-head">
                     <div className="hr-ot-approval-person">
                       <EmployeeAvatar
                         displayName={row.employeeName}
                         photoUrl={row.photoUrl}
-                        size="sm"
+                        size="lg"
                       />
                       <div className="hr-leave-request-main">
-                        <strong>{row.employeeName}</strong>
+                        <EmployeeNameLabel
+                          name={row.employeeName}
+                          branchName={row.branchName}
+                          showBranch={showBranchLabel}
+                          className="hr-approval-employee-name"
+                        />
+                        <div className="hr-leave-request-headline">
+                          <span className="hr-leave-request-dates">
+                            {formatThaiDateReadable(row.workDate)}
+                          </span>
+                          <span className="hr-leave-request-type">
+                            เข้า {formatClock(row.requestedClockInAt)} · ออก{" "}
+                            {formatClock(row.requestedClockOutAt)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="hr-leave-request-main">
-                      <strong>{formatThaiDate(row.workDate)}</strong>
-                      <span>
-                        เข้า {formatClock(row.requestedClockInAt)} · ออก{" "}
-                        {formatClock(row.requestedClockOutAt)}
+                    <div className="hr-leave-approval-side">
+                      <span
+                        className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
+                      >
+                        {row.statusName}
                       </span>
-                      {row.reason.trim() ? (
-                        <span className="hr-leave-request-reason">
-                          {row.reason.trim()}
-                        </span>
+                      {canApprove && pending ? (
+                        <div className="hr-leave-approval-actions">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            disabled={busy}
+                            onClick={() => void review(row, "approve")}
+                          >
+                            {busy ? "…" : "อนุมัติ"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            disabled={busy}
+                            onClick={() => void review(row, "reject")}
+                          >
+                            ไม่อนุมัติ
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
-                  <div className="hr-ot-approval-side">
-                    <span className={statusClass(row.statusCode)}>
-                      {row.statusName}
-                    </span>
-                    {canApprove && pending ? (
-                      <div className="hr-ot-approval-actions">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={busy}
-                          onClick={() => void review(row, "approve")}
-                        >
-                          {busy ? "…" : "อนุมัติ"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          disabled={busy}
-                          onClick={() => void review(row, "reject")}
-                        >
-                          ไม่อนุมัติ
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                  {row.reason.trim() ? (
+                    <div className="hr-leave-approval-body">
+                      <span className="hr-leave-request-reason">
+                        {row.reason.trim()}
+                      </span>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}

@@ -8,6 +8,7 @@ import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
 import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
 import ShiftMismatchApprovalList from "@/components/hr/shift-mismatch-approval-list";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   getApprovalInbox,
   getFocusedApprovalItem,
@@ -109,6 +110,7 @@ export default async function ApprovalsPage({
     HR_PERMISSIONS.attendanceManage,
     HR_PERMISSIONS.approvalManage,
   ]);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
   const inbox = await getApprovalInbox(ctx);
   const focusId = single(params, "focus").trim();
   const requestedTab = single(params, "tab");
@@ -289,6 +291,7 @@ export default async function ApprovalsPage({
             rows={leaveRows}
             canApprove={canLeave}
             focusId={focusId || null}
+            showBranchLabel={showBranchLabel}
             emptyMessage="ไม่มีคำขอลารออนุมัติ หรือผลที่วันลายังไม่ผ่าน"
           />
         </section>
@@ -301,6 +304,7 @@ export default async function ApprovalsPage({
           showHero={false}
           sectionTitle="คำขอ OT"
           focusId={focusId || null}
+          showBranchLabel={showBranchLabel}
           emptyMessage="ไม่มีคำขอ OT รออนุมัติ หรือผลที่วัน OT ยังไม่ผ่าน"
         />
       ) : null}
@@ -311,6 +315,7 @@ export default async function ApprovalsPage({
             rows={advanceRows}
             canApprove={canAdvance}
             focusId={focusId || null}
+            showBranchLabel={showBranchLabel}
           />
         </section>
       ) : null}
@@ -321,6 +326,7 @@ export default async function ApprovalsPage({
           canApprove={canAdjust}
           showHero={false}
           sectionTitle="ปรับปรุงเวลา"
+          showBranchLabel={showBranchLabel}
           emptyMessage="ไม่มีคำขอปรับปรุงเวลารออนุมัติ หรือผลที่วันทำงานยังไม่ผ่าน"
         />
       ) : null}
@@ -330,6 +336,7 @@ export default async function ApprovalsPage({
           rows={inbox.data.shiftMismatches}
           canApprove={canAdjust}
           sectionTitle="ย้ายกะ (ผิดกะ)"
+          showBranchLabel={showBranchLabel}
           emptyMessage="ไม่มีคำขอย้ายกะ หรือผลที่วันทำงานยังไม่ผ่าน"
         />
       ) : null}

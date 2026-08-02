@@ -128,6 +128,18 @@ export function resolveAllowedBranchIds(
   return ctx.branchId ? [ctx.branchId] : [];
 }
 
+/**
+ * Whether employee-name UIs should show a small branch label under the name.
+ * Based on membership capability (org-wide / multi-branch), not the shell filter.
+ */
+export function showEmployeeBranchLabel(ctx: HrRequestContext): boolean {
+  if (ctx.contextMode === "platform_admin") return true;
+  const roles = ctx.membershipRoles.map((role) => role.toUpperCase());
+  if (roles.includes("OWNER") || roles.includes("ADMIN")) return true;
+  const scoped = ctx.membershipBranchIds;
+  return Array.isArray(scoped) && scoped.length > 1;
+}
+
 export type RequireHrApiOptions = {
   permission?: HrPermission | readonly HrPermission[];
   /** Branch the route acts on; verified against the caller's allow-list. */

@@ -5,11 +5,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import type { OvertimeRequestRow } from "@/lib/hr/data";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import {
+  formatThaiDateReadable,
+  formatThaiDateTimeReadable,
+} from "@/lib/hr/thai-date";
 
 function statusClass(code: string): string {
   if (code === "APPROVED") return "badge badge-active";
@@ -40,42 +44,31 @@ function formatMinutes(minutes: number): string {
   return `${h} ชม. ${m} นาที`;
 }
 
-function formatSubmittedAt(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat("th-TH", {
-      timeZone: "Asia/Bangkok",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(iso));
-  } catch {
-    return "—";
-  }
-}
-
 export default function OvertimeApprovalList({
   rows,
   canApprove,
   emptyMessage = "ยังไม่มีคำขอทำงานล่วงเวลา",
   showHero = true,
+  showSectionHead = true,
   sectionTitle = "คำขอ OT",
   heroLead = "คำขอ OT และการอนุมัติขององค์กร",
   heroAction,
   focusId = null,
+  showBranchLabel = false,
+  onChanged,
 }: {
   rows: OvertimeRequestRow[];
   canApprove: boolean;
   emptyMessage?: string;
   /** When false, omit page hero (for embedding in unified approvals). */
   showHero?: boolean;
+  showSectionHead?: boolean;
   sectionTitle?: string;
   heroLead?: string;
   heroAction?: ReactNode;
   focusId?: string | null;
+  showBranchLabel?: boolean;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
@@ -85,7 +78,7 @@ export default function OvertimeApprovalList({
     setBusyId(row.id);
     setFeedback({
       kind: "info",
-      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังปฏิเสธ…",
+      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังไม่อนุมัติ…",
     });
     try {
       const response = await fetch("/api/hr/overtime/requests", {
@@ -98,7 +91,7 @@ export default function OvertimeApprovalList({
         body: JSON.stringify({ action, id: row.id }),
       });
       if (!response.ok) {
-        let detail = "ดำเนินการไม่สำเร็จ";
+        let detail = "ทำรายการไม่สำเร็จ";
         try {
           const payload = (await response.json()) as {
             error?: { message?: string };
@@ -113,17 +106,15 @@ export default function OvertimeApprovalList({
       }
       setFeedback({
         kind: "success",
-        message:
-          action === "approve"
-            ? "อนุมัติ OT เรียบร้อยแล้ว"
-            : "ปฏิเสธคำขอ OT แล้ว",
+        message: action === "approve" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว",
       });
+      onChanged?.();
       router.refresh();
     } catch (error) {
       setFeedback({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "ดำเนินการไม่สำเร็จ",
+          error instanceof Error ? error.message : "ทำรายการไม่สำเร็จ",
       });
     } finally {
       setBusyId(null);
@@ -143,12 +134,14 @@ export default function OvertimeApprovalList({
       ) : null}
 
       <section className="hr-ot-requests" aria-label={sectionTitle}>
-        <div className="hr-shift-board-head">
-          <h2>
-            <span aria-hidden="true">⏱</span> {sectionTitle}
-          </h2>
-          <span className="hr-shift-board-count">{rows.length}</span>
-        </div>
+        {showSectionHead ? (
+          <div className="hr-shift-board-head">
+            <h2>
+              <span aria-hidden="true">⏱</span> {sectionTitle}
+            </h2>
+            <span className="hr-shift-board-count">{rows.length}</span>
+          </div>
+        ) : null}
 
         {rows.length === 0 ? (
           <div className="hr-shift-empty">
@@ -172,52 +165,67 @@ export default function OvertimeApprovalList({
                       <EmployeeAvatar
                         displayName={row.employeeName}
                         photoUrl={row.photoUrl}
-                        size="sm"
+                        size="lg"
                       />
                       <div className="hr-leave-request-main">
-                        <strong>{row.employeeName}</strong>
-                        <span>
-                          {formatThaiDate(row.workDate)} ·{" "}
-                          {formatClock(row.startAt)}–{formatClock(row.endAt)} ·{" "}
-                          {formatMinutes(row.requestedMinutes)}
-                        </span>
-                        <span className="hr-leave-request-submitted">
-                          ยื่นเมื่อ {formatSubmittedAt(row.submittedAt)}
-                        </span>
-                        {row.reason?.trim() ? (
-                          <span className="hr-leave-request-reason">
-                            {row.reason.trim()}
+                        <EmployeeNameLabel
+                          name={row.employeeName}
+                          branchName={row.branchName}
+                          showBranch={showBranchLabel}
+                          className="hr-approval-employee-name"
+                        />
+                        <div className="hr-leave-request-headline">
+                          <span className="hr-leave-request-dates">
+                            {formatThaiDateReadable(row.workDate)}
                           </span>
-                        ) : null}
+                          <span className="hr-leave-request-type">
+                            {formatClock(row.startAt)}–{formatClock(row.endAt)}
+                            <span className="hr-leave-request-days">
+                              · {formatMinutes(row.requestedMinutes)}
+                            </span>
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <span
-                      className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
-                    >
-                      {row.statusName}
-                    </span>
+                    <div className="hr-leave-approval-side">
+                      <span
+                        className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
+                      >
+                        {row.statusName}
+                      </span>
+                      {canApprove && pending ? (
+                        <div className="hr-leave-approval-actions">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
+                            disabled={busy}
+                            onClick={() => void review(row, "approve")}
+                          >
+                            {busy ? "…" : "อนุมัติ"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            disabled={busy}
+                            onClick={() => void review(row, "reject")}
+                          >
+                            ไม่อนุมัติ
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
-                  {canApprove && pending ? (
-                    <div className="hr-leave-approval-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        disabled={busy}
-                        onClick={() => void review(row, "approve")}
-                      >
-                        {busy ? "…" : "อนุมัติ"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        disabled={busy}
-                        onClick={() => void review(row, "reject")}
-                      >
-                        ไม่อนุมัติ
-                      </button>
-                    </div>
-                  ) : null}
+                  <div className="hr-leave-approval-body">
+                    <span className="hr-leave-request-submitted">
+                      ยื่นเมื่อ {formatThaiDateTimeReadable(row.submittedAt)}
+                    </span>
+                    {row.reason?.trim() ? (
+                      <span className="hr-leave-request-reason">
+                        {row.reason.trim()}
+                      </span>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}

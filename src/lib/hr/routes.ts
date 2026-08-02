@@ -444,7 +444,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     key: "notifications",
     path: `${HR_ROUTE_PREFIX}/notifications`,
     labelTh: "แจ้งเตือน",
-    nav: true,
+    nav: false,
     requiredPermissions: [],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },

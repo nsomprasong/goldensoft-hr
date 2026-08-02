@@ -1,5 +1,5 @@
 ---
-description: วันที่ที่แสดงให้ผู้ใช้ต้องเป็นรูปแบบไทย (พ.ศ.)
+description: วันที่ที่แสดงให้ผู้ใช้ต้องเป็นรูปแบบไทย (พ.ศ.) — การ์ดรายชื่อใช้รูปแบบอ่านง่าย
 alwaysApply: true
 ---
 
@@ -7,26 +7,38 @@ alwaysApply: true
 
 When showing dates to users in GoldenSoft HR (and related suite UIs), use **Thai Buddhist-era** format — not ISO and not Gregorian CE in the UI.
 
-## Rules
+## Rules by surface
 
-- **Display**: `DD/MM/BBBB` (พ.ศ.), e.g. `18/06/2569`
-- **Ranges**: `01/06/2569 – 30/06/2569`
-- **Storage / API**: keep ISO `YYYY-MM-DD` (ค.ศ.)
-- **Form fields** for วันเริ่ม / วันสิ้นสุด / hire dates: use `ThaiDateInput` (not bare `<input type="date">`)
-- **Do not** show raw `2026-06-18` or Gregorian year alone in user-facing copy
+| Surface | Helper | Example |
+|---|---|---|
+| **Person + date cards / approval lists** | `formatThaiDateReadable` / `formatThaiDateRangeReadable` | `3 ก.ค. 2569`, `3-5 ก.ค. 2569` |
+| **Notifications / feedback messages** | same readable helpers (+ `formatThaiDateTimeReadable` for “แจ้งเมื่อ”) | `ลา 3-5 ก.ค. 2569` |
+| **Forms / ThaiDateInput** | `ThaiDateInput` (shows `DD/MM/BBBB`) | `18/06/2569` |
+| **Dense formal meta** (optional) | `formatThaiDate` / `formatThaiDateRange` | `18/06/2569` |
+
+Range rules for readable helpers:
+
+- Same day → one date only
+- Same month → `3-5 ก.ค. 2569`
+- Cross month/year → `28 ก.ค. – 5 ส.ค. 2569`
+
+## Storage / API
+
+Keep ISO `YYYY-MM-DD` (ค.ศ.). Never show raw `2026-06-18` in user-facing copy.
 
 ## How to implement (HR)
 
 ```ts
-import { formatThaiDate, formatThaiDateRange, toIsoDate } from "@/lib/hr/thai-date";
+import {
+  formatThaiDateReadable,
+  formatThaiDateRangeReadable,
+  toIsoDate,
+} from "@/lib/hr/thai-date";
 import ThaiDateInput from "@/components/hr/thai-date-input";
 
-formatThaiDate(row.workDate); // "18/06/2569"
-<ThaiDateInput value={iso} onChange={setIso} /> // shows วว/ดด/พ.ศ.
+formatThaiDateReadable(row.workDate); // "3 ก.ค. 2569"
+formatThaiDateRangeReadable(row.startDate, row.endDate); // "3-5 ก.ค. 2569"
+<ThaiDateInput value={iso} onChange={setIso} />
 ```
 
-## Checklist for new UI
-
-- [ ] Tables / headings / messages use Thai helpers
-- [ ] Start/end date fields use `ThaiDateInput`
-- [ ] Auto-generated names that include dates use Thai format
+Person+date card layout also follows `.cursor/rules/hr-person-date-cards.mdc`.

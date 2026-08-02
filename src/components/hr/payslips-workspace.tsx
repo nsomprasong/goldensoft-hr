@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import Field, { fieldProps } from "@/components/hr/field";
 import { formatThb } from "@/lib/hr/money";
 import type {
   PayslipListItem,
   PayslipPeriodOption,
 } from "@/lib/hr/services/payroll-runs";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 export default function PayslipsWorkspace({
   payslips,
@@ -18,12 +19,14 @@ export default function PayslipsWorkspace({
   selectedPeriodId,
   detailBasePath = "/hr/payslips",
   basePath = "/hr/payslips",
+  showBranchLabel = false,
 }: {
   payslips: PayslipListItem[];
   periods: PayslipPeriodOption[];
   selectedPeriodId: string | null;
   detailBasePath?: string;
   basePath?: string;
+  showBranchLabel?: boolean;
 }) {
   const router = useRouter();
   const filtered = selectedPeriodId
@@ -73,10 +76,16 @@ export default function PayslipsWorkspace({
                   <EmployeeAvatar
                     displayName={row.displayName}
                     photoUrl={row.photoUrl}
-                    size="md"
+                    size="lg"
                   />
                   <div className="hr-entity-card-title-wrap">
-                    <h2 className="hr-entity-card-title">{row.displayName}</h2>
+                    <EmployeeNameLabel
+                      name={row.displayName}
+                      branchName={row.branchName}
+                      showBranch={showBranchLabel}
+                      as="h2"
+                      className="hr-entity-card-title hr-approval-employee-name"
+                    />
                     <p className="hr-entity-card-subtitle">{row.scheduleName}</p>
                   </div>
                 </div>
@@ -94,15 +103,9 @@ export default function PayslipsWorkspace({
                 <div>
                   <dt>ออกเมื่อ</dt>
                   <dd>
-                    {row.issuedAt ? formatThaiDate(row.issuedAt) : "—"}
+                    {row.issuedAt ? formatThaiDateReadable(row.issuedAt) : "—"}
                   </dd>
                 </div>
-                {row.branchName ? (
-                  <div>
-                    <dt>สาขา</dt>
-                    <dd>{row.branchName}</dd>
-                  </div>
-                ) : null}
               </dl>
 
               <div className="hr-entity-card-actions">

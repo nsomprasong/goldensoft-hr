@@ -1,14 +1,18 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import AutoSubmitSelect from "@/components/hr/auto-submit-select";
+import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   listApprovalHistory,
   listOrganizationBranches,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +33,18 @@ function pageHref(params: SearchParams, page: number): string {
   return qs ? `/hr/approvals/history?${qs}` : "/hr/approvals/history";
 }
 
-function formatWhen(iso: string | null): string {
+function formatWhen(iso: string | null | undefined): string {
   if (!iso) return "—";
   try {
-    return formatThaiDate(iso.slice(0, 10));
+    return formatThaiDateReadable(iso.slice(0, 10));
   } catch {
     return "—";
   }
+}
+
+function statusClass(decision: "APPROVED" | "REJECTED"): string {
+  if (decision === "APPROVED") return "badge badge-active";
+  return "badge badge-inactive";
 }
 
 export default async function ApprovalHistoryPage({
@@ -60,71 +69,105 @@ export default async function ApprovalHistoryPage({
   ]);
   const result = history.data;
   const branchOptions = branches.data;
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
       <DatabaseUnavailableNotice message={history.message} />
 
-      <header className="hr-schedule-hero hr-leave-hero">
-        <h1 className="hr-schedule-hero-title">ประวัติอนุมัติ</h1>
-        <p className="hr-leave-hero-lead">
-          รายการที่วันลา/วันทำงานผ่านแล้ว · เรียงตามสาขา · ทั้งหมด{" "}
-          {result.total} รายการ · หน้าละ 10
-        </p>
-        <p>
-          <Link className="btn btn-sm" href="/hr/approvals">
-            กลับคิวรออนุมัติ
-          </Link>
-        </p>
-      </header>
+      <div className="hr-page-head">
+        <div>
+          <h1>ประวัติอนุมัติ</h1>
+          <p>
+            รายการที่วันลา/วันทำงานผ่านแล้ว · เรียงตามวันที่ แล้วสาขา และชื่อ ·
+            ทั้งหมด {result.total} รายการ · หน้าละ 10
+          </p>
+        </div>
+      </div>
 
-      <form className="card" method="get" action="/hr/approvals/history">
+      <form className="hr-history-filters" method="get" action="/hr/approvals/history">
         <div className="filters">
-          <label>
+          <label htmlFor="history-branchId">
             สาขา
-            <select name="branchId" defaultValue={branchId ?? ""}>
+            <AutoSubmitSelect
+              id="history-branchId"
+              name="branchId"
+              defaultValue={branchId ?? ""}
+              aria-label="กรองตามสาขา"
+            >
               <option value="">ทุกสาขาที่มีสิทธิ์</option>
               {branchOptions.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.label}
                 </option>
               ))}
-            </select>
+            </AutoSubmitSelect>
           </label>
-          <div className="inline-actions">
-            <button className="btn" type="submit">
-              กรอง
-            </button>
-            {branchId ? (
-              <Link className="btn btn-sm" href="/hr/approvals/history">
-                ล้างตัวกรอง
-              </Link>
-            ) : null}
-          </div>
         </div>
       </form>
 
       {result.rows.length === 0 ? (
         <p className="empty">ยังไม่มีประวัติอนุมัติ</p>
       ) : (
-        <ul className="hr-dash-inbox" aria-label="ประวัติอนุมัติ">
-          {result.rows.map((row) => (
-            <li key={`${row.kind}:${row.id}`}>
-              <div>
-                <strong>{row.employeeName}</strong>
-                <span className="hr-dash-inbox-branch">{row.branchName}</span>
-                <span>
-                  {row.label} ·{" "}
-                  {row.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
-                </span>
-                <span className="muted">โดย {row.reviewedByName}</span>
-              </div>
-              <div className="hr-dash-inbox-meta">
-                <time>{formatWhen(row.reviewedAt)}</time>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <section className="hr-ot-requests" aria-label="ประวัติอนุมัติ">
+          <ul className="hr-leave-request-list">
+            {result.rows.map((row) => {
+              const eventLabel = formatWhen(row.eventDate ?? row.reviewedAt);
+              const decisionLabel =
+                row.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ";
+
+              return (
+                <li
+                  key={`${row.kind}:${row.id}`}
+                  className="hr-leave-approval-item"
+                >
+                  <div className="hr-leave-approval-head">
+                    <div className="hr-ot-approval-person">
+                      <EmployeeAvatar
+                        displayName={row.employeeName}
+                        photoUrl={row.photoUrl}
+                        size="lg"
+                      />
+                      <div className="hr-leave-request-main">
+                        <EmployeeNameLabel
+                          name={row.employeeName}
+                          branchName={row.branchName}
+                          showBranch={showBranchLabel}
+                          className="hr-approval-employee-name"
+                        />
+                        <div className="hr-leave-request-headline">
+                          <span className="hr-leave-request-type">
+                            {row.label}
+                          </span>
+                          <span className="hr-leave-request-dates">
+                            {eventLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="hr-leave-approval-side">
+                      <span
+                        className={`hr-leave-approval-status ${statusClass(row.decision)}`}
+                      >
+                        {decisionLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="hr-leave-approval-body">
+                    <span className="hr-leave-request-submitted">
+                      {row.decision === "APPROVED" ? "อนุมัติโดย" : "ปฏิเสธโดย"}{" "}
+                      {row.reviewedByName}
+                    </span>
+                    <span className="hr-leave-request-shift">
+                      ตัดสินเมื่อ {formatWhen(row.reviewedAt)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       <nav className="pagination" aria-label="แบ่งหน้า">

@@ -13,8 +13,8 @@ export type FeedbackPopupState = {
 } | null;
 
 const TITLES: Record<FeedbackKind, string> = {
-  success: "ดำเนินการสำเร็จ",
-  error: "ไม่สามารถดำเนินการได้",
+  success: "สำเร็จ",
+  error: "เกิดข้อผิดพลาด",
   warning: "โปรดตรวจสอบ",
   info: "กำลังดำเนินการ",
 };

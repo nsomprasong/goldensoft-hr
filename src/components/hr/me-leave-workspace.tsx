@@ -8,7 +8,7 @@ import FeedbackPopup, {
 } from "@/components/hr/feedback-popup";
 import ThaiDateInput from "@/components/hr/thai-date-input";
 import { createClientId } from "@/lib/hr/client-id";
-import { formatThaiDateRange } from "@/lib/hr/thai-date";
+import { formatThaiDateRangeReadable } from "@/lib/hr/thai-date";
 
 type LeaveTypeOption = {
   id: string;
@@ -329,9 +329,15 @@ export default function MeLeaveWorkspace() {
                   <li key={row.id} className="hr-leave-request-row">
                     <div className="hr-leave-request-main">
                       <strong>{row.leaveType?.name ?? "การลา"}</strong>
-                      <span>
-                        {formatThaiDateRange(row.startDate, row.endDate)} ·{" "}
-                        {Number(row.requestedAmount)} วัน
+                      <span className="hr-leave-request-dates">
+                        {formatThaiDateRangeReadable(
+                          row.startDate,
+                          row.endDate,
+                        )}
+                        <span className="hr-leave-request-days">
+                          {" "}
+                          · {Number(row.requestedAmount)} วัน
+                        </span>
                       </span>
                       {row.reason?.trim() ? (
                         <span className="hr-leave-request-reason">
@@ -458,7 +464,7 @@ export default function MeLeaveWorkspace() {
                     <span className="hr-leave-form-summary-label">ช่วงลา</span>
                     <strong>
                       {startDate && endDate
-                        ? formatThaiDateRange(startDate, endDate)
+                        ? formatThaiDateRangeReadable(startDate, endDate)
                         : "ยังไม่ได้เลือก"}
                     </strong>
                   </div>

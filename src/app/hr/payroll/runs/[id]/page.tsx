@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayrollRunDetailWorkspace from "@/components/hr/payroll-run-detail-workspace";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { getPayrollRun } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -17,6 +18,7 @@ export default async function PayrollRunDetailPage({
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.payrollRead });
   const { id } = await params;
   const run = await getPayrollRun(ctx, id);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   if (run.available && !run.data) {
     notFound();
@@ -39,6 +41,7 @@ export default async function PayrollRunDetailPage({
             HR_PERMISSIONS.payrollApprove,
           ])}
           available={run.available}
+          showBranchLabel={showBranchLabel}
         />
       )}
     </HrShell>

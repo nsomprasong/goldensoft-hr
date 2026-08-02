@@ -1,6 +1,7 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayslipsWorkspace from "@/components/hr/payslips-workspace";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   listOrgPayslips,
   listPayslipPeriodOptions,
@@ -36,6 +37,7 @@ export default async function PayslipsPage({
     (requested && periods.data.some((row) => row.id === requested)
       ? requested
       : null) ?? defaultPeriodId;
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
@@ -55,6 +57,7 @@ export default async function PayslipsPage({
         selectedPeriodId={selectedPeriodId}
         basePath="/hr/payslips"
         detailBasePath="/hr/payslips"
+        showBranchLabel={showBranchLabel}
       />
     </HrShell>
   );

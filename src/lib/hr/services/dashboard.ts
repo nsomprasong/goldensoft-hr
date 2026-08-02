@@ -46,9 +46,12 @@ export type DashboardDecisionItem = {
   kind: "leave" | "overtime" | "attendance_adjustment" | "shift_mismatch";
   label: string;
   employeeName: string;
+  photoUrl?: string | null;
   branchId: string | null;
   /** Filled by data layer from Platform branch list when available. */
   branchName?: string;
+  /** Leave end / OT work date / adjust work date (ISO date). */
+  eventDate?: string | null;
   decision: "APPROVED" | "REJECTED";
   reviewedByName: string;
   reviewedAt: string | null;
@@ -728,11 +731,24 @@ type HistorySqlRow = {
   kind: DashboardDecisionItem["kind"];
   label: string;
   employee_name: string;
+  photo_url: string | null;
   branch_id: string | null;
+  event_date: Date | string | null;
   decision: "APPROVED" | "REJECTED";
   reviewed_by_name: string | null;
   reviewed_at: Date | null;
 };
+
+function isoDateOnly(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().slice(0, 10);
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 10);
+}
 
 function branchScopeSql(
   scope: { branchIds: readonly string[] | null; branchId: string | null },
@@ -752,7 +768,8 @@ function branchScopeSql(
 }
 
 /**
- * Paginated approval history (approved/rejected), sorted by branch then date.
+ * Paginated approval history (approved/rejected).
+ * Sort: event date (desc) → branch → employee name.
  * Uses SQL UNION so large orgs do not load the full set into memory.
  */
 export async function listApprovalHistory(
@@ -796,7 +813,9 @@ export async function listApprovalHistory(
           TRIM(CONCAT(e.first_name_th, ' ', e.last_name_th)),
           '—'
         ) AS employee_name,
+        e.photo_url AS photo_url,
         e.branch_id::text AS branch_id,
+        lr.end_date AS event_date,
         s.code AS decision,
         lr.reviewed_by_name,
         lr.reviewed_at
@@ -820,7 +839,9 @@ export async function listApprovalHistory(
           TRIM(CONCAT(e.first_name_th, ' ', e.last_name_th)),
           '—'
         ) AS employee_name,
+        e.photo_url AS photo_url,
         e.branch_id::text AS branch_id,
+        ot.work_date AS event_date,
         s.code AS decision,
         ot.reviewed_by_name,
         ot.reviewed_at
@@ -843,7 +864,9 @@ export async function listApprovalHistory(
           TRIM(CONCAT(e.first_name_th, ' ', e.last_name_th)),
           '—'
         ) AS employee_name,
+        e.photo_url AS photo_url,
         e.branch_id::text AS branch_id,
+        adj.work_date AS event_date,
         s.code AS decision,
         adj.reviewed_by_name,
         adj.reviewed_at
@@ -860,7 +883,11 @@ export async function listApprovalHistory(
   const [rows, countRows] = await Promise.all([
     prisma.$queryRaw<HistorySqlRow[]>`
       SELECT * FROM (${combined}) AS history
-      ORDER BY branch_id ASC NULLS LAST, reviewed_at DESC NULLS LAST, id ASC
+      ORDER BY
+        event_date DESC NULLS LAST,
+        branch_id ASC NULLS LAST,
+        employee_name ASC,
+        id ASC
       LIMIT ${pagination.take} OFFSET ${pagination.skip}
     `,
     prisma.$queryRaw<Array<{ total: number | bigint }>>`
@@ -874,7 +901,9 @@ export async function listApprovalHistory(
     kind: row.kind,
     label: row.label,
     employeeName: row.employee_name,
+    photoUrl: row.photo_url?.trim() || null,
     branchId: row.branch_id,
+    eventDate: isoDateOnly(row.event_date),
     decision: row.decision,
     reviewedByName: row.reviewed_by_name?.trim() || "—",
     reviewedAt: row.reviewed_at?.toISOString() ?? null,

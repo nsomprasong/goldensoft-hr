@@ -264,8 +264,10 @@ export type HrDashboardDecisionItem = {
   kind: "leave" | "overtime" | "attendance_adjustment" | "shift_mismatch";
   label: string;
   employeeName: string;
+  photoUrl?: string | null;
   branchId: string | null;
   branchName: string;
+  eventDate?: string | null;
   decision: "APPROVED" | "REJECTED";
   reviewedByName: string;
   reviewedAt: string | null;
@@ -438,9 +440,12 @@ export async function listApprovalHistory(
         branchName: resolveBranchName(row.branchId),
       }))
       .sort((a, b) => {
+        // Keep SQL order: event date desc → branch → name
+        const dateCmp = (b.eventDate ?? "").localeCompare(a.eventDate ?? "");
+        if (dateCmp !== 0) return dateCmp;
         const branchCmp = a.branchName.localeCompare(b.branchName, "th");
         if (branchCmp !== 0) return branchCmp;
-        return (b.reviewedAt ?? "").localeCompare(a.reviewedAt ?? "");
+        return a.employeeName.localeCompare(b.employeeName, "th");
       });
     return { ...page, rows };
   });
@@ -456,6 +461,7 @@ export type EmployeeRow = {
   displayName: string;
   photoUrl: string | null;
   branchId: string;
+  branchName: string | null;
   departmentNameTh: string | null;
   positionNameTh: string | null;
   employmentTypeNameTh: string;
@@ -545,6 +551,7 @@ async function loadNameLookups(
 function toEmployeeRow(
   employee: EmployeeRecordLike,
   lookups: NameLookups,
+  branchNameById?: Map<string, string>,
 ): EmployeeRow {
   const status = lookups.employeeStatuses.get(employee.employeeStatusId);
   return {
@@ -553,6 +560,7 @@ function toEmployeeRow(
     displayName: employee.displayName,
     photoUrl: employee.photoUrl ?? null,
     branchId: employee.branchId,
+    branchName: branchNameById?.get(employee.branchId) ?? null,
     departmentNameTh: employee.departmentId
       ? (lookups.departments.get(employee.departmentId) ?? null)
       : null,
@@ -570,6 +578,46 @@ function toEmployeeRow(
   };
 }
 
+async function loadOrgBranchNameMap(
+  organizationId: string,
+): Promise<Map<string, string>> {
+  const { prisma } = await import("@/lib/prisma");
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string }>>`
+    SELECT id::text AS id, name
+    FROM platform.branches
+    WHERE organization_id = ${organizationId}::uuid
+      AND deleted_at IS NULL
+  `;
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+function resolveBranchName(
+  branchId: string | null | undefined,
+  branchNameById: Map<string, string>,
+  ctx: HrRequestContext,
+): string | null {
+  if (!branchId) return null;
+  return (
+    branchNameById.get(branchId) ??
+    (ctx.branch?.id === branchId ? ctx.branch.name : null) ??
+    null
+  );
+}
+
+async function withBranchNames<T extends { branchId?: string | null }>(
+  ctx: HrRequestContext,
+  rows: T[],
+): Promise<Array<T & { branchName: string | null }>> {
+  if (rows.length === 0) {
+    return rows.map((row) => ({ ...row, branchName: null }));
+  }
+  const branchNameById = await loadOrgBranchNameMap(ctx.organizationId);
+  return rows.map((row) => ({
+    ...row,
+    branchName: resolveBranchName(row.branchId, branchNameById, ctx),
+  }));
+}
+
 export async function listEmployees(
   ctx: HrRequestContext,
   filters: EmployeeListFilters,
@@ -585,7 +633,7 @@ export async function listEmployees(
 
   return safeRead(fallback, async (repository) => {
     const service = serviceContext(ctx);
-    const [result, lookups] = await Promise.all([
+    const [result, lookups, branchNameById] = await Promise.all([
       listEmployeesService(repository, service, {
         page,
         pageSize: EMPLOYEE_PAGE_SIZE,
@@ -595,10 +643,13 @@ export async function listEmployees(
         employmentTypeId: filters.employmentTypeId || null,
       }),
       loadNameLookups(repository, ctx.organizationId),
+      loadOrgBranchNameMap(ctx.organizationId),
     ]);
 
     return {
-      rows: result.rows.map((row) => toEmployeeRow(row, lookups)),
+      rows: result.rows.map((row) =>
+        toEmployeeRow(row, lookups, branchNameById),
+      ),
       total: result.total,
       page: result.page,
       pageSize: result.pageSize,
@@ -627,10 +678,13 @@ export async function getEmployeeDetail(
   return safeRead<EmployeeDetail | null>(null, async (repository) => {
     const service = serviceContext(ctx);
     const employee = await getEmployeeService(repository, service, employeeId);
-    const lookups = await loadNameLookups(repository, ctx.organizationId);
+    const [lookups, branchNameById] = await Promise.all([
+      loadNameLookups(repository, ctx.organizationId),
+      loadOrgBranchNameMap(ctx.organizationId),
+    ]);
 
     return {
-      ...toEmployeeRow(employee, lookups),
+      ...toEmployeeRow(employee, lookups, branchNameById),
       firstNameTh: employee.firstNameTh,
       lastNameTh: employee.lastNameTh,
       firstNameEn: employee.firstNameEn,
@@ -1529,6 +1583,8 @@ export type LeaveRequestRow = {
   employeeCode: string;
   employeeName: string;
   photoUrl: string | null;
+  branchId: string | null;
+  branchName: string | null;
   leaveTypeName: string;
   statusCode: string;
   statusName: string;
@@ -1550,6 +1606,7 @@ function mapLeaveRequestRow(row: {
     employeeCode?: string | null;
     displayName?: string | null;
     photoUrl?: string | null;
+    branchId?: string | null;
   } | null;
   leaveType?: { name?: string | null } | null;
   status?: { code?: string | null; name?: string | null } | null;
@@ -1574,6 +1631,8 @@ function mapLeaveRequestRow(row: {
     employeeCode: row.employee?.employeeCode ?? "—",
     employeeName: row.employee?.displayName ?? "—",
     photoUrl: row.employee?.photoUrl ?? null,
+    branchId: row.employee?.branchId ?? null,
+    branchName: null,
     leaveTypeName: row.leaveType?.name ?? "—",
     statusCode: row.status?.code ?? "—",
     statusName: row.status?.name ?? row.status?.code ?? "—",
@@ -1607,6 +1666,8 @@ export type OvertimeRequestRow = {
   employeeCode: string;
   employeeName: string;
   photoUrl: string | null;
+  branchId: string | null;
+  branchName: string | null;
   statusCode: string;
   statusName: string;
   workDate: string;
@@ -1624,6 +1685,8 @@ export type LeaveBalanceRow = {
   employeeCode: string;
   employeeName: string;
   photoUrl: string | null;
+  branchId: string | null;
+  branchName: string | null;
   leaveTypeName: string;
   balanceYear: number;
   openingBalance: number;
@@ -1637,6 +1700,8 @@ export type AttendanceAdjustmentRow = {
   employeeCode: string;
   employeeName: string;
   photoUrl: string | null;
+  branchId: string | null;
+  branchName: string | null;
   statusCode: string;
   statusName: string;
   workDate: string;
@@ -1651,6 +1716,8 @@ export type ShiftMismatchRow = {
   employeeCode: string;
   employeeName: string;
   photoUrl: string | null;
+  branchId: string | null;
+  branchName: string | null;
   statusCode: string;
   statusName: string;
   workDate: string;
@@ -1691,6 +1758,7 @@ function mapShiftMismatchRow(row: {
     employeeCode?: string | null;
     displayName?: string | null;
     photoUrl?: string | null;
+    branchId?: string | null;
   } | null;
   fromShift?: {
     name?: string | null;
@@ -1710,6 +1778,8 @@ function mapShiftMismatchRow(row: {
     employeeCode: row.employee?.employeeCode ?? "—",
     employeeName: row.employee?.displayName ?? "—",
     photoUrl: row.employee?.photoUrl ?? null,
+    branchId: row.employee?.branchId ?? null,
+    branchName: null,
     statusCode: row.status?.code ?? "—",
     statusName: row.status?.name ?? row.status?.code ?? "—",
     workDate: isoDate(row.workDate) ?? "",
@@ -1738,6 +1808,7 @@ function mapAttendanceAdjustmentRow(row: {
     employeeCode?: string | null;
     displayName?: string | null;
     photoUrl?: string | null;
+    branchId?: string | null;
   } | null;
   status?: { code?: string | null; name?: string | null } | null;
 }): AttendanceAdjustmentRow {
@@ -1747,6 +1818,8 @@ function mapAttendanceAdjustmentRow(row: {
     employeeCode: row.employee?.employeeCode ?? "—",
     employeeName: row.employee?.displayName ?? "—",
     photoUrl: row.employee?.photoUrl ?? null,
+    branchId: row.employee?.branchId ?? null,
+    branchName: null,
     statusCode: row.status?.code ?? "—",
     statusName: row.status?.name ?? row.status?.code ?? "—",
     workDate: isoDate(row.workDate) ?? "",
@@ -1776,7 +1849,10 @@ export async function listLeaveRequests(
       status: status ?? null,
       view: options?.view ?? (status ? "all" : "inbox"),
     });
-    return rows.map((row) => mapLeaveRequestRow(row));
+    return withBranchNames(
+      ctx,
+      rows.map((row) => mapLeaveRequestRow(row)),
+    );
   });
 }
 
@@ -1798,7 +1874,10 @@ export async function listLeaveHistory(
     });
     return {
       ...page,
-      rows: page.rows.map((row) => mapLeaveRequestRow(row)),
+      rows: await withBranchNames(
+        ctx,
+        page.rows.map((row) => mapLeaveRequestRow(row)),
+      ),
     };
   });
 }
@@ -1831,6 +1910,7 @@ function mapOvertimeRequestRow(row: {
     employeeCode?: string | null;
     displayName?: string | null;
     photoUrl?: string | null;
+    branchId?: string | null;
   } | null;
   status?: { code?: string | null; name?: string | null } | null;
   workDate: Date | string;
@@ -1849,6 +1929,8 @@ function mapOvertimeRequestRow(row: {
     employeeCode: row.employee?.employeeCode ?? "—",
     employeeName: row.employee?.displayName ?? "—",
     photoUrl: row.employee?.photoUrl ?? null,
+    branchId: row.employee?.branchId ?? null,
+    branchName: null,
     statusCode: row.status?.code ?? "—",
     statusName: row.status?.name ?? row.status?.code ?? "—",
     workDate: isoDate(row.workDate) ?? "",
@@ -1882,7 +1964,10 @@ export async function listOvertimeRequests(
       status: status ?? null,
       view: options?.view ?? (status ? "all" : "inbox"),
     });
-    return rows.map((row) => mapOvertimeRequestRow(row));
+    return withBranchNames(
+      ctx,
+      rows.map((row) => mapOvertimeRequestRow(row)),
+    );
   });
 }
 
@@ -1904,7 +1989,10 @@ export async function listOvertimeHistory(
     });
     return {
       ...page,
-      rows: page.rows.map((row) => mapOvertimeRequestRow(row)),
+      rows: await withBranchNames(
+        ctx,
+        page.rows.map((row) => mapOvertimeRequestRow(row)),
+      ),
     };
   });
 }
@@ -1914,18 +2002,22 @@ export async function listLeaveBalances(
 ): Promise<HrDataResult<LeaveBalanceRow[]>> {
   return safeRead<LeaveBalanceRow[]>([], async () => {
     const rows = await listLeaveBalancesService(serviceContext(ctx));
-    return rows.map((row) => ({
-      id: row.id,
-      employeeId: row.employeeId,
-      employeeCode: row.employee?.employeeCode ?? "—",
-      employeeName: row.employee?.displayName ?? "—",
-      photoUrl: row.employee?.photoUrl ?? null,
-      leaveTypeName: row.leaveType?.name ?? "—",
-      balanceYear: row.balanceYear,
-      openingBalance: Number(row.openingBalance),
-      usedBalance: Number(row.usedBalance),
-      availableBalance: Number(row.availableBalance),
-    }));
+    return withBranchNames(
+      ctx,
+      rows.map((row) => ({
+        id: row.id,
+        employeeId: row.employeeId,
+        employeeCode: row.employee?.employeeCode ?? "—",
+        employeeName: row.employee?.displayName ?? "—",
+        photoUrl: row.employee?.photoUrl ?? null,
+        branchId: row.employee?.branchId ?? null,
+        leaveTypeName: row.leaveType?.name ?? "—",
+        balanceYear: row.balanceYear,
+        openingBalance: Number(row.openingBalance),
+        usedBalance: Number(row.usedBalance),
+        availableBalance: Number(row.availableBalance),
+      })),
+    );
   });
 }
 
@@ -1944,15 +2036,32 @@ export async function getApprovalInbox(
     },
     async () => {
       const inbox = await approvalInboxService(serviceContext(ctx));
-      const attendanceAdjustments = inbox.attendanceAdjustments.map((row) =>
-        mapAttendanceAdjustmentRow(row),
-      );
-      const shiftMismatches = (inbox.shiftMismatches ?? []).map((row) =>
-        mapShiftMismatchRow(row),
-      );
+      const [leave, overtime, attendanceAdjustments, shiftMismatches] =
+        await Promise.all([
+          withBranchNames(
+            ctx,
+            inbox.leave.map((row) => mapLeaveRequestRow(row)),
+          ),
+          withBranchNames(
+            ctx,
+            inbox.overtime.map((row) => mapOvertimeRequestRow(row)),
+          ),
+          withBranchNames(
+            ctx,
+            inbox.attendanceAdjustments.map((row) =>
+              mapAttendanceAdjustmentRow(row),
+            ),
+          ),
+          withBranchNames(
+            ctx,
+            (inbox.shiftMismatches ?? []).map((row) =>
+              mapShiftMismatchRow(row),
+            ),
+          ),
+        ]);
       return {
-        leave: inbox.leave.map((row) => mapLeaveRequestRow(row)),
-        overtime: inbox.overtime.map((row) => mapOvertimeRequestRow(row)),
+        leave,
+        overtime,
         attendanceAdjustments,
         attendanceAdjustmentCount: attendanceAdjustments.length,
         shiftMismatches,
@@ -1980,11 +2089,15 @@ export async function getFocusedApprovalItem(
     const service = serviceContext(ctx);
     if (kind === "leave") {
       const row = await getLeaveRequestByIdService(service, id);
-      return row ? mapLeaveRequestRow(row) : null;
+      if (!row) return null;
+      const [mapped] = await withBranchNames(ctx, [mapLeaveRequestRow(row)]);
+      return mapped;
     }
     if (kind === "ot") {
       const row = await getOvertimeRequestByIdService(service, id);
-      return row ? mapOvertimeRequestRow(row) : null;
+      if (!row) return null;
+      const [mapped] = await withBranchNames(ctx, [mapOvertimeRequestRow(row)]);
+      return mapped;
     }
     const { getSalaryAdvanceById } = await import(
       "@/lib/hr/services/salary-advances"
@@ -2001,7 +2114,10 @@ export async function listAttendanceAdjustments(
     const rows = await listAttendanceAdjustmentsService(serviceContext(ctx), {
       status: status ?? null,
     });
-    return rows.map((row) => mapAttendanceAdjustmentRow(row));
+    return withBranchNames(
+      ctx,
+      rows.map((row) => mapAttendanceAdjustmentRow(row)),
+    );
   });
 }
 

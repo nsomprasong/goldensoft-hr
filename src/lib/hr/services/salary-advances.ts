@@ -17,7 +17,10 @@ import {
   employeeOwnBranchWhere,
   type HrServiceContext,
 } from "@/lib/hr/services/shared";
-import { formatThaiDate, formatThaiDateRange } from "@/lib/hr/thai-date";
+import {
+  formatThaiDateRangeReadable,
+  formatThaiDateReadable,
+} from "@/lib/hr/thai-date";
 
 export type DisbursementMode = "CASH_ALREADY" | "WITH_SALARY";
 
@@ -175,7 +178,7 @@ type DbInstallment = {
 };
 
 function periodLabel(start: Date | string, end: Date | string): string {
-  return formatThaiDateRange(isoDate(start), isoDate(end));
+  return formatThaiDateRangeReadable(isoDate(start), isoDate(end));
 }
 
 async function queryAdvances(
@@ -323,7 +326,7 @@ async function queryInstallments(
           ? periodLabel(row.period_start, row.period_end)
           : "รอผูกงวดตอนคำนวณ",
       paymentDateLabel: row.payment_date
-        ? formatThaiDate(isoDate(row.payment_date))
+        ? formatThaiDateReadable(isoDate(row.payment_date))
         : null,
       status: row.status,
       statusLabel: INSTALLMENT_STATUS_LABEL[row.status] ?? row.status,
@@ -348,7 +351,7 @@ function toRow(
     employeeAuthUserId: row.auth_user_id,
     amount: money(row.amount),
     advanceDate: isoDate(row.advance_date),
-    advanceDateLabel: formatThaiDate(isoDate(row.advance_date)),
+    advanceDateLabel: formatThaiDateReadable(isoDate(row.advance_date)),
     reason: row.reason,
     status: row.status,
     statusLabel: STATUS_LABEL[row.status] ?? row.status,
@@ -496,7 +499,7 @@ export async function listAdvancePeriodOptions(
   `;
   return rows.map((row) => ({
     id: row.id,
-    label: `${periodLabel(row.period_start, row.period_end)} · จ่าย ${formatThaiDate(isoDate(row.payment_date))}`,
+    label: `${periodLabel(row.period_start, row.period_end)} · จ่าย ${formatThaiDateReadable(isoDate(row.payment_date))}`,
     periodStart: isoDate(row.period_start),
     periodEnd: isoDate(row.period_end),
     paymentDate: isoDate(row.payment_date),
@@ -797,16 +800,16 @@ export async function submitSalaryAdvance(
     const empName =
       mapped.displayName?.trim() ||
       `${employee.firstNameTh} ${employee.lastNameTh}`.trim();
-    const { formatThaiDate } = await import("@/lib/hr/thai-date");
-    const advanceDateLabel = formatThaiDate(advanceDate);
     const { emitHrNotification } = await import("@/lib/hr/services/notify");
     void emitHrNotification(ctx, {
       typeCode: "ADVANCE_SUBMITTED",
-      title: "คำขอเบิกล่วงหน้ารออนุมัติ",
-      body: `${empName} ขอเบิก ${amount.toLocaleString("th-TH")} บาท · ${advanceDateLabel}`,
+      title: "มีคำขอเบิกใหม่",
+      employeeName: empName,
+      body: `เบิก ${amount.toLocaleString("th-TH")} บาท`,
       branchId: employee.branchId,
       entityType: "SALARY_ADVANCE",
       entityId: id,
+      data: { employeeId: employee.id },
       excludeAuthUserId: ctx.actorAuthUserId,
     });
   }
@@ -988,20 +991,12 @@ export async function reviewSalaryAdvance(
   const refreshed = (await queryAdvances(ctx)).find((r) => r.id === id);
   if (!refreshed) throw new HrError("NOT_FOUND");
   const [mapped] = await mapRows(ctx, [refreshed]);
-  if (row.auth_user_id) {
-    const { formatThaiDate } = await import("@/lib/hr/thai-date");
-    const advanceDateLabel = mapped?.advanceDateLabel
-      ? mapped.advanceDateLabel
-      : formatThaiDate(mapped?.advanceDate ?? "");
+  if (!approve && row.auth_user_id) {
     const { emitHrNotification } = await import("@/lib/hr/services/notify");
     void emitHrNotification(ctx, {
-      typeCode: approve ? "ADVANCE_APPROVED" : "ADVANCE_REJECTED",
-      title: approve
-        ? "คำขอเบิกได้รับการอนุมัติ"
-        : "คำขอเบิกไม่ได้รับการอนุมัติ",
-      body: approve
-        ? `คำขอเบิกวันที่ ${advanceDateLabel} ของคุณได้รับการอนุมัติแล้ว`
-        : `คำขอเบิกวันที่ ${advanceDateLabel} ของคุณไม่ได้รับการอนุมัติ`,
+      typeCode: "ADVANCE_REJECTED",
+      title: "ไม่อนุมัติคำขอเบิก",
+      body: "ไม่อนุมัติ · เบิก",
       branchId: row.branch_id,
       entityType: "SALARY_ADVANCE",
       entityId: id,

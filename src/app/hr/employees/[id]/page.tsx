@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
 import EmployeeDocumentsPanel from "@/components/hr/employee-documents-panel";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import EmployeeRoleTab from "@/components/hr/employee-role-tab";
 import {
   EmployeeBranchTab,
@@ -12,6 +13,7 @@ import {
 } from "@/components/hr/employee-tab-sections";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   combineAvailability,
   getEmployeeDetail,
@@ -122,6 +124,7 @@ export default async function EmployeeDetailPage({
   }
 
   const availability = combineAvailability(detail, branches, master);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx} active="employees">
@@ -140,7 +143,17 @@ export default async function EmployeeDetailPage({
             />
           ) : null}
           <div>
-            <h1>{employee?.displayName ?? "รายละเอียดพนักงาน"}</h1>
+            {employee ? (
+              <EmployeeNameLabel
+                name={employee.displayName}
+                branchName={employee.branchName ?? branchName}
+                showBranch={showBranchLabel}
+                as="h1"
+                className="hr-approval-employee-name"
+              />
+            ) : (
+              <h1>รายละเอียดพนักงาน</h1>
+            )}
             <p>{employee?.statusNameTh ?? "ไม่ทราบสถานะ"}</p>
           </div>
         </div>

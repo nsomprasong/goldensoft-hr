@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listOvertimeRequests } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -13,6 +14,7 @@ export default async function OvertimePage() {
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.overtimeRead });
   const list = await listOvertimeRequests(ctx, null, { view: "inbox" });
   const canApprove = canHr(ctx, HR_PERMISSIONS.overtimeApprove);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
   const pendingCount = list.data.filter(
     (row) => row.statusCode === "SUBMITTED",
   ).length;
@@ -23,6 +25,7 @@ export default async function OvertimePage() {
       <OvertimeApprovalList
         rows={list.data}
         canApprove={canApprove}
+        showBranchLabel={showBranchLabel}
         heroLead={`รออนุมัติ ${pendingCount} รายการ · แสดงผลจนถึงวันทำงาน OT`}
         heroAction={
           <Link className="btn btn-sm" href="/hr/overtime/history">

@@ -1,9 +1,11 @@
 "use client";
 
 import { useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
@@ -13,15 +15,28 @@ import type {
   DisbursementMode,
   SalaryAdvanceRow,
 } from "@/lib/hr/services/salary-advances";
+import { formatThaiDateTimeReadable } from "@/lib/hr/thai-date";
+
+function statusClass(code: string): string {
+  if (code === "APPROVED" || code === "PARTIALLY_DEDUCTED" || code === "DEDUCTED") {
+    return "badge badge-active";
+  }
+  if (code === "REJECTED" || code === "CANCELLED") return "badge badge-inactive";
+  return "badge";
+}
 
 export default function AdvanceApprovalList({
   rows,
   canApprove,
   focusId = null,
+  showBranchLabel = false,
+  onChanged,
 }: {
   rows: SalaryAdvanceRow[];
   canApprove: boolean;
   focusId?: string | null;
+  showBranchLabel?: boolean;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const titleId = useId();
@@ -30,6 +45,7 @@ export default function AdvanceApprovalList({
   const [mode, setMode] = useState<DisbursementMode>("WITH_SALARY");
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   function openReview(row: SalaryAdvanceRow) {
     setMode(
@@ -43,6 +59,7 @@ export default function AdvanceApprovalList({
   }
 
   async function reject(row: SalaryAdvanceRow) {
+    setBusyId(row.id);
     setSaving(true);
     try {
       const response = await fetch(`/api/hr/advances/${row.id}/review`, {
@@ -61,10 +78,12 @@ export default function AdvanceApprovalList({
         });
         return;
       }
-      setFeedback({ kind: "success", message: "ไม่อนุมัติคำขอแล้ว" });
+      setFeedback({ kind: "success", message: "ไม่อนุมัติแล้ว" });
+      onChanged?.();
       router.refresh();
     } finally {
       setSaving(false);
+      setBusyId(null);
     }
   }
 
@@ -97,9 +116,10 @@ export default function AdvanceApprovalList({
         });
         return;
       }
-      setFeedback({ kind: "success", message: "อนุมัติเบิกล่วงหน้าแล้ว" });
+      setFeedback({ kind: "success", message: "อนุมัติแล้ว" });
       setReviewing(null);
       setSlipFile(null);
+      onChanged?.();
       router.refresh();
     } finally {
       setSaving(false);
@@ -110,186 +130,211 @@ export default function AdvanceApprovalList({
     return <p className="empty">ยังไม่มีคำขอเบิกล่วงหน้าที่รออนุมัติ</p>;
   }
 
-  return (
-    <>
-      <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
-      <div className="hr-card-grid">
-        {rows.map((row) => (
-          <article
-            key={row.id}
-            id={`approval-${row.id}`}
-            className={`card hr-entity-card${
-              focusId === row.id ? " hr-approval-focus" : ""
-            }`}
-          >
-            <div className="hr-entity-card-top">
-              <div className="hr-employee-card-head">
-                <EmployeeAvatar
-                  displayName={row.displayName}
-                  photoUrl={row.photoUrl}
-                  size="md"
-                />
-                <div className="hr-entity-card-title-wrap">
-                  <h2 className="hr-entity-card-title">{row.displayName}</h2>
-                  <p className="hr-entity-card-subtitle">
-                    {row.advanceDateLabel}
-                  </p>
-                </div>
-              </div>
-              <span className="badge">{row.statusLabel}</span>
-            </div>
-            <dl className="hr-entity-card-meta">
-              <div>
-                <dt>จำนวน</dt>
-                <dd>{formatThb(row.amount)} บาท</dd>
-              </div>
-              <div>
-                <dt>หักคืน</dt>
-                <dd>{row.installmentCount} งวด</dd>
-              </div>
-              {row.startPeriodLabel ? (
-                <div>
-                  <dt>เริ่มหัก</dt>
-                  <dd>{row.startPeriodLabel}</dd>
-                </div>
-              ) : null}
-              {row.disbursementModeLabel ? (
-                <div>
-                  <dt>วิธีรับเงินที่ขอ</dt>
-                  <dd>{row.disbursementModeLabel}</dd>
-                </div>
-              ) : null}
-              {row.reason ? (
-                <div>
-                  <dt>หมายเหตุ</dt>
-                  <dd>{row.reason}</dd>
-                </div>
-              ) : null}
-            </dl>
-            {canApprove ? (
-              <div className="hr-entity-card-actions">
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={saving}
-                  onClick={() => reject(row)}
-                >
-                  ไม่อนุมัติ
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  disabled={saving}
-                  onClick={() => openReview(row)}
-                >
-                  อนุมัติ
-                </button>
-              </div>
-            ) : null}
-          </article>
-        ))}
-      </div>
-
-      {reviewing ? (
-        <div className="hr-overlay" role="presentation">
-          <button
-            type="button"
-            className="hr-overlay-backdrop"
-            aria-label="ปิด"
-            onClick={() => !saving && setReviewing(null)}
-          />
-          <div
-            className="hr-overlay-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-          >
-            <div className="hr-overlay-head hr-period-create-overlay-head">
-              <div>
-                <p className="hr-period-create-overlay-kicker">เบิกล่วงหน้า</p>
-                <h2 id={titleId}>อนุมัติคำขอ</h2>
-              </div>
+  const overlay =
+    reviewing && typeof document !== "undefined"
+      ? createPortal(
+          <div className="hr-root">
+            <div
+              className="hr-overlay hr-overlay--elevated"
+              role="presentation"
+            >
               <button
                 type="button"
-                className="btn btn-sm"
-                disabled={saving}
-                onClick={() => setReviewing(null)}
+                className="hr-overlay-backdrop"
+                aria-label="ปิด"
+                onClick={() => !saving && setReviewing(null)}
+              />
+              <div
+                className="hr-overlay-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
               >
-                ปิด
-              </button>
-            </div>
-            <div className="hr-overlay-body">
-              <form className="hr-advance-form" onSubmit={approve}>
-                <p className="muted">
-                  {reviewing.displayName} · {formatThb(reviewing.amount)} บาท ·
-                  หัก {reviewing.installmentCount} งวด เริ่ม{" "}
-                  {reviewing.startPeriodLabel ?? "รอบถัดไป"}
-                  {reviewing.disbursementModeLabel
-                    ? ` · พนักงานขอ${reviewing.disbursementModeLabel}`
-                    : ""}
-                </p>
-                <Field
-                  id="adv-disburse"
-                  label="วิธีรับเงิน"
-                  required
-                  hint="เปลี่ยนจากที่พนักงานขอได้"
-                >
-                  <select
-                    {...fieldProps("adv-disburse")}
-                    value={mode}
-                    onChange={(e) => {
-                      setMode(e.target.value as DisbursementMode);
-                      setSlipFile(null);
-                    }}
-                    disabled={saving}
-                  >
-                    <option value="WITH_SALARY">รับพร้อมเงินเดือน</option>
-                    <option value="CASH_ALREADY">รับเงินเลย</option>
-                  </select>
-                </Field>
-                {mode === "CASH_ALREADY" ? (
-                  <Field
-                    id="adv-slip"
-                    label="สลิปโอนเงิน"
-                    hint="ไม่บังคับ — แนบตอนนี้หรือทีหลังก็ได้ เก็บในเอกสารพนักงาน"
-                  >
-                    <input
-                      id="adv-slip"
-                      type="file"
-                      accept="image/*,application/pdf"
-                      disabled={saving}
-                      onChange={(e) =>
-                        setSlipFile(e.target.files?.[0] ?? null)
-                      }
-                    />
-                  </Field>
-                ) : (
-                  <p className="field-hint">
-                    โอนเข้าบัญชีพร้อมเงินเดือนในรอบที่หักงวดแรก
-                  </p>
-                )}
-                <div className="form-actions hr-advance-form-actions">
+                <div className="hr-overlay-head hr-period-create-overlay-head">
+                  <div>
+                    <p className="hr-period-create-overlay-kicker">
+                      เบิกล่วงหน้า
+                    </p>
+                    <h2 id={titleId}>อนุมัติคำขอ</h2>
+                  </div>
                   <button
                     type="button"
-                    className="btn"
+                    className="btn btn-sm"
                     disabled={saving}
                     onClick={() => setReviewing(null)}
                   >
-                    ยกเลิก
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={saving}
-                  >
-                    {saving ? "กำลังบันทึก…" : "ยืนยันอนุมัติ"}
+                    ปิด
                   </button>
                 </div>
-              </form>
+                <div className="hr-overlay-body">
+                  <form className="hr-advance-form" onSubmit={approve}>
+                    <p className="muted">
+                      {reviewing.displayName} · {formatThb(reviewing.amount)}{" "}
+                      บาท · หัก {reviewing.installmentCount} งวด เริ่ม{" "}
+                      {reviewing.startPeriodLabel ?? "รอบถัดไป"}
+                      {reviewing.disbursementModeLabel
+                        ? ` · พนักงานขอ${reviewing.disbursementModeLabel}`
+                        : ""}
+                    </p>
+                    <Field
+                      id="adv-disburse"
+                      label="วิธีรับเงิน"
+                      required
+                      hint="เปลี่ยนจากที่พนักงานขอได้"
+                    >
+                      <select
+                        {...fieldProps("adv-disburse")}
+                        value={mode}
+                        onChange={(e) => {
+                          setMode(e.target.value as DisbursementMode);
+                          setSlipFile(null);
+                        }}
+                        disabled={saving}
+                      >
+                        <option value="WITH_SALARY">รับพร้อมเงินเดือน</option>
+                        <option value="CASH_ALREADY">รับเงินเลย</option>
+                      </select>
+                    </Field>
+                    {mode === "CASH_ALREADY" ? (
+                      <Field
+                        id="adv-slip"
+                        label="สลิปโอนเงิน"
+                        hint="ไม่บังคับ — แนบตอนนี้หรือทีหลังก็ได้ เก็บในเอกสารพนักงาน"
+                      >
+                        <input
+                          id="adv-slip"
+                          type="file"
+                          accept="image/*,application/pdf"
+                          disabled={saving}
+                          onChange={(e) =>
+                            setSlipFile(e.target.files?.[0] ?? null)
+                          }
+                        />
+                      </Field>
+                    ) : (
+                      <p className="field-hint">
+                        โอนเข้าบัญชีพร้อมเงินเดือนในรอบที่หักงวดแรก
+                      </p>
+                    )}
+                    <div className="form-actions hr-advance-form-actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={saving}
+                        onClick={() => setReviewing(null)}
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={saving}
+                      >
+                        {saving ? "กำลังบันทึก…" : "ยืนยันอนุมัติ"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
+      <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
+      <ul className="hr-leave-request-list">
+        {rows.map((row) => {
+          const pending = row.status === "SUBMITTED";
+          const busy = busyId === row.id || (saving && reviewing?.id === row.id);
+          return (
+            <li
+              key={row.id}
+              id={`approval-${row.id}`}
+              className={`hr-leave-approval-item${
+                focusId === row.id ? " hr-approval-focus" : ""
+              }`}
+            >
+              <div className="hr-leave-approval-head">
+                <div className="hr-ot-approval-person">
+                  <EmployeeAvatar
+                    displayName={row.displayName}
+                    photoUrl={row.photoUrl}
+                    size="lg"
+                  />
+                  <div className="hr-leave-request-main">
+                    <EmployeeNameLabel
+                      name={row.displayName}
+                      branchName={row.branchName}
+                      showBranch={showBranchLabel}
+                      className="hr-approval-employee-name"
+                    />
+                    <div className="hr-leave-request-headline">
+                      <span className="hr-leave-request-type">เบิก</span>
+                      <span className="hr-leave-request-dates">
+                        {row.advanceDateLabel}
+                        <span className="hr-leave-request-days">
+                          · {formatThb(row.amount)} บาท
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="hr-leave-approval-side">
+                  <span
+                    className={`hr-leave-approval-status ${statusClass(row.status)}`}
+                  >
+                    {row.statusLabel}
+                  </span>
+                  {canApprove && pending ? (
+                    <div className="hr-leave-approval-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={busy}
+                        onClick={() => openReview(row)}
+                      >
+                        อนุมัติ
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={busy}
+                        onClick={() => void reject(row)}
+                      >
+                        ไม่อนุมัติ
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="hr-leave-approval-body">
+                <span className="hr-leave-request-submitted">
+                  ยื่นเมื่อ {formatThaiDateTimeReadable(row.submittedAt)}
+                </span>
+                <span className="hr-leave-request-shift">
+                  หักคืน {row.installmentCount} งวด
+                  {row.startPeriodLabel
+                    ? ` · เริ่ม ${row.startPeriodLabel}`
+                    : ""}
+                  {row.disbursementModeLabel
+                    ? ` · ขอ${row.disbursementModeLabel}`
+                    : ""}
+                </span>
+                {row.reason?.trim() ? (
+                  <span className="hr-leave-request-reason">
+                    {row.reason.trim()}
+                  </span>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {overlay}
     </>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
@@ -11,29 +12,15 @@ import type {
   LeaveCoverCandidate,
   LeaveRequestRow,
 } from "@/lib/hr/data";
-import { formatThaiDateRange } from "@/lib/hr/thai-date";
+import {
+  formatThaiDateRangeReadable,
+  formatThaiDateTimeReadable,
+} from "@/lib/hr/thai-date";
 
 function statusClass(code: string): string {
   if (code === "APPROVED") return "badge badge-active";
   if (code === "REJECTED" || code === "CANCELLED") return "badge badge-inactive";
   return "badge";
-}
-
-function formatSubmittedAt(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat("th-TH", {
-      timeZone: "Asia/Bangkok",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(iso));
-  } catch {
-    return "—";
-  }
 }
 
 function shiftSummary(row: LeaveRequestRow): string {
@@ -58,11 +45,15 @@ export default function LeaveApprovalCards({
   canApprove,
   focusId = null,
   emptyMessage = "ยังไม่มีคำขอลา",
+  showBranchLabel = false,
+  onChanged,
 }: {
   rows: LeaveRequestRow[];
   canApprove: boolean;
   focusId?: string | null;
   emptyMessage?: string;
+  showBranchLabel?: boolean;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
@@ -147,13 +138,14 @@ export default function LeaveApprovalCards({
       kind: "success",
       message: by ? `${successMessage} โดย ${by}` : successMessage,
     });
+    onChanged?.();
     router.refresh();
   }
 
   async function saveCover(row: LeaveRequestRow) {
     const coverEmployeeId = coverById[row.id]?.trim() || null;
     setBusyId(row.id);
-    setFeedback({ kind: "info", message: "กำลังบันทึกคนทำงานแทน…" });
+    setFeedback({ kind: "info", message: "กำลังบันทึกคนแทน…" });
     try {
       await postAction(
         {
@@ -161,16 +153,14 @@ export default function LeaveApprovalCards({
           id: row.id,
           coverEmployeeId,
         },
-        coverEmployeeId
-          ? "กำหนดคนทำงานแทนและย้ายกะแล้ว"
-          : "ล้างคนทำงานแทนแล้ว",
+        coverEmployeeId ? "บันทึกคนแทนแล้ว" : "ล้างคนแทนแล้ว",
       );
       await loadCandidates(row.id);
     } catch (error) {
       setFeedback({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "บันทึกคนทำงานแทนไม่สำเร็จ",
+          error instanceof Error ? error.message : "บันทึกคนแทนไม่สำเร็จ",
       });
     } finally {
       setBusyId(null);
@@ -182,7 +172,7 @@ export default function LeaveApprovalCards({
     setBusyId(row.id);
     setFeedback({
       kind: "info",
-      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังปฏิเสธ…",
+      message: action === "approve" ? "กำลังอนุมัติ…" : "กำลังไม่อนุมัติ…",
     });
     try {
       await postAction(
@@ -192,13 +182,13 @@ export default function LeaveApprovalCards({
           coverEmployeeId:
             action === "approve" ? coverEmployeeId : undefined,
         },
-        action === "approve" ? "อนุมัติการลาเรียบร้อยแล้ว" : "ปฏิเสธคำขอลาแล้ว",
+        action === "approve" ? "อนุมัติแล้ว" : "ไม่อนุมัติแล้ว",
       );
     } catch (error) {
       setFeedback({
         kind: "error",
         message:
-          error instanceof Error ? error.message : "ดำเนินการไม่สำเร็จ",
+          error instanceof Error ? error.message : "ทำรายการไม่สำเร็จ",
       });
     } finally {
       setBusyId(null);
@@ -242,55 +232,73 @@ export default function LeaveApprovalCards({
                   <EmployeeAvatar
                     displayName={row.employeeName}
                     photoUrl={row.photoUrl}
-                    size="sm"
+                    size="lg"
                   />
                   <div className="hr-leave-request-main">
-                    <strong>{row.employeeName}</strong>
-                    <span>
-                      {row.leaveTypeName} ·{" "}
-                      {formatThaiDateRange(row.startDate, row.endDate)} ·{" "}
-                      {row.requestedAmount} วัน
-                    </span>
-                    <span className="hr-leave-request-submitted">
-                      ยื่นเมื่อ {formatSubmittedAt(row.submittedAt)}
-                    </span>
-                    {row.reason?.trim() ? (
-                      <span className="hr-leave-request-reason">
-                        {row.reason.trim()}
+                    <EmployeeNameLabel
+                      name={row.employeeName}
+                      branchName={row.branchName}
+                      showBranch={showBranchLabel}
+                      className="hr-approval-employee-name"
+                    />
+                    <div className="hr-leave-request-headline">
+                      <span className="hr-leave-request-type">
+                        {row.leaveTypeName}
                       </span>
-                    ) : null}
-                    <span className="hr-leave-request-shift">
-                      {shiftSummary(row)}
-                    </span>
+                      <span className="hr-leave-request-dates">
+                        {formatThaiDateRangeReadable(
+                          row.startDate,
+                          row.endDate,
+                        )}
+                        <span className="hr-leave-request-days">
+                          · {row.requestedAmount} วัน
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <span
-                  className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
-                >
-                  {row.statusName}
-                </span>
+                <div className="hr-leave-approval-side">
+                  <span
+                    className={`hr-leave-approval-status ${statusClass(row.statusCode)}`}
+                  >
+                    {row.statusName}
+                  </span>
+                  {canApprove && pending ? (
+                    <div className="hr-leave-approval-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={busy}
+                        onClick={() => void review(row, "approve")}
+                      >
+                        อนุมัติ
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={busy}
+                        onClick={() => void review(row, "reject")}
+                      >
+                        ไม่อนุมัติ
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
-              {canApprove && pending ? (
-                <div className="hr-leave-approval-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={busy}
-                    onClick={() => void review(row, "approve")}
-                  >
-                    อนุมัติ
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-danger"
-                    disabled={busy}
-                    onClick={() => void review(row, "reject")}
-                  >
-                    ไม่อนุมัติ
-                  </button>
-                </div>
-              ) : null}
+              <div className="hr-leave-approval-body">
+                <span className="hr-leave-request-submitted">
+                  ยื่นเมื่อ {formatThaiDateTimeReadable(row.submittedAt)}
+                </span>
+                <span className="hr-leave-request-shift">
+                  {shiftSummary(row)}
+                </span>
+                {row.reason?.trim() ? (
+                  <span className="hr-leave-request-reason">
+                    {row.reason.trim()}
+                  </span>
+                ) : null}
+              </div>
 
               {showCoverToggle ? (
                 <div className="hr-leave-cover-panel">

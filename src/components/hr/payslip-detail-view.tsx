@@ -1,18 +1,21 @@
 import Link from "next/link";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import { formatThb } from "@/lib/hr/money";
 import type { PayslipDetail } from "@/lib/hr/services/payroll-runs";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 export default function PayslipDetailView({
   payslip,
   backHref,
   backLabel,
+  showBranchLabel = false,
 }: {
   payslip: PayslipDetail;
   backHref: string;
   backLabel: string;
+  showBranchLabel?: boolean;
 }) {
   const earnings = payslip.items.filter((i) => i.kind === "EARNING");
   const deductions = payslip.items.filter((i) => i.kind === "DEDUCTION");
@@ -34,7 +37,13 @@ export default function PayslipDetailView({
               size="lg"
             />
             <div className="hr-entity-card-title-wrap">
-              <h1>{payslip.displayName}</h1>
+              <EmployeeNameLabel
+                name={payslip.displayName}
+                branchName={payslip.branchName}
+                showBranch={showBranchLabel}
+                as="h1"
+                className="hr-approval-employee-name"
+              />
               <p className="hr-entity-card-subtitle">
                 {payslip.scheduleName} · {payslip.periodLabel}
               </p>
@@ -50,7 +59,9 @@ export default function PayslipDetailView({
           <div>
             <dt>ออกเมื่อ</dt>
             <dd>
-              {payslip.issuedAt ? formatThaiDate(payslip.issuedAt) : "—"}
+              {payslip.issuedAt
+                ? formatThaiDateReadable(payslip.issuedAt)
+                : "—"}
             </dd>
           </div>
           <div>

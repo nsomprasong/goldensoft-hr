@@ -8,7 +8,7 @@ import FeedbackPopup, {
 } from "@/components/hr/feedback-popup";
 import ThaiDateInput from "@/components/hr/thai-date-input";
 import { createClientId } from "@/lib/hr/client-id";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 type OvertimeRequestRow = {
   id: string;
@@ -290,7 +290,9 @@ export default function MeOvertimeWorkspace() {
               {rows.map((row) => (
                 <li key={row.id} className="hr-leave-request-row">
                   <div className="hr-leave-request-main">
-                    <strong>{formatThaiDate(row.workDate)}</strong>
+                    <strong className="hr-leave-request-dates">
+                      {formatThaiDateReadable(row.workDate)}
+                    </strong>
                     <span>
                       {formatClock(row.startAt)}–{formatClock(row.endAt)} ·{" "}
                       {formatMinutes(row.requestedMinutes)}
@@ -404,7 +406,8 @@ export default function MeOvertimeWorkspace() {
                   <div>
                     <span className="hr-ot-form-summary-label">สรุปคำขอ</span>
                     <strong>
-                      {workDate ? formatThaiDate(workDate) : "—"} · {startTime}–
+                      {workDate ? formatThaiDateReadable(workDate) : "—"} ·{" "}
+                      {startTime}–
                       {endTime}
                     </strong>
                   </div>

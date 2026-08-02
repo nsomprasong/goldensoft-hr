@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listLeaveRequests } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -13,6 +14,7 @@ export default async function LeavePage() {
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.leaveRead });
   const list = await listLeaveRequests(ctx, null, { view: "inbox" });
   const canApprove = canHr(ctx, HR_PERMISSIONS.leaveApprove);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
   const pendingCount = list.data.filter(
     (row) => row.statusCode === "SUBMITTED",
   ).length;
@@ -43,6 +45,7 @@ export default async function LeavePage() {
         <LeaveApprovalCards
           rows={list.data}
           canApprove={canApprove}
+          showBranchLabel={showBranchLabel}
           emptyMessage="ไม่มีคำขอรออนุมัติ หรือผลอนุมัติที่วันลายังไม่ผ่าน"
         />
       </section>

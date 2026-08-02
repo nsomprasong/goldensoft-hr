@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
@@ -33,6 +34,7 @@ export default function PayrollRunDetailWorkspace({
   canMarkPaid,
   canIssue,
   available = true,
+  showBranchLabel = false,
 }: {
   run: PayrollRunDetail;
   canCalculate: boolean;
@@ -40,6 +42,7 @@ export default function PayrollRunDetailWorkspace({
   canMarkPaid: boolean;
   canIssue: boolean;
   available?: boolean;
+  showBranchLabel?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -276,7 +279,13 @@ export default function PayrollRunDetailWorkspace({
                         photoUrl={emp.photoUrl}
                         size="sm"
                       />
-                      <span>{emp.displayName}</span>
+                      <EmployeeNameLabel
+                        name={emp.displayName}
+                        branchName={emp.branchName}
+                        showBranch={showBranchLabel}
+                        as="span"
+                        className="hr-approval-employee-name"
+                      />
                     </div>
                   </td>
                   <td className="num nowrap col-earn">

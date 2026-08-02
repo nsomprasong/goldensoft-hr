@@ -2,7 +2,9 @@ import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   combineAvailability,
   listEmployees,
@@ -10,7 +12,7 @@ import {
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { formatThaiDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +65,7 @@ export default async function EmployeesPage({
   const result = list.data;
   const canCreate = canHr(ctx, HR_PERMISSIONS.employeeCreate);
   const branchLabel = ctx.branch?.name ?? null;
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx} active="employees">
@@ -150,17 +153,17 @@ export default async function EmployeesPage({
                   <EmployeeAvatar
                     displayName={employee.displayName}
                     photoUrl={employee.photoUrl}
-                    size="md"
+                    size="lg"
                   />
                   <div className="hr-entity-card-title-wrap">
-                    <h2 className="hr-entity-card-title">
-                      <Link
-                        className="hr-employee-card-name"
-                        href={`/hr/employees/${employee.id}?tab=general`}
-                      >
-                        {employee.displayName}
-                      </Link>
-                    </h2>
+                    <EmployeeNameLabel
+                      name={employee.displayName}
+                      branchName={employee.branchName}
+                      showBranch={showBranchLabel}
+                      href={`/hr/employees/${employee.id}?tab=general`}
+                      as="h2"
+                      className="hr-entity-card-title hr-employee-card-name hr-approval-employee-name"
+                    />
                   </div>
                 </div>
                 <span
@@ -189,7 +192,7 @@ export default async function EmployeesPage({
                 </div>
                 <div>
                   <dt>วันเริ่มงาน</dt>
-                  <dd>{formatThaiDate(employee.hireDate)}</dd>
+                  <dd>{formatThaiDateReadable(employee.hireDate)}</dd>
                 </div>
               </dl>
             </article>

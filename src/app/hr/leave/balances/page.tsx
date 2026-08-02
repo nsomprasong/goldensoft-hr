@@ -1,6 +1,8 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listLeaveBalances } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function LeaveBalancesPage() {
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.leaveRead });
   const list = await listLeaveBalances(ctx);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
@@ -49,11 +52,14 @@ export default async function LeaveBalancesPage() {
                         photoUrl={row.photoUrl}
                         size="sm"
                       />
-                      <span>
-                        <strong>{row.employeeName}</strong>
-                        <br />
+                      <EmployeeNameLabel
+                        name={row.employeeName}
+                        branchName={row.branchName}
+                        showBranch={showBranchLabel}
+                        className="hr-approval-employee-name"
+                      >
                         <span className="muted">{row.employeeCode}</span>
-                      </span>
+                      </EmployeeNameLabel>
                     </span>
                   </td>
                   <td>{row.leaveTypeName}</td>

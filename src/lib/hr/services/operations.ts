@@ -2876,6 +2876,7 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
           firstNameTh: true,
           lastNameTh: true,
           photoUrl: true,
+          branchId: true,
         },
       },
       status: { select: { code: true, name: true } },
@@ -2896,6 +2897,32 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
   const employeeIds = rows.map(
     (row: { employeeId: string }) => row.employeeId,
   );
+  const branchIds = [
+    ...new Set(
+      rows
+        .map(
+          (row: { employee?: { branchId?: string | null } }) =>
+            row.employee?.branchId,
+        )
+        .filter((id: string | null | undefined): id is string => Boolean(id)),
+    ),
+  ];
+  const branchNameById = new Map<string, string>();
+  if (branchIds.length > 0) {
+    const { prisma } = await import("@/lib/prisma");
+    const branchRows = await prisma.$queryRaw<
+      Array<{ id: string; name: string }>
+    >`
+      SELECT id::text AS id, name
+      FROM platform.branches
+      WHERE organization_id = ${ctx.organizationId}::uuid
+        AND deleted_at IS NULL
+        AND id = ANY(${branchIds}::uuid[])
+    `;
+    for (const branch of branchRows) {
+      branchNameById.set(branch.id, branch.name);
+    }
+  }
   const events =
     employeeIds.length === 0
       ? []
@@ -2949,6 +2976,7 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
           firstNameTh: string;
           lastNameTh: string;
           photoUrl: string | null;
+          branchId: string;
         };
         status: { code: string; name: string };
       }) => {
@@ -2958,11 +2986,14 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
         };
         const displayName =
           `${row.employee.firstNameTh} ${row.employee.lastNameTh}`.trim();
+        const branchId = row.employee.branchId;
         return {
           id: row.id,
           employeeId: row.employeeId,
           displayName,
           photoUrl: row.employee.photoUrl,
+          branchId,
+          branchName: branchNameById.get(branchId) ?? null,
           statusCode: row.status.code,
           statusName: row.status.name,
           shiftMismatchStatus: row.shiftMismatchStatus ?? null,
@@ -4317,16 +4348,16 @@ export async function submitLeave(ctx: HrServiceContext, input: any) {
   const empName =
     created.employee.displayName?.trim() ||
     `${created.employee.firstNameTh} ${created.employee.lastNameTh}`.trim();
-  const { formatThaiDateRange } = await import("@/lib/hr/thai-date");
-  const leaveDates = formatThaiDateRange(created.startDate, created.endDate);
   const { emitHrNotification } = await import("@/lib/hr/services/notify");
   void emitHrNotification(ctx, {
     typeCode: "LEAVE_SUBMITTED",
-    title: "คำขอลาใหม่รออนุมัติ",
-    body: `${empName} ส่งคำขอ${created.leaveType.name} ${created.requestedAmount} วัน · ${leaveDates}`,
+    title: "มีคำขอลาใหม่",
+    employeeName: empName,
+    body: `${created.leaveType.name} · ${created.requestedAmount} วัน`,
     branchId: employee.branchId,
     entityType: "LEAVE_REQUEST",
     entityId: created.id,
+    data: { employeeId: created.employeeId },
     excludeAuthUserId: actor(ctx),
   });
   return created;
@@ -4360,6 +4391,7 @@ export async function listLeaveBalances(ctx: HrServiceContext, employeeId?: stri
           displayName: true,
           employeeCode: true,
           photoUrl: true,
+          branchId: true,
         },
       },
     },
@@ -4433,16 +4465,12 @@ export async function reviewLeave(
     },
   });
   await stampReviewedByName("leave_requests", id, reviewedByName);
-  if (row.employee?.authUserId) {
-    const { formatThaiDateRange } = await import("@/lib/hr/thai-date");
-    const leaveDates = formatThaiDateRange(row.startDate, row.endDate);
+  if (!approve && row.employee?.authUserId) {
     const { emitHrNotification } = await import("@/lib/hr/services/notify");
     void emitHrNotification(ctx, {
-      typeCode: approve ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
-      title: approve ? "คำขอลาได้รับการอนุมัติ" : "คำขอลาไม่ได้รับการอนุมัติ",
-      body: approve
-        ? `คำขอ${updated.leaveType.name} (${leaveDates}) ของคุณได้รับการอนุมัติแล้ว`
-        : `คำขอ${updated.leaveType.name} (${leaveDates}) ของคุณไม่ได้รับการอนุมัติ`,
+      typeCode: "LEAVE_REJECTED",
+      title: "ไม่อนุมัติคำขอลา",
+      body: `ไม่อนุมัติ · ${updated.leaveType.name}`,
       branchId: row.employee.branchId,
       entityType: "LEAVE_REQUEST",
       entityId: updated.id,
@@ -4519,16 +4547,16 @@ export async function submitOvertime(ctx: HrServiceContext, input: any) {
     created.employee.displayName?.trim() ||
     `${created.employee.firstNameTh} ${created.employee.lastNameTh}`.trim();
   const hours = (requestedMinutes / 60).toFixed(1);
-  const { formatThaiDate } = await import("@/lib/hr/thai-date");
-  const workDateLabel = formatThaiDate(workDate);
   const { emitHrNotification } = await import("@/lib/hr/services/notify");
   void emitHrNotification(ctx, {
     typeCode: "OT_SUBMITTED",
-    title: "คำขอ OT ใหม่รออนุมัติ",
-    body: `${empName} ส่งคำขอ OT ${hours} ชั่วโมง · ${workDateLabel}`,
+    title: "มีคำขอ OT ใหม่",
+    employeeName: empName,
+    body: `OT · ${hours} ชม.`,
     branchId: created.branchId,
     entityType: "OVERTIME_REQUEST",
     entityId: created.id,
+    data: { employeeId: created.employeeId },
     excludeAuthUserId: actor(ctx),
   });
   return created;
@@ -4555,16 +4583,12 @@ export async function reviewOvertime(ctx: HrServiceContext, id: string, approve:
     },
   });
   await stampReviewedByName("overtime_requests", id, reviewedByName);
-  if (row.employee?.authUserId) {
-    const { formatThaiDate } = await import("@/lib/hr/thai-date");
-    const workDateLabel = formatThaiDate(row.workDate);
+  if (!approve && row.employee?.authUserId) {
     const { emitHrNotification } = await import("@/lib/hr/services/notify");
     void emitHrNotification(ctx, {
-      typeCode: approve ? "OT_APPROVED" : "OT_REJECTED",
-      title: approve ? "คำขอ OT ได้รับการอนุมัติ" : "คำขอ OT ไม่ได้รับการอนุมัติ",
-      body: approve
-        ? `คำขอ OT วันที่ ${workDateLabel} ของคุณได้รับการอนุมัติแล้ว`
-        : `คำขอ OT วันที่ ${workDateLabel} ของคุณไม่ได้รับการอนุมัติ`,
+      typeCode: "OT_REJECTED",
+      title: "ไม่อนุมัติคำขอ OT",
+      body: "ไม่อนุมัติ · OT",
       branchId: row.employee.branchId ?? row.branchId,
       entityType: "OVERTIME_REQUEST",
       entityId: updated.id,
@@ -5210,6 +5234,7 @@ export async function getOvertimeRequestById(ctx: HrServiceContext, id: string) 
           employeeCode: true,
           photoUrl: true,
           authUserId: true,
+          branchId: true,
         },
       },
       status: { select: { code: true, name: true } },
@@ -5230,6 +5255,7 @@ export async function approvalInbox(ctx: HrServiceContext) {
     employeeCode: true,
     photoUrl: true,
     authUserId: true,
+    branchId: true,
   };
   const branchScope = employeeBranchScopeWhere(ctx);
   const today = bangkokTodayUtcDate();

@@ -4,14 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 
 import Alert from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import ThaiDateInput from "@/components/hr/thai-date-input";
-import { formatThaiDate, toIsoDate } from "@/lib/hr/thai-date";
+import { formatThaiDateReadable, toIsoDate } from "@/lib/hr/thai-date";
 
 type AttendanceRow = {
   id: string;
   employeeId: string;
   displayName: string;
   photoUrl: string | null;
+  branchName?: string | null;
   statusName: string;
   statusCode: string;
   shiftMismatchStatus?: string | null;
@@ -46,7 +48,11 @@ function formatClockTime(iso: string | null): string {
   }
 }
 
-export default function AttendanceDayWorkspace() {
+export default function AttendanceDayWorkspace({
+  showBranchLabel = false,
+}: {
+  showBranchLabel?: boolean;
+}) {
   const [workDate, setWorkDate] = useState(() => bangkokTodayIso());
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,7 +118,8 @@ export default function AttendanceDayWorkspace() {
           </div>
         </div>
         <p className="muted" style={{ marginBottom: 0 }}>
-          สรุปการลงเวลาวันที่ {formatThaiDate(workDate)} · {rows.length} คน
+          สรุปการลงเวลาวันที่ {formatThaiDateReadable(workDate)} ·{" "}
+          {rows.length} คน
         </p>
       </section>
 
@@ -135,10 +142,16 @@ export default function AttendanceDayWorkspace() {
                   <EmployeeAvatar
                     displayName={row.displayName}
                     photoUrl={row.photoUrl}
-                    size="sm"
+                    size="lg"
                   />
                   <div className="hr-entity-card-title-wrap">
-                    <h2 className="hr-entity-card-title">{row.displayName}</h2>
+                    <EmployeeNameLabel
+                      name={row.displayName}
+                      branchName={row.branchName}
+                      showBranch={showBranchLabel}
+                      as="h2"
+                      className="hr-entity-card-title hr-approval-employee-name"
+                    />
                   </div>
                 </div>
                 <div className="hr-me-clock-day-flags">

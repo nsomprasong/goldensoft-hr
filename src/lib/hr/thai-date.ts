@@ -155,3 +155,78 @@ export function formatThaiDateRangeCompact(
   }
   return `${a.day} ${aMonth} ${aBeShort} – ${b.day} ${bMonth} ${bBeShort}`;
 }
+
+/** `3 ก.ค. 2569` — day + short month + full พ.ศ. */
+export function formatThaiDateReadable(
+  value: DateLike,
+  fallback = "—",
+): string {
+  const parts = parseDateParts(value);
+  if (!parts) return fallback;
+  const month = THAI_MONTH_SHORT[parts.month - 1] ?? pad2(parts.month);
+  return `${parts.day} ${month} ${parts.year + 543}`;
+}
+
+/** `3 ก.ค. 2569 14:30` for submitted-at style timestamps (Asia/Bangkok). */
+export function formatThaiDateTimeReadable(
+  value: DateLike,
+  fallback = "—",
+): string {
+  if (value == null || value === "") return fallback;
+  try {
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(date.getTime())) return fallback;
+    const dayIso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+    const day = formatThaiDateReadable(dayIso, "");
+    const time = new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+    return day ? `${day} ${time}` : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Readable leave/OT range with full พ.ศ.
+ * Same day: `3 ก.ค. 2569`
+ * Same month: `3-5 ก.ค. 2569`
+ * Cross month: `28 ก.ค. – 5 ส.ค. 2569`
+ * Cross year: `28 ธ.ค. 2568 – 5 ม.ค. 2569`
+ */
+export function formatThaiDateRangeReadable(
+  start: DateLike,
+  end: DateLike,
+  fallback = "—",
+): string {
+  const a = parseDateParts(start);
+  const b = parseDateParts(end);
+  if (!a && !b) return fallback;
+  if (!a) return formatThaiDateReadable(end, fallback);
+  if (!b) return formatThaiDateReadable(start, fallback);
+
+  if (a.year === b.year && a.month === b.month && a.day === b.day) {
+    return formatThaiDateReadable(start, fallback);
+  }
+
+  const aMonth = THAI_MONTH_SHORT[a.month - 1] ?? pad2(a.month);
+  const bMonth = THAI_MONTH_SHORT[b.month - 1] ?? pad2(b.month);
+  const aBe = a.year + 543;
+  const bBe = b.year + 543;
+
+  if (a.year === b.year && a.month === b.month) {
+    return `${a.day}-${b.day} ${aMonth} ${aBe}`;
+  }
+  if (a.year === b.year) {
+    return `${a.day} ${aMonth} – ${b.day} ${bMonth} ${aBe}`;
+  }
+  return `${a.day} ${aMonth} ${aBe} – ${b.day} ${bMonth} ${bBe}`;
+}

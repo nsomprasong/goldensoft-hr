@@ -1,6 +1,7 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import SalaryAdvancesWorkspace from "@/components/hr/salary-advances-workspace";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
   combineAvailability,
   listAdvancePeriodOptions,
@@ -39,6 +40,7 @@ export default async function SalaryAdvancesPage() {
   const branchLabel = ctx.branchId
     ? (branches.data.find((b) => b.id === ctx.branchId)?.label ?? "สาขาที่เลือก")
     : null;
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   const employeeOptions = employees.data.rows
     .filter((row) => row.isActive)
@@ -65,6 +67,7 @@ export default async function SalaryAdvancesPage() {
         canApprove={canApprove}
         available={availability.available}
         branchLabel={branchLabel}
+        showBranchLabel={showBranchLabel}
       />
     </HrShell>
   );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
 import HrShell from "@/components/hr-shell";
+import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listOvertimeHistory } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -34,6 +35,7 @@ export default async function OvertimeHistoryPage({
   const history = await listOvertimeHistory(ctx, { page, pageSize: 10 });
   const result = history.data;
   const canApprove = canHr(ctx, HR_PERMISSIONS.overtimeApprove);
+  const showBranchLabel = showEmployeeBranchLabel(ctx);
 
   return (
     <HrShell ctx={ctx}>
@@ -41,6 +43,7 @@ export default async function OvertimeHistoryPage({
       <OvertimeApprovalList
         rows={result.rows}
         canApprove={canApprove}
+        showBranchLabel={showBranchLabel}
         heroLead={`ประวัติ OT ที่วันทำงานผ่านแล้ว · ทั้งหมด ${result.total} รายการ · หน้าละ 10`}
         heroAction={
           <Link className="btn btn-sm" href="/hr/overtime">

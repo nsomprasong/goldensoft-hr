@@ -6,6 +6,9 @@ import {
   formatThaiDateCompact,
   formatThaiDateRange,
   formatThaiDateRangeCompact,
+  formatThaiDateRangeReadable,
+  formatThaiDateReadable,
+  formatThaiDateTimeReadable,
   parseDateParts,
   toIsoDate,
 } from "../src/lib/hr/thai-date";
@@ -51,6 +54,24 @@ describe("Thai date display", () => {
       formatThaiDateRangeCompact("2026-07-28", "2026-08-15"),
       "28 ก.ค. – 15 ส.ค. 69",
     );
+  });
+
+  it("formats readable dates and ranges with full Buddhist year", () => {
+    assert.equal(formatThaiDateReadable("2026-07-03"), "3 ก.ค. 2569");
+    assert.equal(
+      formatThaiDateRangeReadable("2026-08-07", "2026-08-07"),
+      "7 ส.ค. 2569",
+    );
+    assert.equal(
+      formatThaiDateRangeReadable("2026-08-03", "2026-08-05"),
+      "3-5 ส.ค. 2569",
+    );
+    assert.equal(
+      formatThaiDateRangeReadable("2026-07-28", "2026-08-05"),
+      "28 ก.ค. – 5 ส.ค. 2569",
+    );
+    const stamped = formatThaiDateTimeReadable("2026-08-07T07:30:00.000Z");
+    assert.match(stamped, /^7 ส\.ค\. 2569 \d{2}:\d{2}$/);
   });
 
   it("parses Thai display back to Gregorian parts", () => {

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
@@ -43,6 +44,7 @@ export default function SalaryAdvancesWorkspace({
   canApprove,
   available = true,
   branchLabel,
+  showBranchLabel = false,
 }: {
   advances: SalaryAdvanceRow[];
   employees: AdvanceEmployeeOption[];
@@ -51,6 +53,7 @@ export default function SalaryAdvancesWorkspace({
   canApprove: boolean;
   available?: boolean;
   branchLabel: string | null;
+  showBranchLabel?: boolean;
 }) {
   const router = useRouter();
   const titleId = useId();
@@ -294,11 +297,17 @@ export default function SalaryAdvancesWorkspace({
                   <EmployeeAvatar
                     displayName={row.displayName}
                     photoUrl={row.photoUrl}
-                    size="md"
+                    size="lg"
                   />
                   <div className="hr-entity-card-title-wrap">
-                    <h2 className="hr-entity-card-title">{row.displayName}</h2>
-                    <p className="hr-entity-card-subtitle">
+                    <EmployeeNameLabel
+                      name={row.displayName}
+                      branchName={row.branchName}
+                      showBranch={showBranchLabel}
+                      as="h2"
+                      className="hr-entity-card-title hr-approval-employee-name"
+                    />
+                    <p className="hr-entity-card-subtitle hr-leave-request-dates">
                       {row.advanceDateLabel}
                     </p>
                   </div>
@@ -348,12 +357,6 @@ export default function SalaryAdvancesWorkspace({
                   <div>
                     <dt>สลิปโอน</dt>
                     <dd className="muted">ยังไม่มี — แนบทีหลังได้</dd>
-                  </div>
-                ) : null}
-                {!branchLabel && row.branchName ? (
-                  <div>
-                    <dt>สาขา</dt>
-                    <dd>{row.branchName}</dd>
                   </div>
                 ) : null}
                 {row.reason ? (

@@ -19,8 +19,9 @@ When designing or changing UI in `goldensoft-app` or `goldensoft-hr`:
 - Use semantic tokens (`--color-*`, typography, space, radius, shadow)
 - In HR, prefer `--hr-*` aliases under `.hr-root` that map to the contract
 - Mobile-first; employee lists use circular `EmployeeAvatar`
-- Thai dates via `formatThaiDate` / `ThaiDateInput` (พ.ศ.)
+- Thai dates: person+date cards use `formatThaiDateReadable` / `formatThaiDateRangeReadable`; forms use `ThaiDateInput`
 - HR list/management screens follow `.cursor/rules/hr-list-surface-ux.mdc` (cards + FAB + overlay)
+- Person + date cards follow `.cursor/rules/hr-person-date-cards.mdc` (leave/OT pattern, theme tokens only)
 
 ## Do not
 

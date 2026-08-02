@@ -10,23 +10,28 @@ When showing success, error, warning, or short progress feedback to users in `go
 ## Do
 
 - Use the in-app popup: `FeedbackPopup` (`src/components/hr/feedback-popup.tsx`)
-- Pop up centered over the page with backdrop; Thai title + message + ปิด
+- Pop up centered over the page with backdrop; short Thai title + message + ปิด
+- Prefer short readable copy: `อนุมัติแล้ว`, `บันทึกแล้ว`, `ลองใหม่อีกครั้ง`
+- If the message includes a date, use `formatThaiDateReadable` / `formatThaiDateRangeReadable`
+- Style only via theme tokens (`--hr-*` / `--color-*` / `--space-*` / `--font-*`)
 - Auto-dismiss success/info; keep error/warning until the user closes
 - Keep persistent contextual banners (e.g. offline) as inline `Alert` only when they must stay visible while the user works
+- Inbox notifications follow `.cursor/rules/hr-person-date-cards.mdc` (readable dates + notify layout)
 
 ## Do not
 
 - `window.alert`, `window.confirm`, `window.prompt`
 - Browser / OS notification APIs for routine form or action feedback
 - Rely only on an inline `Alert` for one-shot success/error after a user action (use the popup)
+- Hardcode brand colors or long formal sentences when a short status line works
 
 ## Example
 
 ```tsx
 const [feedback, setFeedback] = useState<FeedbackPopupState>(null);
 
-setFeedback({ kind: "success", message: "บันทึกเรียบร้อยแล้ว" });
-setFeedback({ kind: "error", message: "ไม่สามารถบันทึกได้" });
+setFeedback({ kind: "success", message: "บันทึกแล้ว" });
+setFeedback({ kind: "error", message: "บันทึกไม่สำเร็จ — ลองใหม่อีกครั้ง" });
 
 <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
 ```

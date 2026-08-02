@@ -78,6 +78,7 @@ export default async function HrShell({
                 ไม่มีตัวเลือกองค์กรในโมดูลนี้
               </div>
             </div>
+            <span id="hr-debug-notify-mount" className="hr-debug-notify-mount" />
           </div>
         </div>
       </header>
