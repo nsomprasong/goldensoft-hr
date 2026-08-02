@@ -564,6 +564,7 @@ export async function seedLoginTestHr(
     code: string;
     key: string;
     branchId: string;
+    authUserId: string;
   }> = [];
 
   for (const person of LOGIN_TEST_ROSTER) {
@@ -672,6 +673,7 @@ export async function seedLoginTestHr(
       code: person.employeeCode,
       key: person.key,
       branchId,
+      authUserId: link.authUserId,
     });
   }
 
@@ -1492,19 +1494,10 @@ export async function seedLoginTestHr(
     for (const person of LOGIN_TEST_ROSTER) {
       if (person.status === "RESIGNED") continue;
       const emp = byKey(person.key);
-      const wageType =
-        person.wageType === "DAILY"
-          ? "DAILY"
-          : person.wageType === "HOURLY"
-            ? "HOURLY"
-            : "MONTHLY";
+      const wageType = person.wageType === "DAILY" ? "DAILY" : "MONTHLY";
       // Showcase OT / late / absence on HQ sample rows (matches attendance + OT seed).
       const daily =
-        wageType === "DAILY"
-          ? person.amount
-          : wageType === "HOURLY"
-            ? person.amount * 8
-            : person.amount / 30;
+        wageType === "DAILY" ? person.amount : person.amount / 30;
       const extraEarnings =
         person.key === "owner"
           ? [

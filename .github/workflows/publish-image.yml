@@ -1,0 +1,133 @@
+name: Publish image
+
+# Build + push GHCR only. Never SSH, never compose, never touch VPS.
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: "Full commit SHA to build (default: this workflow commit)."
+        required: false
+        default: ""
+      image_tag:
+        description: "Image tag to push (default: first 12 chars of git_sha)."
+        required: false
+        default: ""
+
+env:
+  IMAGE_NAME: goldensoft-hr
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      image_ref: ${{ steps.meta.outputs.ref }}
+    steps:
+      - name: Resolve source commit and tag
+        id: meta
+        run: |
+          set -euo pipefail
+          SHA="${{ inputs.git_sha }}"
+          if [ -z "$SHA" ]; then
+            SHA="${GITHUB_SHA}"
+          fi
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${SHA::12}"
+          fi
+          echo "full_sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building tag=${TAG} from sha=${SHA}"
+
+      - name: Checkout source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.full_sha }}
+
+      - name: Ensure build context dirs exist
+        run: mkdir -p public certs
+
+      - name: Ensure Dockerfile accepts NEXT_PUBLIC build-args and CA cert
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path("Dockerfile")
+          text = path.read_text()
+          changed = False
+          if "ARG NEXT_PUBLIC_SUPABASE_URL" not in text:
+              old = (
+                  "ENV NEXT_TELEMETRY_DISABLED=1\n"
+                  "ENV NODE_ENV=production\n"
+                  "ENV HR_ASSET_PREFIX=\n"
+                  "RUN npx prisma generate && npm run build"
+              )
+              new = (
+                  "ENV NEXT_TELEMETRY_DISABLED=1\n"
+                  "ENV NODE_ENV=production\n"
+                  "ENV HR_ASSET_PREFIX=\n"
+                  "ARG NEXT_PUBLIC_SUPABASE_URL\n"
+                  "ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\n"
+                  "ARG NEXT_PUBLIC_APP_URL=https://hr.goldensoft.cloud\n"
+                  "ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL\n"
+                  "ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY\n"
+                  "ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL\n"
+                  "RUN npx prisma generate && npm run build"
+              )
+              if old not in text:
+                  raise SystemExit("Dockerfile build marker not found for ARG injection")
+              text = text.replace(old, new, 1)
+              changed = True
+          if "COPY --from=builder /app/certs" not in text and "COPY --chown=nextjs:nodejs ./certs" not in text:
+              needle = "COPY --from=builder /app/public ./public\n"
+              insert = (
+                  "COPY --from=builder /app/public ./public\n"
+                  "COPY --from=builder --chown=nextjs:nodejs /app/certs ./certs\n"
+              )
+              if needle not in text:
+                  raise SystemExit("Dockerfile public copy marker not found")
+              text = text.replace(needle, insert, 1)
+              changed = True
+          if changed:
+              path.write_text(text)
+              print("Patched Dockerfile for GHCR build")
+          else:
+              print("Dockerfile already build-ready")
+          PY
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (no deploy)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.meta.outputs.full_sha }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'https://hr.goldensoft.cloud' }}
+
+      - name: Confirm pushed tags
+        run: |
+          echo "Pushed ${{ steps.meta.outputs.ref }}"
+          echo "Also tagged sha-${{ steps.meta.outputs.full_sha }}"
+
+      - name: Verify health binary and CA in image
+        run: |
+          set -euo pipefail
+          IMG="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          docker pull "$IMG"
+          docker run --rm --entrypoint sh "$IMG" -c 'test -f /app/server.js && test -s /app/certs/prod-ca-2021.crt && echo SERVER_AND_CA_OK'

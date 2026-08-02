@@ -11,6 +11,7 @@ const assetPrefix =
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   assetPrefix,
   async rewrites() {
     if (!assetPrefix) return [];

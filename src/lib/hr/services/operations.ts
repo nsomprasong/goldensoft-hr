@@ -539,7 +539,7 @@ export async function listSchedulePeriods(
   const attendanceByPeriod = await countAttendanceDaysBySchedulePeriods(
     rows.map((row: { id: string }) => row.id),
   );
-  return rows.map((row: { id: string }) => ({
+  return rows.map((row) => ({
     ...row,
     hasAttendance: (attendanceByPeriod.get(row.id) ?? 0) > 0,
     attendanceDayCount: attendanceByPeriod.get(row.id) ?? 0,
@@ -3552,16 +3552,7 @@ async function applyLeaveCoverToSchedule(
         },
       });
       const coverByDate = new Map<string, (typeof coverRows)[number]>();
-      for (const row of coverRows as Array<{
-        id: string;
-        workDate: Date;
-        shiftId: string | null;
-        schedulePeriodId: string;
-        workLocationId: string | null;
-        sequenceNo: number;
-        isRestDay: boolean;
-        isLeaveDay: boolean;
-      }>) {
+      for (const row of coverRows) {
         coverByDate.set(toDateKey(row.workDate), row);
       }
 
@@ -4881,6 +4872,7 @@ async function listShiftMismatchRequestsRaw(
       employee_code: string;
       display_name: string;
       photo_url: string | null;
+      branch_id: string | null;
       from_shift_id: string;
       from_shift_name: string;
       from_start: Date;
@@ -4902,6 +4894,7 @@ async function listShiftMismatchRequestsRaw(
       e.employee_code,
       e.display_name,
       e.photo_url,
+      e.branch_id::text AS branch_id,
       fs.id::text AS from_shift_id,
       fs.name AS from_shift_name,
       fs.start_time AS from_start,
@@ -4929,6 +4922,7 @@ async function listShiftMismatchRequestsRaw(
         employeeCode: row.employee_code,
         displayName: row.display_name,
         photoUrl: row.photo_url,
+        branchId: row.branch_id,
       },
       fromShift: {
         id: row.from_shift_id,

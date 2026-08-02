@@ -329,7 +329,7 @@ export default function MeAttendanceWorkspace() {
 
     const device = await readCurrentPosition();
     if (device.ok) {
-      return { ok: true, ...device, workLocationId: workLocation?.id };
+      return { ...device, ok: true as const, workLocationId: workLocation?.id };
     }
 
     // Dev on HTTP LAN: device GPS is blocked — use work-location mock automatically.

@@ -25,7 +25,7 @@ export default async function SalaryAdvancesPage() {
     listSalaryAdvances(ctx),
     listEmployees(ctx, {
       page: 1,
-      branchId: ctx.branchId,
+      branchId: ctx.branchId ?? undefined,
     }),
     listOrganizationBranches(ctx),
     listAdvancePeriodOptions(ctx),
