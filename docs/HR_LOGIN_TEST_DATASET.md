@@ -114,7 +114,7 @@ HR
 
 | หน้า | บัญชีทดสอบ | สิ่งที่ควรเห็น |
 |------|------------|----------------|
-| `/hr/settings/payroll-deductions` | owner | อัตราภาษี 3% + SSO 5% เพดาน 750 |
+| `/hr/settings/payroll-deductions` | owner | ภาษี FLAT 3% หรือ PROGRESSIVE + SSO ฐาน 1,650–15,000 เพดาน 750 |
 | `/hr/payroll/runs` | owner | รอบอนุมัติแล้ว + รอบร่าง |
 | `/hr/payslips` | owner | สลิปออกแล้วหลายใบ (ชื่อคน + ยอดสุทธิ) |
 | `/hr/me/payslips` | `plukpraew.hq.staff1@example.com` | สลิปของนภา |

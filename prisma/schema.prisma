@@ -1414,10 +1414,17 @@ model PayrollDeductionSettings {
   id                          String   @id @default(uuid()) @db.Uuid
   organizationId              String   @unique @map("organization_id") @db.Uuid
   taxEnabled                  Boolean  @default(true) @map("tax_enabled")
+  /// FLAT | PROGRESSIVE (Phase 8 Track B).
+  taxMethod                   String   @default("FLAT") @map("tax_method")
   taxRatePercent              Decimal  @default(0) @map("tax_rate_percent") @db.Decimal(8, 4)
+  /// Annual personal allowance for progressive estimate.
+  taxPersonalAllowance        Decimal  @default(60000) @map("tax_personal_allowance") @db.Decimal(14, 2)
+  taxExpenseDeductionEnabled  Boolean  @default(true) @map("tax_expense_deduction_enabled")
   socialSecurityEnabled       Boolean  @default(true) @map("social_security_enabled")
   socialSecurityRatePercent   Decimal  @default(5) @map("social_security_rate_percent") @db.Decimal(8, 4)
   socialSecurityMaxAmount     Decimal  @default(750) @map("social_security_max_amount") @db.Decimal(14, 2)
+  socialSecurityWageBaseMin   Decimal  @default(1650) @map("social_security_wage_base_min") @db.Decimal(14, 2)
+  socialSecurityWageBaseMax   Decimal  @default(15000) @map("social_security_wage_base_max") @db.Decimal(14, 2)
   /// When true, sum attendance late minutes into a LATE deduction line.
   lateDeductionEnabled        Boolean  @default(true) @map("late_deduction_enabled")
   /// Baht per late minute. 0 = derive from daily wage ÷ 8 ÷ 60.

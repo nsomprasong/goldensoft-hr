@@ -3,7 +3,7 @@
 > **อ่านไฟล์นี้ก่อนแก้ HR ทุกครั้ง** — เป็นแหล่งอ้างอิงเดียว ไม่ต้องไล่โครงสร้างโปรเจกต์ใหม่  
 > อัปเดตไฟล์นี้ทุกครั้งที่ปิดงานย่อยหรือขออนุมัติปิดเฟส
 
-Last updated: 2026-08-02 (Phase 8 Track A Face matching CLOSED; Track B tax/SSO still open)  
+Last updated: 2026-08-02 (Phase 8 Track B tax/SSO legal-depth IN_PROGRESS)  
 Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft-platform` (auth/permissions)
 
 ---
@@ -18,7 +18,7 @@ Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft
 | Employee list | แสดง **EmployeeAvatar** (รูปวงกลม) ข้างชื่อทุกครั้ง; ไม่มีรูป = อักษรย่อ |
 | OT / leave / late | ใช้งานง่าย; หักลา ขาด สาย เชื่อมจากสรุปรายวัน |
 | Pay cycle | รายวัน / รายอาทิตย์ / รายเดือน ผ่าน payroll schedules |
-| Tax / SSO | **2B:** โครงหัก + อัตราตั้งค่าได้ก่อน; ยังไม่เคลมถูกกฎหมายจนกว่า Phase 8 |
+| Tax / SSO | Phase 8 Track B: FLAT หรือ PROGRESSIVE + SSO ฐาน min/max — ประมาณการ ไม่ใช่คำปรึกษากฎหมาย |
 | Advances | Phase 6 |
 | Notifications | รวมดูจาก UI เดียว (in-app); ส่งนอกระบบนอกสโคปถ้าไม่มี provider |
 | Self-service | ประวัติเวลา ขาด/ลา/สาย ส่งใบลา แนบรูป กราฟกะทัดรัด มือถือก่อน |
@@ -90,7 +90,7 @@ Legend: `working` | `partial` | `stub` | `missing`
 | me อื่นๆ | schedule/leave/OT/payslips/advances/face | working | 3–8 | leaf ครบ; เข้าจาก `/` + bottom tabs |
 | เบิกล่วงหน้า | `/hr/advances`, `/hr/me/advances` | working | 6 | งวดหักคืน + วิธีรับเงิน + สลิป; notification center ยังค้าง |
 | Face matching | `/hr/settings/face-matching`, `/hr/me/face` | working | 8A | OFF/WARN/REQUIRE + enroll + clock compare — Track A CLOSED |
-| Tax/SSO legal | payroll-calc placeholders | partial | 4 then 8 | |
+| Tax/SSO legal | `/hr/settings/payroll-deductions` | partial | 8B | FLAT / PROGRESSIVE + SSO wage base; ยังไม่ใช่ตารางกรมสรรพากรเต็ม |
 
 Key API catch-all: `src/app/api/hr/[...operations]/route.ts`  
 Ops services: `src/lib/hr/services/operations.ts`
@@ -195,8 +195,12 @@ Status values: `OPEN` | `IN_PROGRESS` | `READY_FOR_APPROVAL` | `CLOSED`
   - Clock-in/out compares punch face vs enrollment
   - Client: face-api CDN + downscale/retry detect; server: Euclidean match
   - Migration `0015_face_matching`; settings `/hr/settings/face-matching`; self `/hr/me/face`
-- Track B — legal-grade tax brackets / SSO depth: **OPEN** (2B stays until Track B closes)
-- Separate approvals OK between A and B — Phase 8 stays open until Track B closes (or user splits)
+- Track B — legal-grade tax brackets / SSO depth: **IN_PROGRESS** (started 2026-08-02)
+  - Tax method: `FLAT` (%) หรือ `PROGRESSIVE` (annualize → brackets → ÷12)
+  - Personal allowance + optional expense deduction (ประมาณการ — ไม่ใช่คำปรึกษากฎหมาย)
+  - SSO: ฐานค่าจ้าง min/max + อัตรา% + เพดานเงินหัก
+  - Settings UI: `/hr/settings/payroll-deductions`
+- Separate approvals OK between A and B — Phase 8 stays open until Track B closes
 
 **Phase close rule:** tests pass → update this playbook → ask user → **do not mark CLOSED without approval**
 
@@ -229,6 +233,7 @@ Per-phase: add checklist under Changelog when closing.
 | Employee photo | `src/lib/hr/employee-photos.ts`, `api/hr/employees/[id]/photo`, `employee-photo-picker.tsx` |
 | Punch photo | `src/lib/hr/attendance-photos.ts`, `api/hr/attendance/events/[id]/photo`, `me-attendance-workspace.tsx` |
 | Face matching | `face-match.ts`, `services/face-matching.ts`, `client/face-descriptor.ts`, `/hr/settings/face-matching`, `/hr/me/face` |
+| Tax / SSO depth | `thai-tax.ts`, `payroll-calc.ts`, `services/payroll-deduction-settings.ts`, `/hr/settings/payroll-deductions` |
 | Admin attendance day | `attendance-day-workspace.tsx`, `listAttendanceDays` in `operations.ts` |
 | Login-test dataset | `src/lib/seed/login-test-dataset.ts`, `docs/HR_LOGIN_TEST_DATASET.md` |
 | Demo dataset (legacy) | `src/lib/seed/demo-dataset.ts`, `docs/HR_DEMO_DATASET.md` |
@@ -243,6 +248,13 @@ Do **not** re-read whole repo if this map answers the question — update the ma
 ---
 
 ## 8. Changelog
+
+### 2026-08-02 — Phase 8 Track B started (tax / SSO depth)
+- Status Track B → **IN_PROGRESS**
+- Migration `0016_tax_sso_depth`: tax_method, personal allowance, expense flag, SSO wage base min/max
+- `thai-tax.ts` + `payroll-calc`: FLAT or PROGRESSIVE (annualize → brackets → ÷12); SSO clamp wage base
+- Settings UI `/hr/settings/payroll-deductions` updated; disclaimer ประมาณการ ไม่ใช่คำปรึกษากฎหมาย
+- Unit tests: `tests/thai-tax.test.ts` (compat flat 20k still 600+750)
 
 ### 2026-08-02 — Phase 8 Track A CLOSED (Face matching)
 - User tested all modes OFF / WARN / REQUIRE — approved close Track A
