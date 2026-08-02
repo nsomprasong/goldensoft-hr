@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
-import { assertHrPermission, hrCan } from "@/lib/hr/authorize";
+import {
+  assertBranchInScope,
+  assertHrPermission,
+  hrCan,
+} from "@/lib/hr/authorize";
 import {
   documentPublicPath,
   saveEmployeeDocumentFile,
@@ -892,15 +896,9 @@ export async function reviewSalaryAdvance(
   `;
   const row = found[0];
   if (!row) throw new HrError("NOT_FOUND");
-  if (ctx.branchId && row.branch_id !== ctx.branchId) {
-    throw new HrError("BRANCH_OUT_OF_SCOPE");
-  }
-  if (
-    ctx.allowedBranchIds != null &&
-    !ctx.allowedBranchIds.includes(row.branch_id)
-  ) {
-    throw new HrError("BRANCH_OUT_OF_SCOPE");
-  }
+  // Membership allow-list only (same as leave/OT). Do not block org-wide
+  // admins who opened a notification deep-link while another branch is selected.
+  assertBranchInScope(ctx, row.branch_id);
   assertNoSelfApproval(row.auth_user_id, ctx.actorAuthUserId!);
   if (row.status !== "SUBMITTED") {
     throw new HrError("INVALID_STATUS_TRANSITION", {
@@ -1050,15 +1048,7 @@ export async function attachAdvanceTransferSlip(
   `;
   const row = found[0];
   if (!row) throw new HrError("NOT_FOUND");
-  if (ctx.branchId && row.branch_id !== ctx.branchId) {
-    throw new HrError("BRANCH_OUT_OF_SCOPE");
-  }
-  if (
-    ctx.allowedBranchIds != null &&
-    !ctx.allowedBranchIds.includes(row.branch_id)
-  ) {
-    throw new HrError("BRANCH_OUT_OF_SCOPE");
-  }
+  assertBranchInScope(ctx, row.branch_id);
   if (
     row.status !== "APPROVED" &&
     row.status !== "PARTIALLY_DEDUCTED" &&
@@ -1135,9 +1125,8 @@ export async function cancelSalaryAdvance(
         message: "ยกเลิกได้เฉพาะคำขอของตนเองที่ยังรออนุมัติ",
       });
     }
-  }
-  if (ctx.branchId && row.branch_id !== ctx.branchId && canManage) {
-    throw new HrError("BRANCH_OUT_OF_SCOPE");
+  } else {
+    assertBranchInScope(ctx, row.branch_id);
   }
   if (
     row.status === "DEDUCTED" ||
