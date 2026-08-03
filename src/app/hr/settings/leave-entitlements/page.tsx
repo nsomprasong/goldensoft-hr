@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import LeaveEntitlementsWorkspace from "@/components/hr/leave-entitlements-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   listOrganizationBranches,
@@ -30,6 +31,7 @@ export default async function LeaveEntitlementsSettingsPage() {
   }
 
   const branches = await listOrganizationBranches(ctx);
+  const selectedBranchId = ctx.branchId ?? null;
 
   return (
     <HrShell ctx={ctx}>
@@ -37,9 +39,12 @@ export default async function LeaveEntitlementsSettingsPage() {
         <div>
           <h1>สิทธิ์วันลา</h1>
           <p>
-            ตั้งจำนวนวันลาขององค์กร และให้สาขาดึงไปใช้หรือกำหนดเองได้
+            {selectedBranchId
+              ? "สิทธิ์ของสาขาที่เลือก"
+              : "ค่าเริ่มต้นองค์กร · เลือกสาขาที่หัวเว็บเพื่อแก้รายสาขา"}
           </p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={settingsError ?? branches.message} />
@@ -49,6 +54,7 @@ export default async function LeaveEntitlementsSettingsPage() {
           leaveTypes={settings.leaveTypes}
           policies={settings.policies}
           branches={branches.data}
+          selectedBranchId={selectedBranchId}
         />
       ) : null}
     </HrShell>

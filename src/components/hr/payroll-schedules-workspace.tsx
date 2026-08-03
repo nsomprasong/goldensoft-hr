@@ -7,26 +7,25 @@ import { useEffect, useId, useState } from "react";
 import HrSettingsViewToggle, {
   useSettingsViewMode,
 } from "@/components/hr/hr-settings-view-toggle";
-import ShiftForm, { type ShiftFormValues } from "@/components/hr/shift-form";
+import PayrollScheduleForm, {
+  type PayrollScheduleFormValues,
+} from "@/components/hr/payroll-schedule-form";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrButton from "@/components/ui/hr-button";
-import type { ShiftRow } from "@/lib/hr/data";
+import type { PayrollScheduleRow } from "@/lib/hr/data";
 
-type BranchOption = { id: string; label: string };
-type ShiftTypeOption = { id: string; label: string };
+const BASE = "/hr/settings/payroll-schedules";
 
-export default function ShiftsWorkspace({
-  shifts,
-  shiftTypes,
-  branches,
+export default function PayrollSchedulesWorkspace({
+  schedules,
+  payFrequencies,
   editing,
   available,
   canManage,
 }: {
-  shifts: ShiftRow[];
-  shiftTypes: ShiftTypeOption[];
-  branches: BranchOption[];
-  editing: ShiftRow | null;
+  schedules: PayrollScheduleRow[];
+  payFrequencies: Array<{ id: string; label: string }>;
+  editing: PayrollScheduleRow | null;
   available: boolean;
   canManage: boolean;
 }) {
@@ -34,7 +33,7 @@ export default function ShiftsWorkspace({
   const titleId = useId();
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useSettingsViewMode(
-    "hr.settings.shifts.viewMode",
+    "hr.settings.payroll-schedules.viewMode",
   );
 
   const open = creating || editing != null;
@@ -51,21 +50,17 @@ export default function ShiftsWorkspace({
 
   function closeOverlay() {
     setCreating(false);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function openCreate() {
     setCreating(true);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function handleDone() {
     setCreating(false);
-    router.push("/hr/settings/shifts");
+    router.push(BASE);
     router.refresh();
   }
 
@@ -74,45 +69,37 @@ export default function ShiftsWorkspace({
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       setCreating(false);
-      if (editing) router.push("/hr/settings/shifts");
+      if (editing) router.push(BASE);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, editing, router]);
 
-  const editInitial: Partial<ShiftFormValues> | undefined = editing
+  const editInitial: Partial<PayrollScheduleFormValues> | undefined = editing
     ? {
+        code: editing.code,
         name: editing.name,
-        shiftTypeId: editing.shiftTypeId,
-        branchId: editing.branchId ?? "",
-        startTime: editing.startTime,
-        endTime: editing.endTime,
-        breakMinutes: String(editing.breakMinutes),
-        graceLateMinutes: String(editing.graceLateMinutes),
-        graceEarlyLeaveMinutes: String(editing.graceEarlyLeaveMinutes),
-        overtimeAfterMinutes:
-          editing.overtimeAfterMinutes === null
-            ? ""
-            : String(editing.overtimeAfterMinutes),
-        crossesMidnight: editing.crossesMidnight,
+        payFrequencyId: editing.payFrequencyId,
+        periodStartRule: editing.periodStartRule,
+        periodEndRule: editing.periodEndRule,
+        paymentDayRule: editing.paymentDayRule,
+        timezone: editing.timezone,
       }
     : undefined;
 
-  const branchLabelById = new Map(branches.map((b) => [b.id, b.label]));
-
-  function renderActions(row: ShiftRow) {
+  function renderActions(row: PayrollScheduleRow) {
     if (!canManage) return null;
     return (
       <div className="hr-settings-item-actions">
         <Link
           className="btn btn-sm"
-          href={`/hr/settings/shifts?edit=${row.id}`}
+          href={`${BASE}?edit=${row.id}`}
           onClick={() => setCreating(false)}
         >
           แก้ไข
         </Link>
         <ToggleActiveButton
-          resource="shifts"
+          resource="payroll-schedules"
           id={row.id}
           isActive={row.isActive}
           disabled={!available}
@@ -123,14 +110,14 @@ export default function ShiftsWorkspace({
 
   return (
     <>
-      {shifts.length === 0 ? (
-        <p className="empty">ยังไม่มีกะงานในองค์กรนี้</p>
+      {schedules.length === 0 ? (
+        <p className="empty">ยังไม่มีรอบจ่ายในองค์กรนี้</p>
       ) : (
         <section className="hr-settings-panel">
           <HrSettingsViewToggle
             viewMode={viewMode}
             onChange={setViewMode}
-            count={shifts.length}
+            count={schedules.length}
           />
           <div
             className={
@@ -139,18 +126,12 @@ export default function ShiftsWorkspace({
                 : "hr-settings-list"
             }
           >
-            {shifts.map((row) => {
-              const branchLabel = row.branchId
-                ? (branchLabelById.get(row.branchId) ?? null)
-                : null;
-              const timeLabel = `${row.startTime} – ${row.endTime}${
-                row.crossesMidnight ? " (ข้ามวัน)" : ""
-              }`;
+            {schedules.map((row) => {
               const meta = [
-                row.shiftTypeNameTh,
-                timeLabel,
-                `พัก ${row.breakMinutes} นาที`,
-                branchLabel ?? "ทุกสาขา",
+                row.payFrequencyNameTh,
+                `เริ่ม ${row.periodStartRule}`,
+                `สิ้น ${row.periodEndRule}`,
+                `จ่าย ${row.paymentDayRule}`,
               ].join(" · ");
               return (
                 <article
@@ -190,8 +171,8 @@ export default function ShiftsWorkspace({
           className="hr-fab"
           onClick={openCreate}
           disabled={!available}
-          aria-label="เพิ่มกะงาน"
-          title="เพิ่มกะงาน"
+          aria-label="เพิ่มรอบจ่าย"
+          title="เพิ่มรอบจ่าย"
         >
           <span aria-hidden="true">+</span>
         </button>
@@ -213,7 +194,7 @@ export default function ShiftsWorkspace({
           >
             <div className="hr-overlay-head">
               <h2 id={titleId}>
-                {mode === "create" ? "เพิ่มกะงาน" : "แก้ไขกะงาน"}
+                {mode === "create" ? "เพิ่มรอบจ่าย" : "แก้ไขรอบจ่าย"}
               </h2>
               <HrButton
                 type="button"
@@ -225,12 +206,11 @@ export default function ShiftsWorkspace({
               </HrButton>
             </div>
             <div className="hr-overlay-body">
-              <ShiftForm
+              <PayrollScheduleForm
                 key={editing?.id ?? "create"}
                 mode={mode}
-                shiftId={editing?.id}
-                shiftTypes={shiftTypes}
-                branches={branches}
+                scheduleId={editing?.id}
+                payFrequencies={payFrequencies}
                 disabled={!available}
                 initialValues={editInitial}
                 embedded

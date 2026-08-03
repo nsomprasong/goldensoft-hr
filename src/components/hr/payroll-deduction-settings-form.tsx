@@ -140,7 +140,7 @@ export default function PayrollDeductionSettingsForm({
         socialSecurityWageBaseMin,
         socialSecurityWageBaseMax,
       },
-      "บันทึกอัตราภาษีและประกันสังคมเรียบร้อยแล้ว",
+      "บันทึกภาษี/ประกันสังคมเรียบร้อยแล้ว",
     );
     setSaving(false);
 
@@ -154,210 +154,210 @@ export default function PayrollDeductionSettingsForm({
   }
 
   const progressive = values.taxMethod === "PROGRESSIVE";
+  const busy = !canEdit || saving;
 
   return (
     <>
       <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
 
-      <form className="card" onSubmit={handleSubmit} noValidate>
-        <p className="field-hint" style={{ marginBottom: "1rem" }}>
-          ประมาณการหัก ณ ที่จ่ายสำหรับเงินเดือน — ไม่ใช่คำปรึกษากฎหมายหรือตาราง
-          กรมสรรพากรฉบับสมบูรณ์ (ลดหย่อนอื่นๆ / ภ.ง.ด.1 ยังนอกสโคป)
+      <form className="hr-settings-form" onSubmit={handleSubmit} noValidate>
+        <p className="hr-settings-form-lead">
+          ประมาณการหัก ณ ที่จ่ายสำหรับเงินเดือน
         </p>
 
-        <div className="form-grid">
-          <Field id="tax-enabled" label="หักภาษี ณ ที่จ่าย" full>
-            <label className="checkbox-row">
-              <input
-                id="tax-enabled"
-                type="checkbox"
-                checked={values.taxEnabled}
-                disabled={!canEdit || saving}
-                onChange={(e) =>
-                  setValues({ ...values, taxEnabled: e.target.checked })
-                }
-              />
-              <span>เปิดใช้การหักภาษี</span>
-            </label>
-          </Field>
+        <section className="hr-settings-panel">
+          <header className="hr-leave-panel-head">
+            <h2>ภาษี</h2>
+            <p>หัก ณ ที่จ่าย</p>
+          </header>
+          <div className="hr-settings-inner-card">
+            <div className="form-grid">
+              <Field id="tax-enabled" label="หักภาษี ณ ที่จ่าย" full>
+                <label className="checkbox-row">
+                  <input
+                    id="tax-enabled"
+                    type="checkbox"
+                    checked={values.taxEnabled}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setValues({ ...values, taxEnabled: e.target.checked })
+                    }
+                  />
+                  <span>เปิดใช้</span>
+                </label>
+              </Field>
 
-          <Field id="tax-method" label="วิธีคิดภาษี" full required>
-            <select
-              {...fieldProps("tax-method")}
-              value={values.taxMethod}
-              disabled={!canEdit || saving || !values.taxEnabled}
-              onChange={(e) =>
-                setValues({
-                  ...values,
-                  taxMethod: e.target.value as TaxMethod,
-                })
-              }
-            >
-              <option value="FLAT">อัตราคงที่ (%)</option>
-              <option value="PROGRESSIVE">
-                ขั้นบันได (ประมาณการรายปี ÷ 12)
-              </option>
-            </select>
-            <p className="field-hint">
-              {progressive
-                ? "แปลงรายได้เดือน × 12 → หักค่าใช้จ่าย 50% (เพดาน 100,000) + ลดหย่อนส่วนตัว → ขั้นบันได → หาร 12"
-                : "หักเป็นเปอร์เซ็นต์ของรายได้รวมในรอบ (แบบเดิม Phase 4)"}
-            </p>
-          </Field>
-
-          {!progressive ? (
-            <Field id="tax-rate" label="อัตราภาษี (%)" required>
-              <input
-                {...fieldProps("tax-rate")}
-                type="number"
-                min={0}
-                step="0.01"
-                value={values.taxRatePercent}
-                disabled={!canEdit || saving || !values.taxEnabled}
-                onChange={(e) =>
-                  setValues({ ...values, taxRatePercent: e.target.value })
-                }
-              />
-            </Field>
-          ) : (
-            <>
-              <Field
-                id="tax-allowance"
-                label="ลดหย่อนส่วนตัวรายปี (บาท)"
-                required
-              >
-                <input
-                  {...fieldProps("tax-allowance")}
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={values.taxPersonalAllowance}
-                  disabled={!canEdit || saving || !values.taxEnabled}
+              <Field id="tax-method" label="วิธีคิดภาษี" full required>
+                <select
+                  {...fieldProps("tax-method")}
+                  value={values.taxMethod}
+                  disabled={busy || !values.taxEnabled}
                   onChange={(e) =>
                     setValues({
                       ...values,
-                      taxPersonalAllowance: e.target.value,
+                      taxMethod: e.target.value as TaxMethod,
+                    })
+                  }
+                >
+                  <option value="FLAT">อัตราคงที่ (%)</option>
+                  <option value="PROGRESSIVE">ขั้นบันได (ประมาณการ)</option>
+                </select>
+              </Field>
+
+              {!progressive ? (
+                <Field id="tax-rate" label="อัตราภาษี (%)" required>
+                  <input
+                    {...fieldProps("tax-rate")}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={values.taxRatePercent}
+                    disabled={busy || !values.taxEnabled}
+                    onChange={(e) =>
+                      setValues({ ...values, taxRatePercent: e.target.value })
+                    }
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field
+                    id="tax-allowance"
+                    label="ลดหย่อนส่วนตัวรายปี (บาท)"
+                    required
+                  >
+                    <input
+                      {...fieldProps("tax-allowance")}
+                      type="number"
+                      min={0}
+                      step="1"
+                      value={values.taxPersonalAllowance}
+                      disabled={busy || !values.taxEnabled}
+                      onChange={(e) =>
+                        setValues({
+                          ...values,
+                          taxPersonalAllowance: e.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field id="tax-expense" label="หักค่าใช้จ่าย 50%" full>
+                    <label className="checkbox-row">
+                      <input
+                        id="tax-expense"
+                        type="checkbox"
+                        checked={values.taxExpenseDeductionEnabled}
+                        disabled={busy || !values.taxEnabled}
+                        onChange={(e) =>
+                          setValues({
+                            ...values,
+                            taxExpenseDeductionEnabled: e.target.checked,
+                          })
+                        }
+                      />
+                      <span>ใช้ 50% ของรายได้ (เพดาน 100,000 บาท/ปี)</span>
+                    </label>
+                  </Field>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="hr-settings-panel">
+          <header className="hr-leave-panel-head">
+            <h2>ประกันสังคม</h2>
+            <p>อัตราและฐานค่าจ้าง</p>
+          </header>
+          <div className="hr-settings-inner-card">
+            <div className="form-grid">
+              <Field id="sso-enabled" label="ประกันสังคม" full>
+                <label className="checkbox-row">
+                  <input
+                    id="sso-enabled"
+                    type="checkbox"
+                    checked={values.socialSecurityEnabled}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setValues({
+                        ...values,
+                        socialSecurityEnabled: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>เปิดใช้</span>
+                </label>
+              </Field>
+
+              <Field id="sso-rate" label="อัตรา (%)" required>
+                <input
+                  {...fieldProps("sso-rate")}
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={values.socialSecurityRatePercent}
+                  disabled={busy || !values.socialSecurityEnabled}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      socialSecurityRatePercent: e.target.value,
                     })
                   }
                 />
               </Field>
-              <Field id="tax-expense" label="หักค่าใช้จ่าย 50%" full>
-                <label className="checkbox-row">
-                  <input
-                    id="tax-expense"
-                    type="checkbox"
-                    checked={values.taxExpenseDeductionEnabled}
-                    disabled={!canEdit || saving || !values.taxEnabled}
-                    onChange={(e) =>
-                      setValues({
-                        ...values,
-                        taxExpenseDeductionEnabled: e.target.checked,
-                      })
-                    }
-                  />
-                  <span>ใช้กฎประมาณการ 50% ของรายได้ (เพดาน 100,000 บาท/ปี)</span>
-                </label>
+
+              <Field id="sso-base-min" label="ฐานขั้นต่ำ (บาท)" required>
+                <input
+                  {...fieldProps("sso-base-min")}
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={values.socialSecurityWageBaseMin}
+                  disabled={busy || !values.socialSecurityEnabled}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      socialSecurityWageBaseMin: e.target.value,
+                    })
+                  }
+                />
               </Field>
-            </>
-          )}
 
-          <Field id="sso-enabled" label="ประกันสังคม" full>
-            <label className="checkbox-row">
-              <input
-                id="sso-enabled"
-                type="checkbox"
-                checked={values.socialSecurityEnabled}
-                disabled={!canEdit || saving}
-                onChange={(e) =>
-                  setValues({
-                    ...values,
-                    socialSecurityEnabled: e.target.checked,
-                  })
-                }
-              />
-              <span>เปิดใช้การหักประกันสังคม</span>
-            </label>
-          </Field>
+              <Field id="sso-base-max" label="ฐานสูงสุด (บาท)" required>
+                <input
+                  {...fieldProps("sso-base-max")}
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={values.socialSecurityWageBaseMax}
+                  disabled={busy || !values.socialSecurityEnabled}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      socialSecurityWageBaseMax: e.target.value,
+                    })
+                  }
+                />
+              </Field>
 
-          <Field id="sso-rate" label="อัตราประกันสังคม (%)" required>
-            <input
-              {...fieldProps("sso-rate")}
-              type="number"
-              min={0}
-              step="0.01"
-              value={values.socialSecurityRatePercent}
-              disabled={
-                !canEdit || saving || !values.socialSecurityEnabled
-              }
-              onChange={(e) =>
-                setValues({
-                  ...values,
-                  socialSecurityRatePercent: e.target.value,
-                })
-              }
-            />
-          </Field>
-
-          <Field id="sso-base-min" label="ฐานค่าจ้างขั้นต่ำ (บาท)" required>
-            <input
-              {...fieldProps("sso-base-min")}
-              type="number"
-              min={0}
-              step="1"
-              value={values.socialSecurityWageBaseMin}
-              disabled={
-                !canEdit || saving || !values.socialSecurityEnabled
-              }
-              onChange={(e) =>
-                setValues({
-                  ...values,
-                  socialSecurityWageBaseMin: e.target.value,
-                })
-              }
-            />
-            <p className="field-hint">ค่าจ้างต่ำกว่านี้ใช้ฐานขั้นต่ำคิดสมทบ</p>
-          </Field>
-
-          <Field id="sso-base-max" label="ฐานค่าจ้างสูงสุด (บาท)" required>
-            <input
-              {...fieldProps("sso-base-max")}
-              type="number"
-              min={0}
-              step="1"
-              value={values.socialSecurityWageBaseMax}
-              disabled={
-                !canEdit || saving || !values.socialSecurityEnabled
-              }
-              onChange={(e) =>
-                setValues({
-                  ...values,
-                  socialSecurityWageBaseMax: e.target.value,
-                })
-              }
-            />
-            <p className="field-hint">ค่าเริ่มต้นไทยประมาณ 15,000 บาท</p>
-          </Field>
-
-          <Field id="sso-max" label="เพดานเงินหักสูงสุด (บาท)" required>
-            <input
-              {...fieldProps("sso-max")}
-              type="number"
-              min={0}
-              step="1"
-              value={values.socialSecurityMaxAmount}
-              disabled={
-                !canEdit || saving || !values.socialSecurityEnabled
-              }
-              onChange={(e) =>
-                setValues({
-                  ...values,
-                  socialSecurityMaxAmount: e.target.value,
-                })
-              }
-            />
-            <p className="field-hint">ค่าเริ่มต้น 750 บาท (5% × 15,000)</p>
-          </Field>
-        </div>
+              <Field id="sso-max" label="เพดานหักสูงสุด (บาท)" required>
+                <input
+                  {...fieldProps("sso-max")}
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={values.socialSecurityMaxAmount}
+                  disabled={busy || !values.socialSecurityEnabled}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      socialSecurityMaxAmount: e.target.value,
+                    })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+        </section>
 
         {canEdit ? (
           <div className="form-actions">

@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayrollDeductionSettingsForm from "@/components/hr/payroll-deduction-settings-form";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { getPayrollDeductionSettings } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -25,9 +26,10 @@ export default async function PayrollDeductionsSettingsPage() {
     <HrShell ctx={ctx}>
       <div className="hr-page-head">
         <div>
-          <h1>ภาษีและประกันสังคม</h1>
-          <p>อัตราหักที่ใช้ประมาณการตอนประมวลผลเงินเดือน</p>
+          <h1>ภาษี/ประกันสังคม</h1>
+          <p>อัตราหักสำหรับประมาณการเงินเดือน</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={settings.message} />

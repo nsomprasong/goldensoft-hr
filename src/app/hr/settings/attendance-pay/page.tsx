@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import AttendancePaySettingsForm from "@/components/hr/attendance-pay-settings-form";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { getPayrollDeductionSettings } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -26,8 +27,9 @@ export default async function AttendancePaySettingsPage() {
       <div className="hr-page-head">
         <div>
           <h1>หักสาย / ขาดงาน</h1>
-          <p>ตั้งค่าการหักเมื่อประมวลผลเงินเดือน (OT ใช้กฎ OT ที่อนุมัติแล้ว)</p>
+          <p>ตั้งค่าการหักตอนประมวลผลเงินเดือน</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={settings.message} />

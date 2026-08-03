@@ -8,7 +8,6 @@ import Alert from "@/components/hr/alert";
 import Field, { fieldProps } from "@/components/hr/field";
 import {
   compact,
-  requireText,
   submitHrJson,
   type FieldErrors,
 } from "@/components/hr/form-utils";
@@ -46,7 +45,7 @@ function parseCoord(
   kind: "latitude" | "longitude",
 ): string {
   const trimmed = raw.trim();
-  if (!trimmed) return "ต้องระบุพิกัด GPS";
+  if (!trimmed) return "ต้องระบุพิกัด";
   const n = Number(trimmed);
   if (!Number.isFinite(n)) {
     return kind === "latitude" ? "ละติจูดไม่ถูกต้อง" : "ลองจิจูดไม่ถูกต้อง";
@@ -58,6 +57,13 @@ function parseCoord(
     return "ลองจิจูดต้องอยู่ระหว่าง -180 ถึง 180";
   }
   return "";
+}
+
+function branchName(
+  branches: Array<{ id: string; label: string }>,
+  branchId: string,
+): string {
+  return branches.find((b) => b.id === branchId)?.label?.trim() ?? "";
 }
 
 export default function WorkLocationForm({
@@ -81,11 +87,19 @@ export default function WorkLocationForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  const [values, setValues] = useState<WorkLocationFormValues>({
+  const initialBranchId =
+    initialValues?.branchId ||
+    (branches.length === 1 ? branches[0].id : "") ||
+    "";
+  const [values, setValues] = useState<WorkLocationFormValues>(() => ({
     ...DEFAULTS,
-    branchId: branches[0]?.id ?? "",
     ...initialValues,
-  });
+    branchId: initialBranchId,
+    name:
+      branchName(branches, initialBranchId) ||
+      initialValues?.name?.trim() ||
+      "",
+  }));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -95,19 +109,38 @@ export default function WorkLocationForm({
     text: string;
   } | null>(null);
 
+  /** Header already scoped to one branch — no picker needed. */
+  const branchLocked = branches.length === 1;
+  const resolvedBranchLabel =
+    branchName(branches, values.branchId) || values.name.trim();
+
+  function selectBranch(branchId: string) {
+    setValues((prev) => ({
+      ...prev,
+      branchId,
+      name: branchName(branches, branchId) || prev.name,
+    }));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.branchId;
+      delete next.name;
+      return next;
+    });
+  }
+
   function captureCurrentGps() {
     setFeedback(null);
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setFeedback({
         kind: "error",
-        text: "เบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง GPS",
+        text: "เบราว์เซอร์นี้ไม่รองรับ GPS",
       });
       return;
     }
     if (typeof window !== "undefined" && !window.isSecureContext) {
       setFeedback({
         kind: "error",
-        text: "เบราว์เซอร์ไม่ให้ใช้ GPS บน HTTP — เปิดผ่าน HTTPS หรือคลิกเลือกจุดบนแผนที่แทน",
+        text: "ใช้ GPS ได้บน HTTPS เท่านั้น — หรือคลิกเลือกบนแผนที่",
       });
       return;
     }
@@ -127,27 +160,26 @@ export default function WorkLocationForm({
       });
       const accuracy =
         position.coords.accuracy != null
-          ? ` (ความแม่นยำ ±${Math.round(position.coords.accuracy)} ม.)`
+          ? ` (±${Math.round(position.coords.accuracy)} ม.)`
           : "";
       setFeedback({
         kind: "success",
-        text: `อ่านตำแหน่งปัจจุบันแล้ว${accuracy} — ตรวจแล้วกดบันทึก`,
+        text: `อ่านตำแหน่งแล้ว${accuracy}`,
       });
       setLocating(false);
     };
     navigator.geolocation.getCurrentPosition(
       apply,
       () => {
-        // Retry without high accuracy.
         navigator.geolocation.getCurrentPosition(
           apply,
           (error) => {
             const text =
               error.code === error.PERMISSION_DENIED
-                ? "ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง — เปิดสิทธิ์ตำแหน่งในเบราว์เซอร์แล้วลองใหม่"
+                ? "ไม่ได้รับอนุญาตใช้ตำแหน่ง — เปิดสิทธิ์ในเบราว์เซอร์"
                 : error.code === error.POSITION_UNAVAILABLE
-                  ? "อ่านตำแหน่งไม่ได้ — ลองเปิด GPS หรือคลิกเลือกจุดบนแผนที่แทน"
-                  : "หมดเวลารอตำแหน่ง GPS — ลองใหม่อีกครั้ง หรือคลิกเลือกจุดบนแผนที่";
+                  ? "อ่านตำแหน่งไม่ได้ — ลองเปิด GPS หรือคลิกบนแผนที่"
+                  : "หมดเวลารอ GPS — ลองใหม่หรือคลิกบนแผนที่";
             setFeedback({ kind: "error", text });
             setLocating(false);
           },
@@ -162,11 +194,12 @@ export default function WorkLocationForm({
     event.preventDefault();
     setFeedback(null);
 
+    const resolvedName =
+      branchName(branches, values.branchId) || values.name.trim();
     const radius = Number(values.geofenceRadiusMeters);
     const next = compact({
-      name: requireText(values.name) ?? "",
-      branchId:
-        mode === "create" && !values.branchId ? "เลือกสาขา" : "",
+      branchId: !values.branchId ? "เลือกสาขาที่จะปักหมุด" : "",
+      name: !resolvedName ? "ไม่พบชื่อสาขา" : "",
       geofenceRadiusMeters:
         !Number.isFinite(radius) || radius < 1
           ? "รัศมีต้องเป็นจำนวนเมตรตั้งแต่ 1 ขึ้นไป"
@@ -176,12 +209,12 @@ export default function WorkLocationForm({
     });
     setErrors(next);
     if (Object.keys(next).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง" });
+      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูล" });
       return;
     }
 
     const payload = {
-      name: values.name.trim(),
+      name: resolvedName,
       branchId: values.branchId || undefined,
       latitude: Number(values.latitude),
       longitude: Number(values.longitude),
@@ -196,13 +229,13 @@ export default function WorkLocationForm({
             "/api/hr/work-locations",
             "POST",
             payload,
-            "สร้างสถานที่ทำงานเรียบร้อยแล้ว",
+            "บันทึกพิกัดสาขาแล้ว",
           )
         : await submitHrJson(
             `/api/hr/work-locations/${locationId}`,
             "PATCH",
             payload,
-            "บันทึกสถานที่ทำงานเรียบร้อยแล้ว",
+            "บันทึกพิกัดสาขาแล้ว",
           );
     setSaving(false);
 
@@ -217,9 +250,11 @@ export default function WorkLocationForm({
       return;
     }
     if (mode === "create") {
+      const nextBranchId = branches.length === 1 ? branches[0].id : "";
       setValues({
         ...DEFAULTS,
-        branchId: branches[0]?.id ?? "",
+        branchId: nextBranchId,
+        name: branchName(branches, nextBranchId),
       });
     }
     router.refresh();
@@ -253,77 +288,83 @@ export default function WorkLocationForm({
       delete next.longitude;
       return next;
     });
-    setFeedback({
-      kind: "success",
-      text: "เลือกจุดบนแผนที่แล้ว — ปรับรัศมีได้แล้วกดบันทึก",
-    });
+    setFeedback({ kind: "success", text: "เลือกจุดบนแผนที่แล้ว" });
   }
 
   return (
     <form
-      className={embedded ? "hr-location-form-embedded" : "card"}
+      className={
+        embedded ? "hr-settings-form hr-location-form-embedded" : "hr-settings-form"
+      }
       onSubmit={handleSubmit}
       noValidate
     >
       {embedded ? null : (
-        <h2>
-          {mode === "create" ? "เพิ่มสถานที่ทำงาน" : "แก้ไขสถานที่ทำงาน"}
-        </h2>
+        <h2>{mode === "create" ? "ตั้งพิกัดสาขา" : "แก้ไขพิกัดสาขา"}</h2>
       )}
-      <p className="muted" style={{ marginTop: 0 }}>
-        ตั้งพิกัดและรัศมี GPS สำหรับลงเวลา — พนักงานต้องอยู่ในระยะนี้จึงลงเวลาได้
+      <p className="hr-settings-form-lead">
+        ปักหมุดและรัศมีสำหรับลงเวลา
       </p>
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
-      <div className="form-grid">
-        <Field id="loc-name" label="ชื่อสถานที่" required error={errors.name}>
-          <input
-            {...fieldProps("loc-name", errors.name)}
-            value={values.name}
-            onChange={(e) => setValues({ ...values, name: e.target.value })}
-            placeholder="เช่น สำนักงานใหญ่"
-            disabled={busy}
-          />
-        </Field>
-
-        {mode === "create" ? (
-          <Field id="loc-branch" label="สาขา" required error={errors.branchId}>
-            {branches.length === 0 ? (
-              <p className="field-error">ไม่พบสาขาในบริบทปัจจุบัน</p>
-            ) : (
-              <select
-                {...fieldProps("loc-branch", errors.branchId)}
-                value={values.branchId}
-                onChange={(e) =>
-                  setValues({ ...values, branchId: e.target.value })
-                }
-                disabled={busy}
-              >
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
-        ) : null}
-
-        <div className="hr-gps-capture field-full">
-          <button
-            type="button"
-            className="btn"
-            onClick={captureCurrentGps}
-            disabled={busy}
-          >
-            {locating ? "กำลังอ่านตำแหน่ง…" : "ใช้ตำแหน่งปัจจุบัน"}
-          </button>
-          <p className="muted" style={{ margin: "0.35rem 0 0" }}>
-            อ่าน GPS จากอุปกรณ์ หรือคลิกเลือกจุดบนแผนที่ — แก้ค่ามือได้ก่อนบันทึก
-          </p>
+      <section className="hr-settings-panel">
+        <header className="hr-leave-panel-head">
+          <h2>สาขา</h2>
+          <p>ชื่อพิกัดใช้ตามสาขา</p>
+        </header>
+        <div className="hr-settings-inner-card">
+          {branchLocked ? (
+            <div className="field">
+              <label>สาขา</label>
+              <p className="hr-location-branch-locked">{resolvedBranchLabel}</p>
+            </div>
+          ) : (
+            <Field
+              id="loc-branch"
+              label="สาขาที่จะปักหมุด"
+              required
+              error={errors.branchId || errors.name}
+            >
+              {branches.length === 0 ? (
+                <p className="field-error">
+                  ไม่พบสาขา — เลือกสาขาจากแถบบน หรือเพิ่มสาขาก่อน
+                </p>
+              ) : (
+                <select
+                  {...fieldProps("loc-branch", errors.branchId || errors.name)}
+                  value={values.branchId}
+                  onChange={(e) => selectBranch(e.target.value)}
+                  disabled={busy || mode === "edit"}
+                >
+                  <option value="">เลือกสาขา</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          )}
         </div>
+      </section>
 
-        <div className="field-full">
+      <section className="hr-settings-panel">
+        <header className="hr-leave-panel-head">
+          <h2>แผนที่</h2>
+          <p>คลิกแผนที่หรือใช้ตำแหน่งปัจจุบัน</p>
+        </header>
+        <div className="hr-settings-inner-card">
+          <div className="hr-gps-capture">
+            <button
+              type="button"
+              className="btn"
+              onClick={captureCurrentGps}
+              disabled={busy}
+            >
+              {locating ? "กำลังอ่านตำแหน่ง…" : "ใช้ตำแหน่งปัจจุบัน"}
+            </button>
+          </div>
           <WorkLocationMap
             latitude={mapLatitude}
             longitude={mapLongitude}
@@ -333,51 +374,71 @@ export default function WorkLocationForm({
             onPick={applyMapPick}
           />
         </div>
+      </section>
 
-        <Field id="loc-lat" label="ละติจูด" required error={errors.latitude}>
-          <input
-            {...fieldProps("loc-lat", errors.latitude)}
-            value={values.latitude}
-            onChange={(e) => setValues({ ...values, latitude: e.target.value })}
-            placeholder="13.7563"
-            inputMode="decimal"
-            disabled={busy}
-          />
-        </Field>
+      <section className="hr-settings-panel">
+        <header className="hr-leave-panel-head">
+          <h2>พิกัดและรัศมี</h2>
+          <p>ปรับค่ามือได้ก่อนบันทึก</p>
+        </header>
+        <div className="hr-settings-inner-card">
+          <div className="form-grid">
+            <Field id="loc-lat" label="ละติจูด" required error={errors.latitude}>
+              <input
+                {...fieldProps("loc-lat", errors.latitude)}
+                value={values.latitude}
+                onChange={(e) =>
+                  setValues({ ...values, latitude: e.target.value })
+                }
+                placeholder="13.7563"
+                inputMode="decimal"
+                disabled={busy}
+              />
+            </Field>
 
-        <Field id="loc-lng" label="ลองจิจูด" required error={errors.longitude}>
-          <input
-            {...fieldProps("loc-lng", errors.longitude)}
-            value={values.longitude}
-            onChange={(e) =>
-              setValues({ ...values, longitude: e.target.value })
-            }
-            placeholder="100.5018"
-            inputMode="decimal"
-            disabled={busy}
-          />
-        </Field>
+            <Field
+              id="loc-lng"
+              label="ลองจิจูด"
+              required
+              error={errors.longitude}
+            >
+              <input
+                {...fieldProps("loc-lng", errors.longitude)}
+                value={values.longitude}
+                onChange={(e) =>
+                  setValues({ ...values, longitude: e.target.value })
+                }
+                placeholder="100.5018"
+                inputMode="decimal"
+                disabled={busy}
+              />
+            </Field>
 
-        <Field
-          id="loc-radius"
-          label="รัศมี GPS (เมตร)"
-          required
-          hint="ระยะที่อนุญาตให้ลงเวลาจากหมุด — แนะนำ 50–100 ม. ขึ้นไป (มือถือมักคลาดเคลื่อน 20–50 ม.)"
-          error={errors.geofenceRadiusMeters}
-        >
-          <input
-            {...fieldProps("loc-radius", errors.geofenceRadiusMeters)}
-            type="number"
-            min={1}
-            step={1}
-            value={values.geofenceRadiusMeters}
-            onChange={(e) =>
-              setValues({ ...values, geofenceRadiusMeters: e.target.value })
-            }
-            disabled={busy}
-          />
-        </Field>
-      </div>
+            <Field
+              id="loc-radius"
+              label="รัศมี (เมตร)"
+              required
+              hint="แนะนำ 50–100 ม."
+              error={errors.geofenceRadiusMeters}
+            >
+              <input
+                {...fieldProps("loc-radius", errors.geofenceRadiusMeters)}
+                type="number"
+                min={1}
+                step={1}
+                value={values.geofenceRadiusMeters}
+                onChange={(e) =>
+                  setValues({
+                    ...values,
+                    geofenceRadiusMeters: e.target.value,
+                  })
+                }
+                disabled={busy}
+              />
+            </Field>
+          </div>
+        </div>
+      </section>
 
       <div className="form-actions">
         <button
@@ -385,11 +446,7 @@ export default function WorkLocationForm({
           className="btn btn-primary"
           disabled={busy || (mode === "create" && branches.length === 0)}
         >
-          {saving
-            ? "กำลังบันทึก…"
-            : mode === "create"
-              ? "เพิ่มสถานที่"
-              : "บันทึก"}
+          {saving ? "กำลังบันทึก…" : "บันทึกพิกัด"}
         </button>
         {onCancel || mode === "edit" ? (
           <button

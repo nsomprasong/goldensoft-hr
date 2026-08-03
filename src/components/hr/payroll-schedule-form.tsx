@@ -39,12 +39,18 @@ export default function PayrollScheduleForm({
   initialValues,
   payFrequencies,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   mode: "create" | "edit";
   scheduleId?: string;
   initialValues?: Partial<PayrollScheduleFormValues>;
   payFrequencies: Array<{ id: string; label: string }>;
   disabled?: boolean;
+  embedded?: boolean;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<PayrollScheduleFormValues>({
@@ -72,11 +78,10 @@ export default function PayrollScheduleForm({
     });
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง" });
+      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูล" });
       return;
     }
 
-    // The tenant-scoped code is immutable, so PATCH never sends it.
     const payload = {
       name: values.name.trim(),
       payFrequencyId: values.payFrequencyId,
@@ -109,37 +114,37 @@ export default function PayrollScheduleForm({
       return;
     }
 
+    if (onDone) {
+      onDone();
+      return;
+    }
+
     setFeedback({ kind: "success", text: result.message });
     if (mode === "create") setValues(EMPTY);
     router.refresh();
   }
 
+  const busy = saving || disabled;
+
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "เพิ่มรอบจ่ายใหม่" : "แก้ไขรอบจ่าย"}</h2>
+    <form
+      className={embedded ? "hr-shift-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <h2>{mode === "create" ? "เพิ่มรอบจ่ายใหม่" : "แก้ไขรอบจ่าย"}</h2>
+      )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        {mode === "edit" ? (
-          <Field
-            id="sched-code"
-            label="รหัสรอบจ่าย"
-            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
-          >
-            <input {...fieldProps("sched-code")} value={values.code} readOnly />
-          </Field>
-        ) : (
-          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            รหัสรอบจ่ายจะถูกสร้างอัตโนมัติเมื่อบันทึก
-          </p>
-        )}
-
         <Field id="sched-name" label="ชื่อรอบจ่าย" required error={errors.name}>
           <input
             {...fieldProps("sched-name", errors.name)}
             value={values.name}
             onChange={(e) => setValues({ ...values, name: e.target.value })}
             placeholder="เงินเดือนรายเดือน"
+            disabled={busy}
           />
         </Field>
 
@@ -155,6 +160,7 @@ export default function PayrollScheduleForm({
             onChange={(e) =>
               setValues({ ...values, payFrequencyId: e.target.value })
             }
+            disabled={busy}
           >
             <option value="">— เลือกความถี่ —</option>
             {payFrequencies.map((item) => (
@@ -170,7 +176,7 @@ export default function PayrollScheduleForm({
           label="กติกาวันเริ่มงวด"
           required
           error={errors.periodStartRule}
-          hint="เช่น DAY_1 หรือ DAY_16"
+          hint="เช่น DAY:1 หรือ DAY:16"
         >
           <input
             {...fieldProps("sched-periodStartRule", errors.periodStartRule)}
@@ -178,6 +184,7 @@ export default function PayrollScheduleForm({
             onChange={(e) =>
               setValues({ ...values, periodStartRule: e.target.value })
             }
+            disabled={busy}
           />
         </Field>
 
@@ -186,7 +193,7 @@ export default function PayrollScheduleForm({
           label="กติกาวันสิ้นงวด"
           required
           error={errors.periodEndRule}
-          hint="เช่น DAY_15 หรือ LAST_DAY"
+          hint="เช่น END_OF_MONTH"
         >
           <input
             {...fieldProps("sched-periodEndRule", errors.periodEndRule)}
@@ -194,6 +201,7 @@ export default function PayrollScheduleForm({
             onChange={(e) =>
               setValues({ ...values, periodEndRule: e.target.value })
             }
+            disabled={busy}
           />
         </Field>
 
@@ -202,7 +210,7 @@ export default function PayrollScheduleForm({
           label="กติกาวันจ่ายเงิน"
           required
           error={errors.paymentDayRule}
-          hint="เช่น LAST_DAY หรือ DAY_5_NEXT_MONTH"
+          hint="เช่น END_OF_PERIOD"
         >
           <input
             {...fieldProps("sched-paymentDayRule", errors.paymentDayRule)}
@@ -210,6 +218,7 @@ export default function PayrollScheduleForm({
             onChange={(e) =>
               setValues({ ...values, paymentDayRule: e.target.value })
             }
+            disabled={busy}
           />
         </Field>
 
@@ -218,23 +227,23 @@ export default function PayrollScheduleForm({
             {...fieldProps("sched-timezone", errors.timezone)}
             value={values.timezone}
             onChange={(e) => setValues({ ...values, timezone: e.target.value })}
+            disabled={busy}
           />
         </Field>
       </div>
 
       <div className="form-actions">
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={saving || disabled}
-        >
+        <button type="submit" className="btn btn-primary" disabled={busy}>
           {saving ? "กำลังบันทึก…" : mode === "create" ? "เพิ่มรอบจ่าย" : "บันทึก"}
         </button>
-        {mode === "edit" ? (
+        {onCancel || mode === "edit" ? (
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/hr/settings/payroll-schedules")}
+            onClick={() => {
+              if (onCancel) onCancel();
+              else router.push("/hr/settings/payroll-schedules");
+            }}
             disabled={saving}
           >
             ยกเลิก

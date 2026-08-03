@@ -82,8 +82,7 @@ export default function FaceMatchingSettingsForm({
 
       <form className="card" onSubmit={handleSubmit} noValidate>
         <p className="field-hint" style={{ marginBottom: "1rem" }}>
-          พนักงานลงทะเบียนใบหน้าที่หน้า «ลงทะเบียนใบหน้า» — ตอนลงเวลา
-          ระบบเปรียบเทียบใบหน้าในรูปกับที่ลงทะเบียนไว้
+          พนักงานลงทะเบียนใบหน้าก่อน แล้วระบบจะจับคู่ตอนลงเวลา
         </p>
 
         <div className="form-grid">
@@ -117,12 +116,12 @@ export default function FaceMatchingSettingsForm({
               onChange={(e) => setMatchThreshold(e.target.value)}
             />
             <p className="field-hint">
-              ค่ายิ่งต่ำยิ่งเข้มงวด — ค่าเริ่มต้น 0.55 (face-api)
+              ค่ายิ่งต่ำยิ่งเข้มงวด — ค่าเริ่มต้น 0.55
             </p>
           </Field>
         </div>
 
-        <div className="inline-actions" style={{ marginTop: "1rem" }}>
+        <div className="form-actions">
           <button
             type="submit"
             className="btn btn-primary"

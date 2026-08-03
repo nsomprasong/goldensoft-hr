@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import FaceMatchingSettingsForm from "@/components/hr/face-matching-settings-form";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { getAttendanceFaceSettings } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -25,9 +26,10 @@ export default async function FaceMatchingSettingsPage() {
     <HrShell ctx={ctx}>
       <div className="hr-page-head">
         <div>
-          <h1>ตรวจใบหน้าตอนลงเวลา</h1>
-          <p>ตั้งค่าโหมดจับคู่ใบหน้าขององค์กร (Phase 8)</p>
+          <h1>ตรวจใบหน้า</h1>
+          <p>โหมดจับคู่ใบหน้าตอนลงเวลา</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={settings.message} />

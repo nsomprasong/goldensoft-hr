@@ -29,13 +29,17 @@ export default function DepartmentForm({
   departmentId,
   initialValues,
   disabled = false,
+  embedded = false,
   onDone,
+  onCancel,
 }: {
   mode: "create" | "edit";
   departmentId?: string;
   initialValues?: Partial<DepartmentFormValues>;
   disabled?: boolean;
+  embedded?: boolean;
   onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<DepartmentFormValues>({
@@ -58,13 +62,10 @@ export default function DepartmentForm({
     });
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง" });
+      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูล" });
       return;
     }
 
-    // The tenant-scoped code is immutable, so PATCH never sends it.
-    // On create the server allocates DEPT-#### automatically.
-    // nameEn is mirrored from nameTh on the server.
     const payload = {
       nameTh: values.nameTh.trim(),
       description: values.description.trim() || null,
@@ -93,42 +94,35 @@ export default function DepartmentForm({
       return;
     }
 
+    if (onDone) {
+      onDone();
+      return;
+    }
+
     setFeedback({ kind: "success", text: result.message });
     if (mode === "create") setValues(EMPTY);
     router.refresh();
-    onDone?.();
   }
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "เพิ่มแผนกใหม่" : "แก้ไขแผนก"}</h2>
+    <form
+      className={embedded ? "hr-shift-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <h2>{mode === "create" ? "เพิ่มแผนกใหม่" : "แก้ไขแผนก"}</h2>
+      )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        {mode === "edit" ? (
-          <Field
-            id="dept-code"
-            label="รหัสแผนก"
-            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
-          >
-            <input
-              {...fieldProps("dept-code")}
-              value={values.code}
-              readOnly
-            />
-          </Field>
-        ) : (
-          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            รหัสแผนกจะถูกสร้างอัตโนมัติเมื่อบันทึก
-          </p>
-        )}
-
         <Field id="dept-nameTh" label="ชื่อแผนก" required error={errors.nameTh}>
           <input
             {...fieldProps("dept-nameTh", errors.nameTh)}
             value={values.nameTh}
             onChange={(e) => setValues({ ...values, nameTh: e.target.value })}
-            placeholder="พิมพ์ได้ทั้งไทยและอังกฤษ"
+            placeholder="ชื่อแผนก"
+            disabled={saving || disabled}
           />
         </Field>
 
@@ -139,6 +133,7 @@ export default function DepartmentForm({
             onChange={(e) =>
               setValues({ ...values, description: e.target.value })
             }
+            disabled={saving || disabled}
           />
         </Field>
       </div>
@@ -151,11 +146,14 @@ export default function DepartmentForm({
         >
           {saving ? "กำลังบันทึก…" : mode === "create" ? "เพิ่มแผนก" : "บันทึก"}
         </button>
-        {mode === "edit" ? (
+        {onCancel || mode === "edit" ? (
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/hr/settings/departments")}
+            onClick={() => {
+              if (onCancel) onCancel();
+              else router.push("/hr/settings/departments");
+            }}
             disabled={saving}
           >
             ยกเลิก

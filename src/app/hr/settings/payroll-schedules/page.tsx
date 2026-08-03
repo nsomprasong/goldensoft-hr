@@ -1,8 +1,6 @@
-import Link from "next/link";
-
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
-import PayrollScheduleForm from "@/components/hr/payroll-schedule-form";
-import ToggleActiveButton from "@/components/hr/toggle-active-button";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
+import PayrollSchedulesWorkspace from "@/components/hr/payroll-schedules-workspace";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -44,98 +42,20 @@ export default async function PayrollSchedulesPage({
       <div className="hr-page-head">
         <div>
           <h1>รอบจ่าย</h1>
-          <p>กติกาการสร้างงวดเงินเดือนขององค์กร {ctx.organizationName}</p>
+          <p>กติกาการสร้างงวดเงินเดือน</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />
 
-      {schedules.data.length === 0 ? (
-        <p className="empty">ยังไม่มีรอบจ่ายในองค์กรนี้</p>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>รหัส</th>
-                <th>ชื่อ</th>
-                <th>ความถี่</th>
-                <th>เริ่มงวด</th>
-                <th>สิ้นงวด</th>
-                <th>วันจ่าย</th>
-                <th>สถานะ</th>
-                {canManage ? <th>จัดการ</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.data.map((row) => (
-                <tr key={row.id}>
-                  <td className="nowrap">{row.code}</td>
-                  <td>{row.name}</td>
-                  <td>{row.payFrequencyNameTh}</td>
-                  <td className="nowrap">{row.periodStartRule}</td>
-                  <td className="nowrap">{row.periodEndRule}</td>
-                  <td className="nowrap">{row.paymentDayRule}</td>
-                  <td>
-                    <span
-                      className={
-                        row.isActive ? "badge badge-active" : "badge badge-inactive"
-                      }
-                    >
-                      {row.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
-                    </span>
-                  </td>
-                  {canManage ? (
-                    <td>
-                      <span className="inline-actions">
-                        <Link
-                          className="btn btn-sm"
-                          href={`/hr/settings/payroll-schedules?edit=${row.id}`}
-                        >
-                          แก้ไข
-                        </Link>
-                        <ToggleActiveButton
-                          resource="payroll-schedules"
-                          id={row.id}
-                          isActive={row.isActive}
-                          disabled={!availability.available}
-                        />
-                      </span>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {canManage ? (
-        editing ? (
-          <PayrollScheduleForm
-            key={editing.id}
-            mode="edit"
-            scheduleId={editing.id}
-            payFrequencies={frequencyOptions}
-            disabled={!availability.available}
-            initialValues={{
-              code: editing.code,
-              name: editing.name,
-              payFrequencyId: editing.payFrequencyId,
-              periodStartRule: editing.periodStartRule,
-              periodEndRule: editing.periodEndRule,
-              paymentDayRule: editing.paymentDayRule,
-              timezone: editing.timezone,
-            }}
-          />
-        ) : (
-          <PayrollScheduleForm
-            mode="create"
-            payFrequencies={frequencyOptions}
-            disabled={!availability.available}
-          />
-        )
-      ) : null}
+      <PayrollSchedulesWorkspace
+        schedules={schedules.data}
+        payFrequencies={frequencyOptions}
+        editing={editing}
+        available={availability.available}
+        canManage={canManage}
+      />
     </HrShell>
   );
 }

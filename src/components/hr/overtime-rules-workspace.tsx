@@ -7,26 +7,26 @@ import { useEffect, useId, useState } from "react";
 import HrSettingsViewToggle, {
   useSettingsViewMode,
 } from "@/components/hr/hr-settings-view-toggle";
-import ShiftForm, { type ShiftFormValues } from "@/components/hr/shift-form";
+import OvertimeRuleForm, {
+  type OvertimeRuleFormValues,
+} from "@/components/hr/overtime-rule-form";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrButton from "@/components/ui/hr-button";
-import type { ShiftRow } from "@/lib/hr/data";
+import type { OvertimeRuleRow } from "@/lib/hr/data";
+import { formatThaiDate } from "@/lib/hr/thai-date";
 
-type BranchOption = { id: string; label: string };
-type ShiftTypeOption = { id: string; label: string };
+const BASE = "/hr/settings/overtime-rules";
 
-export default function ShiftsWorkspace({
-  shifts,
-  shiftTypes,
-  branches,
+export default function OvertimeRulesWorkspace({
+  rules,
+  rateTypes,
   editing,
   available,
   canManage,
 }: {
-  shifts: ShiftRow[];
-  shiftTypes: ShiftTypeOption[];
-  branches: BranchOption[];
-  editing: ShiftRow | null;
+  rules: OvertimeRuleRow[];
+  rateTypes: Array<{ id: string; label: string }>;
+  editing: OvertimeRuleRow | null;
   available: boolean;
   canManage: boolean;
 }) {
@@ -34,7 +34,7 @@ export default function ShiftsWorkspace({
   const titleId = useId();
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useSettingsViewMode(
-    "hr.settings.shifts.viewMode",
+    "hr.settings.overtime.viewMode",
   );
 
   const open = creating || editing != null;
@@ -51,21 +51,17 @@ export default function ShiftsWorkspace({
 
   function closeOverlay() {
     setCreating(false);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function openCreate() {
     setCreating(true);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function handleDone() {
     setCreating(false);
-    router.push("/hr/settings/shifts");
+    router.push(BASE);
     router.refresh();
   }
 
@@ -74,45 +70,38 @@ export default function ShiftsWorkspace({
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       setCreating(false);
-      if (editing) router.push("/hr/settings/shifts");
+      if (editing) router.push(BASE);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, editing, router]);
 
-  const editInitial: Partial<ShiftFormValues> | undefined = editing
+  const editInitial: Partial<OvertimeRuleFormValues> | undefined = editing
     ? {
+        code: editing.code,
         name: editing.name,
-        shiftTypeId: editing.shiftTypeId,
-        branchId: editing.branchId ?? "",
-        startTime: editing.startTime,
-        endTime: editing.endTime,
-        breakMinutes: String(editing.breakMinutes),
-        graceLateMinutes: String(editing.graceLateMinutes),
-        graceEarlyLeaveMinutes: String(editing.graceEarlyLeaveMinutes),
-        overtimeAfterMinutes:
-          editing.overtimeAfterMinutes === null
-            ? ""
-            : String(editing.overtimeAfterMinutes),
-        crossesMidnight: editing.crossesMidnight,
+        rateTypeId: editing.rateTypeId,
+        multiplier: String(editing.multiplier),
+        fixedAmount:
+          editing.fixedAmount === null ? "" : String(editing.fixedAmount),
+        effectiveFrom: editing.effectiveFrom,
+        effectiveTo: editing.effectiveTo ?? "",
       }
     : undefined;
 
-  const branchLabelById = new Map(branches.map((b) => [b.id, b.label]));
-
-  function renderActions(row: ShiftRow) {
+  function renderActions(row: OvertimeRuleRow) {
     if (!canManage) return null;
     return (
       <div className="hr-settings-item-actions">
         <Link
           className="btn btn-sm"
-          href={`/hr/settings/shifts?edit=${row.id}`}
+          href={`${BASE}?edit=${row.id}`}
           onClick={() => setCreating(false)}
         >
           แก้ไข
         </Link>
         <ToggleActiveButton
-          resource="shifts"
+          resource="overtime-rules"
           id={row.id}
           isActive={row.isActive}
           disabled={!available}
@@ -121,16 +110,32 @@ export default function ShiftsWorkspace({
     );
   }
 
+  function fixedLabel(row: OvertimeRuleRow) {
+    if (row.fixedAmount === null) return null;
+    return row.fixedAmount.toLocaleString("th-TH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function effectiveLabel(row: OvertimeRuleRow) {
+    return `${formatThaiDate(row.effectiveFrom)}${
+      row.effectiveTo
+        ? ` – ${formatThaiDate(row.effectiveTo)}`
+        : " เป็นต้นไป"
+    }`;
+  }
+
   return (
     <>
-      {shifts.length === 0 ? (
-        <p className="empty">ยังไม่มีกะงานในองค์กรนี้</p>
+      {rules.length === 0 ? (
+        <p className="empty">ยังไม่มีกฎ OT ในองค์กรนี้</p>
       ) : (
         <section className="hr-settings-panel">
           <HrSettingsViewToggle
             viewMode={viewMode}
             onChange={setViewMode}
-            count={shifts.length}
+            count={rules.length}
           />
           <div
             className={
@@ -139,19 +144,16 @@ export default function ShiftsWorkspace({
                 : "hr-settings-list"
             }
           >
-            {shifts.map((row) => {
-              const branchLabel = row.branchId
-                ? (branchLabelById.get(row.branchId) ?? null)
-                : null;
-              const timeLabel = `${row.startTime} – ${row.endTime}${
-                row.crossesMidnight ? " (ข้ามวัน)" : ""
-              }`;
+            {rules.map((row) => {
+              const fixed = fixedLabel(row);
               const meta = [
-                row.shiftTypeNameTh,
-                timeLabel,
-                `พัก ${row.breakMinutes} นาที`,
-                branchLabel ?? "ทุกสาขา",
-              ].join(" · ");
+                row.rateTypeNameTh,
+                `×${row.multiplier}`,
+                fixed ? `${fixed} บาท` : null,
+                effectiveLabel(row),
+              ]
+                .filter(Boolean)
+                .join(" · ");
               return (
                 <article
                   key={row.id}
@@ -190,8 +192,8 @@ export default function ShiftsWorkspace({
           className="hr-fab"
           onClick={openCreate}
           disabled={!available}
-          aria-label="เพิ่มกะงาน"
-          title="เพิ่มกะงาน"
+          aria-label="เพิ่มกฎ OT"
+          title="เพิ่มกฎ OT"
         >
           <span aria-hidden="true">+</span>
         </button>
@@ -213,7 +215,7 @@ export default function ShiftsWorkspace({
           >
             <div className="hr-overlay-head">
               <h2 id={titleId}>
-                {mode === "create" ? "เพิ่มกะงาน" : "แก้ไขกะงาน"}
+                {mode === "create" ? "เพิ่มกฎ OT" : "แก้ไขกฎ OT"}
               </h2>
               <HrButton
                 type="button"
@@ -225,12 +227,11 @@ export default function ShiftsWorkspace({
               </HrButton>
             </div>
             <div className="hr-overlay-body">
-              <ShiftForm
+              <OvertimeRuleForm
                 key={editing?.id ?? "create"}
                 mode={mode}
-                shiftId={editing?.id}
-                shiftTypes={shiftTypes}
-                branches={branches}
+                overtimeRuleId={editing?.id}
+                rateTypes={rateTypes}
                 disabled={!available}
                 initialValues={editInitial}
                 embedded

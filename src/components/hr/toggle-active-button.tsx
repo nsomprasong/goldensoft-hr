@@ -21,7 +21,7 @@ const RESOURCE_LABEL: Record<HrResource, string> = {
   shifts: "กะงาน",
   "overtime-rules": "กฎ OT",
   "payroll-schedules": "รอบจ่าย",
-  "work-locations": "สถานที่ทำงาน",
+  "work-locations": "พิกัดสาขา",
 };
 
 /**

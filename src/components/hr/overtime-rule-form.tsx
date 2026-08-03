@@ -14,6 +14,7 @@ import {
   validatePositiveNumber,
   type FieldErrors,
 } from "@/components/hr/form-utils";
+import ThaiDateInput from "@/components/hr/thai-date-input";
 
 export type OvertimeRuleFormValues = {
   code: string;
@@ -41,12 +42,18 @@ export default function OvertimeRuleForm({
   initialValues,
   rateTypes,
   disabled = false,
+  embedded = false,
+  onDone,
+  onCancel,
 }: {
   mode: "create" | "edit";
   overtimeRuleId?: string;
   initialValues?: Partial<OvertimeRuleFormValues>;
   rateTypes: Array<{ id: string; label: string }>;
   disabled?: boolean;
+  embedded?: boolean;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<OvertimeRuleFormValues>({
@@ -76,11 +83,10 @@ export default function OvertimeRuleForm({
     });
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
-      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูลที่ยังไม่ถูกต้อง" });
+      setFeedback({ kind: "error", text: "กรุณาตรวจสอบข้อมูล" });
       return;
     }
 
-    // The tenant-scoped code is immutable, so PATCH never sends it.
     const payload = {
       name: values.name.trim(),
       rateTypeId: values.rateTypeId,
@@ -115,37 +121,37 @@ export default function OvertimeRuleForm({
       return;
     }
 
+    if (onDone) {
+      onDone();
+      return;
+    }
+
     setFeedback({ kind: "success", text: result.message });
     if (mode === "create") setValues(EMPTY);
     router.refresh();
   }
 
+  const busy = saving || disabled;
+
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
-      <h2>{mode === "create" ? "เพิ่มกฎ OT ใหม่" : "แก้ไขกฎ OT"}</h2>
+    <form
+      className={embedded ? "hr-shift-form-embedded" : "card"}
+      onSubmit={handleSubmit}
+      noValidate
+    >
+      {embedded ? null : (
+        <h2>{mode === "create" ? "เพิ่มกฎ OT ใหม่" : "แก้ไขกฎ OT"}</h2>
+      )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <div className="form-grid">
-        {mode === "edit" ? (
-          <Field
-            id="ot-code"
-            label="รหัสกฎ OT"
-            hint="ระบบสร้างให้อัตโนมัติ และแก้ไขไม่ได้"
-          >
-            <input {...fieldProps("ot-code")} value={values.code} readOnly />
-          </Field>
-        ) : (
-          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
-            รหัสกฎ OT จะถูกสร้างอัตโนมัติเมื่อบันทึก
-          </p>
-        )}
-
         <Field id="ot-name" label="ชื่อกฎ OT" required error={errors.name}>
           <input
             {...fieldProps("ot-name", errors.name)}
             value={values.name}
             onChange={(e) => setValues({ ...values, name: e.target.value })}
             placeholder="ค่าล่วงเวลาวันทำงานปกติ"
+            disabled={busy}
           />
         </Field>
 
@@ -161,6 +167,7 @@ export default function OvertimeRuleForm({
             onChange={(e) =>
               setValues({ ...values, rateTypeId: e.target.value })
             }
+            disabled={busy}
           >
             <option value="">— เลือกประเภทอัตรา —</option>
             {rateTypes.map((item) => (
@@ -176,7 +183,7 @@ export default function OvertimeRuleForm({
           label="ตัวคูณ"
           required
           error={errors.multiplier}
-          hint="ต้องมากกว่า 0 เช่น 1.5 หรือ 3"
+          hint="เช่น 1.5 หรือ 3"
         >
           <input
             {...fieldProps("ot-multiplier", errors.multiplier)}
@@ -187,14 +194,15 @@ export default function OvertimeRuleForm({
             onChange={(e) =>
               setValues({ ...values, multiplier: e.target.value })
             }
+            disabled={busy}
           />
         </Field>
 
         <Field
           id="ot-fixedAmount"
-          label="จำนวนเงินคงที่ (บาท)"
+          label="เงินคงที่ (บาท)"
           error={errors.fixedAmount}
-          hint="เว้นว่างได้ ถ้าระบุต้องไม่ติดลบ"
+          hint="เว้นว่างได้"
         >
           <input
             {...fieldProps("ot-fixedAmount", errors.fixedAmount)}
@@ -205,6 +213,7 @@ export default function OvertimeRuleForm({
             onChange={(e) =>
               setValues({ ...values, fixedAmount: e.target.value })
             }
+            disabled={busy}
           />
         </Field>
 
@@ -214,13 +223,12 @@ export default function OvertimeRuleForm({
           required
           error={errors.effectiveFrom}
         >
-          <input
+          <ThaiDateInput
             {...fieldProps("ot-effectiveFrom", errors.effectiveFrom)}
-            type="date"
             value={values.effectiveFrom}
-            onChange={(e) =>
-              setValues({ ...values, effectiveFrom: e.target.value })
-            }
+            onChange={(iso) => setValues({ ...values, effectiveFrom: iso })}
+            disabled={busy}
+            required
           />
         </Field>
 
@@ -228,15 +236,13 @@ export default function OvertimeRuleForm({
           id="ot-effectiveTo"
           label="สิ้นสุด"
           error={errors.effectiveTo}
-          hint="เว้นว่างหมายถึงยังไม่กำหนด"
+          hint="เว้นว่าง = ยังไม่กำหนด"
         >
-          <input
+          <ThaiDateInput
             {...fieldProps("ot-effectiveTo", errors.effectiveTo)}
-            type="date"
             value={values.effectiveTo}
-            onChange={(e) =>
-              setValues({ ...values, effectiveTo: e.target.value })
-            }
+            onChange={(iso) => setValues({ ...values, effectiveTo: iso })}
+            disabled={busy}
           />
         </Field>
       </div>
@@ -245,15 +251,18 @@ export default function OvertimeRuleForm({
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={saving || disabled}
+          disabled={busy}
         >
           {saving ? "กำลังบันทึก…" : mode === "create" ? "เพิ่มกฎ OT" : "บันทึก"}
         </button>
-        {mode === "edit" ? (
+        {onCancel || mode === "edit" ? (
           <button
             type="button"
             className="btn"
-            onClick={() => router.push("/hr/settings/overtime-rules")}
+            onClick={() => {
+              if (onCancel) onCancel();
+              else router.push("/hr/settings/overtime-rules");
+            }}
             disabled={saving}
           >
             ยกเลิก

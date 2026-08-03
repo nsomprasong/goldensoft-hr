@@ -169,7 +169,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
   {
     key: "payrollDeductions",
     path: `${HR_ROUTE_PREFIX}/settings/payroll-deductions`,
-    labelTh: "ภาษีและประกันสังคม",
+    labelTh: "ภาษี/ประกันสังคม",
     nav: true,
     requiredPermissions: [
       HR_PERMISSIONS.payrollManage,
@@ -309,7 +309,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
   {
     key: "locations",
     path: `${HR_ROUTE_PREFIX}/locations`,
-    labelTh: "สถานที่ทำงาน",
+    labelTh: "ตั้งพิกัดสาขา",
     nav: false,
     requiredPermissions: [HR_PERMISSIONS.locationManage],
     requiredEntitlements: [HR_ENTITLEMENTS.access],
@@ -449,7 +449,7 @@ export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
     requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
   {
-    key: "settings", path: `${HR_ROUTE_PREFIX}/settings`, labelTh: "ตั้งค่า HR", nav: true,
+    key: "settings", path: `${HR_ROUTE_PREFIX}/settings`, labelTh: "ตั้งค่า HR", nav: false,
     requiredPermissions: [HR_PERMISSIONS.settingsManage], requiredEntitlements: [HR_ENTITLEMENTS.access],
   },
 ] as const;

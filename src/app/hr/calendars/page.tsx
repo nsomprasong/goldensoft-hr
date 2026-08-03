@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import CalendarsWorkspace from "@/components/hr/calendars-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   listHolidayTypeOptions,
@@ -30,9 +31,10 @@ export default async function CalendarsPage({
     <HrShell ctx={ctx} active="calendars">
       <div className="hr-page-head">
         <div>
-          <h1>ปฏิทินวันทำงาน</h1>
-          <p>กำหนดวันทำงานและวันหยุดขององค์กร</p>
+          <h1>ปฏิทินทำงาน</h1>
+          <p>วันทำงานและวันหยุดขององค์กร</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={unavailable} />

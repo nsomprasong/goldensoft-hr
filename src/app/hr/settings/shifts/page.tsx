@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import ShiftsWorkspace from "@/components/hr/shifts-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -51,6 +52,7 @@ export default async function ShiftsPage({
           <h1>กะงาน</h1>
           <p>แม่แบบเวลาเข้า–ออกงาน สำหรับใช้จัดตารางและลงเวลา</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

@@ -88,31 +88,29 @@ export default function CalendarsWorkspace({
           {calendars.length === 0 ? (
             <p className="empty">ยังไม่มีปฏิทิน — กด + เพื่อสร้าง</p>
           ) : (
-            <div className="hr-card-grid">
-              {calendars.map((row) => (
-                <article key={row.id} className="card hr-entity-card">
-                  <div className="hr-entity-card-top">
-                    <div className="hr-entity-card-title-wrap">
-                      <h2 className="hr-entity-card-title">
+            <section className="hr-settings-panel">
+              <div className="hr-settings-list">
+                {calendars.map((row) => (
+                  <article key={row.id} className="hr-settings-item">
+                    <div className="hr-settings-item-main">
+                      <strong className="hr-settings-item-title">
                         <Link href={`/hr/calendars?id=${row.id}`}>{row.name}</Link>
-                      </h2>
+                      </strong>
+                      <span className="hr-settings-item-meta">
+                        {formatWorkDaysCompact(row.workDays)}
+                        {" · "}
+                        {row.holidays.length} วันหยุด
+                      </span>
                     </div>
-                    <span className="badge">{row.holidays.length} วันหยุด</span>
-                  </div>
-                  <dl className="hr-entity-card-meta">
-                    <div>
-                      <dt>วันทำงาน</dt>
-                      <dd>{formatWorkDaysCompact(row.workDays)}</dd>
+                    <div className="hr-settings-item-actions">
+                      <Link className="btn btn-sm" href={`/hr/calendars?id=${row.id}`}>
+                        เปิด
+                      </Link>
                     </div>
-                  </dl>
-                  <div className="hr-entity-card-actions">
-                    <Link className="btn btn-sm" href={`/hr/calendars?id=${row.id}`}>
-                      เปิด
-                    </Link>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </article>
+                ))}
+              </div>
+            </section>
           )}
 
           {!overlay ? (

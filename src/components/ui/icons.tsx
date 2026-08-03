@@ -81,6 +81,110 @@ export function IconPayroll(props: IconProps) {
   );
 }
 
+/** Overtime / OT rules — clock with plus. */
+export function IconOvertime(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l2.5 1.5" />
+      <path d="M19 3v4M17 5h4" />
+    </Svg>
+  );
+}
+
+/** Tax / insurance deductions — percent badge. */
+export function IconTaxInsurance(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="1.4" />
+      <circle cx="16" cy="16" r="1.4" />
+      <path d="m7 17 10-10" />
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+    </Svg>
+  );
+}
+
+/** Late / absence pay deduction — clock with minus. */
+export function IconLateAbsent(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+      <path d="M17 3h4" />
+    </Svg>
+  );
+}
+
+/** Face matching — face outline with scan marks. */
+export function IconFaceMatch(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 4H5.5A1.5 1.5 0 0 0 4 5.5V8" />
+      <path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8" />
+      <path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+      <path d="M16 20h2.5a1.5 1.5 0 0 0 1.5-1.5V16" />
+      <circle cx="9" cy="10.5" r="1" />
+      <circle cx="15" cy="10.5" r="1" />
+      <path d="M9.5 15c.8.9 1.7 1.3 2.5 1.3s1.7-.4 2.5-1.3" />
+    </Svg>
+  );
+}
+
+/** Leave entitlements — calendar with check. */
+export function IconLeave(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M8 3.5v3M16 3.5v3M3.5 10h17" />
+      <path d="m9.5 15.5 1.6 1.6 3.6-3.7" />
+    </Svg>
+  );
+}
+
+/** Branch GPS pin / geofence. */
+export function IconMapPin(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 21s-6.5-5.2-6.5-10a6.5 6.5 0 1 1 13 0c0 4.8-6.5 10-6.5 10Z" />
+      <circle cx="12" cy="11" r="2.4" />
+    </Svg>
+  );
+}
+
+/** Work calendar. */
+export function IconCalendar(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M8 3.5v3M16 3.5v3M3.5 10h17" />
+      <path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01" />
+    </Svg>
+  );
+}
+
+/** Job position / badge. */
+export function IconPosition(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="7" width="16" height="12" rx="2" />
+      <path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7" />
+      <circle cx="12" cy="12.2" r="2" />
+      <path d="M8.5 16.5c.7-1.2 1.9-1.9 3.5-1.9s2.8.7 3.5 1.9" />
+    </Svg>
+  );
+}
+
+/** Pay schedule / cycle. */
+export function IconPaySchedule(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="5" width="17" height="15" rx="2" />
+      <path d="M8 3.5v3M16 3.5v3M3.5 10h17" />
+      <path d="M12 13v4M10.2 15.2 12 13l1.8 2.2" />
+    </Svg>
+  );
+}
+
 export function IconBell(props: IconProps) {
   return (
     <Svg {...props}>

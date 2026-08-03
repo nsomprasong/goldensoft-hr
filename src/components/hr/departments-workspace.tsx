@@ -4,29 +4,26 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
+import DepartmentForm, {
+  type DepartmentFormValues,
+} from "@/components/hr/department-form";
 import HrSettingsViewToggle, {
   useSettingsViewMode,
 } from "@/components/hr/hr-settings-view-toggle";
-import ShiftForm, { type ShiftFormValues } from "@/components/hr/shift-form";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrButton from "@/components/ui/hr-button";
-import type { ShiftRow } from "@/lib/hr/data";
+import type { DepartmentRow } from "@/lib/hr/data";
 
-type BranchOption = { id: string; label: string };
-type ShiftTypeOption = { id: string; label: string };
+const BASE = "/hr/settings/departments";
 
-export default function ShiftsWorkspace({
-  shifts,
-  shiftTypes,
-  branches,
+export default function DepartmentsWorkspace({
+  departments,
   editing,
   available,
   canManage,
 }: {
-  shifts: ShiftRow[];
-  shiftTypes: ShiftTypeOption[];
-  branches: BranchOption[];
-  editing: ShiftRow | null;
+  departments: DepartmentRow[];
+  editing: DepartmentRow | null;
   available: boolean;
   canManage: boolean;
 }) {
@@ -34,7 +31,7 @@ export default function ShiftsWorkspace({
   const titleId = useId();
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useSettingsViewMode(
-    "hr.settings.shifts.viewMode",
+    "hr.settings.departments.viewMode",
   );
 
   const open = creating || editing != null;
@@ -51,21 +48,17 @@ export default function ShiftsWorkspace({
 
   function closeOverlay() {
     setCreating(false);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function openCreate() {
     setCreating(true);
-    if (editing) {
-      router.push("/hr/settings/shifts");
-    }
+    if (editing) router.push(BASE);
   }
 
   function handleDone() {
     setCreating(false);
-    router.push("/hr/settings/shifts");
+    router.push(BASE);
     router.refresh();
   }
 
@@ -74,45 +67,33 @@ export default function ShiftsWorkspace({
     function onKey(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       setCreating(false);
-      if (editing) router.push("/hr/settings/shifts");
+      if (editing) router.push(BASE);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, editing, router]);
 
-  const editInitial: Partial<ShiftFormValues> | undefined = editing
+  const editInitial: Partial<DepartmentFormValues> | undefined = editing
     ? {
-        name: editing.name,
-        shiftTypeId: editing.shiftTypeId,
-        branchId: editing.branchId ?? "",
-        startTime: editing.startTime,
-        endTime: editing.endTime,
-        breakMinutes: String(editing.breakMinutes),
-        graceLateMinutes: String(editing.graceLateMinutes),
-        graceEarlyLeaveMinutes: String(editing.graceEarlyLeaveMinutes),
-        overtimeAfterMinutes:
-          editing.overtimeAfterMinutes === null
-            ? ""
-            : String(editing.overtimeAfterMinutes),
-        crossesMidnight: editing.crossesMidnight,
+        code: editing.code,
+        nameTh: editing.nameTh,
+        description: editing.description ?? "",
       }
     : undefined;
 
-  const branchLabelById = new Map(branches.map((b) => [b.id, b.label]));
-
-  function renderActions(row: ShiftRow) {
+  function renderActions(row: DepartmentRow) {
     if (!canManage) return null;
     return (
       <div className="hr-settings-item-actions">
         <Link
           className="btn btn-sm"
-          href={`/hr/settings/shifts?edit=${row.id}`}
+          href={`${BASE}?edit=${row.id}`}
           onClick={() => setCreating(false)}
         >
           แก้ไข
         </Link>
         <ToggleActiveButton
-          resource="shifts"
+          resource="departments"
           id={row.id}
           isActive={row.isActive}
           disabled={!available}
@@ -123,14 +104,14 @@ export default function ShiftsWorkspace({
 
   return (
     <>
-      {shifts.length === 0 ? (
-        <p className="empty">ยังไม่มีกะงานในองค์กรนี้</p>
+      {departments.length === 0 ? (
+        <p className="empty">ยังไม่มีแผนกในองค์กรนี้</p>
       ) : (
         <section className="hr-settings-panel">
           <HrSettingsViewToggle
             viewMode={viewMode}
             onChange={setViewMode}
-            count={shifts.length}
+            count={departments.length}
           />
           <div
             className={
@@ -139,47 +120,35 @@ export default function ShiftsWorkspace({
                 : "hr-settings-list"
             }
           >
-            {shifts.map((row) => {
-              const branchLabel = row.branchId
-                ? (branchLabelById.get(row.branchId) ?? null)
-                : null;
-              const timeLabel = `${row.startTime} – ${row.endTime}${
-                row.crossesMidnight ? " (ข้ามวัน)" : ""
-              }`;
-              const meta = [
-                row.shiftTypeNameTh,
-                timeLabel,
-                `พัก ${row.breakMinutes} นาที`,
-                branchLabel ?? "ทุกสาขา",
-              ].join(" · ");
-              return (
-                <article
-                  key={row.id}
+            {departments.map((row) => (
+              <article
+                key={row.id}
+                className={
+                  row.isActive
+                    ? "hr-settings-item"
+                    : "hr-settings-item hr-settings-item--inactive"
+                }
+              >
+                <div className="hr-settings-item-main">
+                  <strong className="hr-settings-item-title">
+                    {row.nameTh}
+                  </strong>
+                  {row.description ? (
+                    <span className="hr-settings-item-meta">
+                      {row.description}
+                    </span>
+                  ) : null}
+                </div>
+                <span
                   className={
-                    row.isActive
-                      ? "hr-settings-item"
-                      : "hr-settings-item hr-settings-item--inactive"
+                    row.isActive ? "badge badge-active" : "badge badge-inactive"
                   }
                 >
-                  <div className="hr-settings-item-main">
-                    <strong className="hr-settings-item-title">
-                      {row.name}
-                    </strong>
-                    <span className="hr-settings-item-meta">{meta}</span>
-                  </div>
-                  <span
-                    className={
-                      row.isActive
-                        ? "badge badge-active"
-                        : "badge badge-inactive"
-                    }
-                  >
-                    {row.isActive ? "ใช้งาน" : "ปิด"}
-                  </span>
-                  {renderActions(row)}
-                </article>
-              );
-            })}
+                  {row.isActive ? "ใช้งาน" : "ปิด"}
+                </span>
+                {renderActions(row)}
+              </article>
+            ))}
           </div>
         </section>
       )}
@@ -190,8 +159,8 @@ export default function ShiftsWorkspace({
           className="hr-fab"
           onClick={openCreate}
           disabled={!available}
-          aria-label="เพิ่มกะงาน"
-          title="เพิ่มกะงาน"
+          aria-label="เพิ่มแผนก"
+          title="เพิ่มแผนก"
         >
           <span aria-hidden="true">+</span>
         </button>
@@ -213,7 +182,7 @@ export default function ShiftsWorkspace({
           >
             <div className="hr-overlay-head">
               <h2 id={titleId}>
-                {mode === "create" ? "เพิ่มกะงาน" : "แก้ไขกะงาน"}
+                {mode === "create" ? "เพิ่มแผนก" : "แก้ไขแผนก"}
               </h2>
               <HrButton
                 type="button"
@@ -225,12 +194,10 @@ export default function ShiftsWorkspace({
               </HrButton>
             </div>
             <div className="hr-overlay-body">
-              <ShiftForm
+              <DepartmentForm
                 key={editing?.id ?? "create"}
                 mode={mode}
-                shiftId={editing?.id}
-                shiftTypes={shiftTypes}
-                branches={branches}
+                departmentId={editing?.id}
                 disabled={!available}
                 initialValues={editInitial}
                 embedded

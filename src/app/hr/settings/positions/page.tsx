@@ -1,9 +1,7 @@
-import Link from "next/link";
-
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import DepartmentPositionTabs from "@/components/hr/department-position-tabs";
-import PositionForm from "@/components/hr/position-form";
-import ToggleActiveButton from "@/components/hr/toggle-active-button";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
+import PositionsWorkspace from "@/components/hr/positions-workspace";
 import HrShell from "@/components/hr-shell";
 import { combineAvailability, listDepartments, listPositions } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -31,99 +29,30 @@ export default async function PositionsPage({
 
   const departmentOptions = departments.data.map((d) => ({
     id: d.id,
-    label: `${d.code} · ${d.nameTh}`,
+    label: d.nameTh,
   }));
 
   return (
     <HrShell ctx={ctx} active="positions">
       <div className="hr-page-head">
         <div>
-          <h1>แผนกและตำแหน่ง</h1>
-          <p>ตำแหน่งงานทั้งหมดขององค์กร {ctx.organizationName}</p>
+          <h1>แผนก/ตำแหน่ง</h1>
+          <p>โครงสร้างแผนกและตำแหน่งขององค์กร</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DepartmentPositionTabs active="positions" />
 
       <DatabaseUnavailableNotice message={availability.message} />
 
-      {positions.data.length === 0 ? (
-        <p className="empty">ยังไม่มีตำแหน่งในองค์กรนี้</p>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>รหัส</th>
-                <th>ชื่อตำแหน่ง</th>
-                <th>สังกัดแผนก</th>
-                <th>สถานะ</th>
-                {canManage ? <th>จัดการ</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {positions.data.map((row) => (
-                <tr key={row.id}>
-                  <td className="nowrap">{row.code}</td>
-                  <td>{row.nameTh}</td>
-                  <td>{row.departmentNameTh ?? "—"}</td>
-                  <td>
-                    <span
-                      className={
-                        row.isActive ? "badge badge-active" : "badge badge-inactive"
-                      }
-                    >
-                      {row.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
-                    </span>
-                  </td>
-                  {canManage ? (
-                    <td>
-                      <span className="inline-actions">
-                        <Link
-                          className="btn btn-sm"
-                          href={`/hr/settings/positions?edit=${row.id}`}
-                        >
-                          แก้ไข
-                        </Link>
-                        <ToggleActiveButton
-                          resource="positions"
-                          id={row.id}
-                          isActive={row.isActive}
-                          disabled={!availability.available}
-                        />
-                      </span>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {canManage ? (
-        editing ? (
-          <PositionForm
-            key={editing.id}
-            mode="edit"
-            positionId={editing.id}
-            departments={departmentOptions}
-            disabled={!availability.available}
-            initialValues={{
-              code: editing.code,
-              nameTh: editing.nameTh,
-              departmentId: editing.departmentId ?? "",
-              description: editing.description ?? "",
-            }}
-          />
-        ) : (
-          <PositionForm
-            mode="create"
-            departments={departmentOptions}
-            disabled={!availability.available}
-          />
-        )
-      ) : null}
+      <PositionsWorkspace
+        positions={positions.data}
+        departments={departmentOptions}
+        editing={editing}
+        available={availability.available}
+        canManage={canManage}
+      />
     </HrShell>
   );
 }

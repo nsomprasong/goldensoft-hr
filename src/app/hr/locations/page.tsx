@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import LocationsWorkspace from "@/components/hr/locations-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   listOrganizationBranches,
@@ -38,9 +39,10 @@ export default async function LocationsPage({
     <HrShell ctx={ctx} active="locations">
       <div className="hr-page-head">
         <div>
-          <h1>สถานที่ทำงาน</h1>
-          <p>จุดลงเวลาและรัศมี GPS ที่อนุญาตให้พนักงานสแกนเข้า–ออก</p>
+          <h1>ตั้งพิกัดสาขา</h1>
+          <p>ปักหมุดและรัศมี GPS สำหรับลงเวลา</p>
         </div>
+        <HrPageBackButton href="/hr/settings" />
       </div>
 
       <DatabaseUnavailableNotice message={locations.message} />

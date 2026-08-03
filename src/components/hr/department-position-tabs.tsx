@@ -11,7 +11,7 @@ export default function DepartmentPositionTabs({
   active: "departments" | "positions";
 }) {
   return (
-    <nav className="hr-subtabs" aria-label="แผนกและตำแหน่ง">
+    <nav className="hr-subtabs" aria-label="แผนก/ตำแหน่ง">
       {TABS.map((tab) => {
         const isActive =
           (active === "departments" && tab.href.includes("departments")) ||
