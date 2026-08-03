@@ -5011,7 +5011,7 @@ button.hr-schedule-empty-icon:disabled {
   justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
-  min-height: 2.25rem;
+  grid-column: 1 / -1;
 }
 
 .hr-attendance-filter-view-label {
@@ -5030,57 +5030,19 @@ button.hr-schedule-empty-icon:disabled {
 .hr-attendance-filter-view .hr-view-toggle {
   margin-left: auto;
   flex-shrink: 0;
-}
-
-.hr-attendance-filter-view .hr-view-toggle .btn:has(.btn-icon) {
-  flex-direction: row;
-  min-width: 0;
-  min-height: 0;
-  padding: 0.35rem 0.65rem;
-  gap: 0.35rem;
-}
-
-.hr-attendance-filter-view .hr-view-toggle .btn:has(.btn-icon) .btn-icon {
-  width: 1.35rem;
-  height: 1.35rem;
-  margin: 0;
-}
-
-.hr-attendance-filter-view .hr-view-toggle .btn:has(.btn-icon) .btn-label {
-  font-size: 0.75rem;
-  line-height: 1.1;
+  align-items: flex-end;
 }
 
 @media (min-width: 720px) {
   .hr-attendance-filter-grid {
     grid-template-columns: minmax(12rem, 1.2fr) minmax(16rem, 1.4fr);
   }
-
-  .hr-attendance-filter-view {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (min-width: 960px) {
-  .hr-attendance-filter-grid {
-    grid-template-columns:
-      minmax(12rem, 1fr)
-      minmax(18rem, 1.2fr)
-      minmax(14rem, 1fr);
-    align-items: end;
-  }
-
-  .hr-attendance-filter-view {
-    grid-column: auto;
-    align-self: end;
-    padding-bottom: 0.15rem;
-  }
 }
 
 /* Compact attendance day cards */
 .hr-attendance-day-grid {
   margin-top: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
   gap: 0.75rem;
 }
 
@@ -5262,7 +5224,8 @@ button.hr-schedule-empty-icon:disabled {
 }
 
 .hr-attendance-day-card .hr-employee-card-head {
-  gap: 0.5rem;
+  gap: 0.7rem;
+  align-items: center;
 }
 
 .hr-attendance-day-card .hr-entity-card-title {
@@ -5785,6 +5748,18 @@ button.hr-schedule-empty-icon:disabled {
   width: 3rem;
   height: 3rem;
   font-size: 0.875rem;
+}
+
+.employee-avatar-xl {
+  width: 4.75rem;
+  height: 4.75rem;
+  font-size: 1.15rem;
+  border-width: 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7),
+    0 10px 22px -6px rgba(15, 23, 42, 0.5),
+    0 4px 8px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .employee-name-cell {

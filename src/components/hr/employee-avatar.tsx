@@ -15,7 +15,7 @@ export default function EmployeeAvatar({
 }: {
   displayName: string;
   photoUrl?: string | null;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   className?: string;
 }) {
   const initials = employeeInitials(displayName);

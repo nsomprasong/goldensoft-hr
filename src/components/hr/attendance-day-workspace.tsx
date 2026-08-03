@@ -496,7 +496,7 @@ export default function AttendanceDayWorkspace({
                 onClick={() => changeViewMode("cards")}
               >
                 <span className="btn-icon" aria-hidden="true">
-                  <IconViewCards size={14} />
+                  <IconViewCards size={15} />
                 </span>
                 <span className="btn-label">การ์ด</span>
               </button>
@@ -509,7 +509,7 @@ export default function AttendanceDayWorkspace({
                 onClick={() => changeViewMode("rows")}
               >
                 <span className="btn-icon" aria-hidden="true">
-                  <IconViewRows size={14} />
+                  <IconViewRows size={15} />
                 </span>
                 <span className="btn-label">แถว</span>
               </button>
@@ -539,7 +539,7 @@ export default function AttendanceDayWorkspace({
                 <EmployeeAvatar
                   displayName={group.displayName}
                   photoUrl={group.photoUrl}
-                  size="md"
+                  size="xl"
                 />
                 <div className="hr-attendance-person-group-title">
                   <strong>{group.displayName}</strong>
@@ -633,7 +633,7 @@ export default function AttendanceDayWorkspace({
                   <EmployeeAvatar
                     displayName={row.displayName}
                     photoUrl={row.photoUrl}
-                    size="lg"
+                    size="xl"
                   />
                   <div className="hr-entity-card-title-wrap">
                     <EmployeeNameLabel
