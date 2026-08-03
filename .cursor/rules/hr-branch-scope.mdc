@@ -1,27 +1,35 @@
 ---
-description: HR lists/actions must respect shell branch filter (header) and membership allow-list
+description: CRITICAL — selected shell branch is the highest-priority filter for all HR data
 alwaysApply: true
 ---
 
-# HR branch scope (ห้ามแสดงข้ามสาขา)
+# สาขาที่เลือกมาก่อนทุกอย่าง (CRITICAL #1)
 
-When building or changing HR list/detail/API in `goldensoft-hr`:
+**อันดับความสำคัญสูงสุดของ HR:** ถ้า header เลือกสาขาไว้ ข้อมูลที่แสดง/บันทึก/หมุด GPS/รายการ ต้องเป็นของสาขานั้นเท่านั้น
 
-## Rules
+ถ้าเลือก **ลาดพร้าว** แต่ขึ้นหมุดหรือรายการของ **สำนักงานใหญ่** = บั๊ก — แก้ที่ service query ก่อน ห้ามแก้แค่ UI
 
-1. **Header branch wins** — If the Customer App shell has a branch selected (`ctx.branchId`), show and mutate **only that branch’s employees/data**, even for OWNER/ADMIN.
-2. **“ทุกสาขา”** — Only when `ctx.branchId` is null may org-wide admins see all branches (still limited by `allowedBranchIds` when set).
-3. **Membership allow-list** — BRANCH_MANAGER / scoped roles use `ctx.allowedBranchIds`; never return other branches.
-4. **Reuse helpers** — Prefer `employeeBranchWhere` / `employeeOwnBranchWhere` from `src/lib/hr/services/shared.ts`. Do not invent a third filter style.
-5. **Destructive ops** — Calculate / delete / issue must **not wipe other branches** when a branch is selected (scope the `deleteMany` / create loop).
-6. **UI totals** — Counts and net totals on a page must match the filtered rows (never show org totals while listing one branch).
+## Precedence (ล็อกไว้)
 
-## Do not
+1. **`ctx.branchId`** (สาขาที่เลือกใน shell) — ชนะเสมอ รวม OWNER/ADMIN
+2. **`ctx.allowedBranchIds`** — จำกัดสมาชิกที่มีหลายสาขา
+3. **`null` / ทุกสาขา** — เห็นข้ามสาขาได้เฉพาะเมื่อไม่เลือกสาขา + สิทธิ์ org-wide
 
-- Load org-wide employee lists into a branch-filtered screen and hope the UI hides them
-- Use only `allowedBranchIds` and ignore `ctx.branchId` (OWNER bug: sees every branch while header shows one)
-- Skip branch filters on new modules (payroll, leave, OT, attendance, approvals, dashboard)
+## ต้องทำทุกครั้งที่แตะ list / resolve / create
 
-## Quick check
+- ใช้ `employeeBranchWhere` / `employeeOwnBranchWhere` / `resolveBranchScope` (ตัวหลังต้อง honor `ctx.branchId`)
+- จุดลงเวลา/หมุด: `resolvePrimaryWorkLocation(employeeId, ctx.branchId ?? employee.branchId)` — **ห้าม** fallback ไปหมุดสาขาอื่น
+- รายการสถานที่/กะ/ตารางงาน/พนักงาน/อนุมัติ/payroll lines: กรองตามสาขาที่เลือก
+- ค่า default ในฟอร์ม: ใช้สาขาที่เลือก ไม่ใช้ `branches[0]` (มักเป็นสำนักงานใหญ่เพราะ `is_primary`)
+- Mutation: `assertMatchesSelectedBranch` เมื่อมี `ctx.branchId`
 
-If the screenshot shows header **สาขา X** but rows from **สำนักงานใหญ่** (or another branch), the filter is wrong — fix the service query before shipping UI.
+## ห้าม
+
+- Resolve หมุดจาก `isPrimary` อย่างเดียวโดยไม่สนสาขา
+- เรียก `listWorkLocations()` / `listShifts()` โดยไม่ผ่าน scope ที่มี `ctx.branchId`
+- โชว์ยอดรวมทั้งองค์กรขณะที่ header เป็นสาขาเดียว
+- เดาว่า UI จะซ่อนแถวสาขาอื่นให้
+
+## Quick check ก่อน ship
+
+Header ขึ้น **สาขา X** → ทุก card / ตาราง / หมุด / จำนวน ต้องเป็น X เท่านั้น

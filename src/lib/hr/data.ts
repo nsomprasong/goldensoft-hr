@@ -844,7 +844,10 @@ export async function listShifts(
   return safeRead<ShiftRow[]>([], async (repository) => {
     const service = serviceContext(ctx);
     const [shifts, shiftTypes] = await Promise.all([
-      listShiftsService(repository, service, { pageSize: ALL }),
+      listShiftsService(repository, service, {
+        pageSize: ALL,
+        branchId: ctx.branchId,
+      }),
       repository.masters.list("shiftType"),
     ]);
     const byId = new Map(shiftTypes.map((t) => [t.id, t.nameTh]));
@@ -1399,7 +1402,10 @@ export async function listScheduleComposerOptions(
             pageSize: ALL,
             isActive: true,
           }),
-      listShiftsService(repository, service, { pageSize: ALL }),
+      listShiftsService(repository, service, {
+        pageSize: ALL,
+        branchId: ctx.branchId,
+      }),
     ]);
 
     return {
@@ -1509,7 +1515,7 @@ export async function listWorkLocations(
   return safeRead<WorkLocationRow[]>([], async () => {
     const rows = await listWorkLocationsService(
       serviceContext(ctx),
-      branchId ?? null,
+      branchId ?? ctx.branchId ?? null,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -1546,9 +1552,16 @@ export async function listOrganizationBranches(
       ORDER BY is_primary DESC, code ASC
     `;
     const allowed = resolveAllowedBranchIds(ctx);
-    const filtered =
+    let filtered =
       allowed == null ? rows : rows.filter((row) => allowed.includes(row.id));
+    // Header branch first: when a branch is selected, only offer that branch
+    // (and still respect membership allow-list).
+    if (ctx.branchId) {
+      filtered = filtered.filter((row) => row.id === ctx.branchId);
+    }
     if (filtered.length > 0) {
+      // Prefer selected / non-primary ordering: selected branch already alone;
+      // for "ทุกสาขา" keep platform order but move selected to front if present.
       return filtered.map((row) => ({
         id: row.id,
         label: row.name,

@@ -173,7 +173,22 @@ function mutable(status: string) {
 }
 export async function listWorkLocations(ctx: HrServiceContext, branchId?: string | null) {
   assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
-  return db.workLocation.findMany({ where: { organizationId: ctx.organizationId, ...(branchId ? { branchId } : {}) }, orderBy: { name: "asc" } });
+  const effectiveBranchId =
+    (branchId && String(branchId).trim()) || ctx.branchId || null;
+  const where: {
+    organizationId: string;
+    branchId?: string | { in: string[] };
+  } = { organizationId: ctx.organizationId };
+  if (effectiveBranchId) {
+    assertBranchInScope(ctx, effectiveBranchId);
+    where.branchId = effectiveBranchId;
+  } else if (ctx.allowedBranchIds != null) {
+    where.branchId = { in: [...ctx.allowedBranchIds] };
+  }
+  return db.workLocation.findMany({
+    where,
+    orderBy: { name: "asc" },
+  });
 }
 function parseRequiredGpsCoord(
   value: unknown,
@@ -209,6 +224,8 @@ export async function createWorkLocation(ctx: HrServiceContext, input: any) {
   if (!branchId) {
     throw new HrError("VALIDATION_ERROR", { message: "ต้องระบุสาขาของสถานที่ทำงาน" });
   }
+  assertBranchInScope(ctx, branchId);
+  assertMatchesSelectedBranch(ctx, branchId);
   const latitude = parseRequiredGpsCoord(input.latitude, "latitude");
   const longitude = parseRequiredGpsCoord(input.longitude, "longitude");
   const existing = await db.workLocation.findMany({
@@ -239,6 +256,7 @@ export async function createWorkLocation(ctx: HrServiceContext, input: any) {
 export async function updateWorkLocation(ctx: HrServiceContext, id: string, input: any) {
   assertHrPermission(ctx, HR_PERMISSIONS.locationManage);
   const current = await owned("workLocation", ctx, id);
+  assertMatchesSelectedBranch(ctx, current.branchId);
   const data: Record<string, unknown> = {};
   if (input.name !== undefined) {
     data.name = String(input.name ?? "").trim() || "สถานที่ทำงาน";
@@ -262,6 +280,8 @@ export async function updateWorkLocation(ctx: HrServiceContext, id: string, inpu
     data.timezone = String(input.timezone ?? "").trim() || "Asia/Bangkok";
   }
   if (input.branchId !== undefined && input.branchId) {
+    assertBranchInScope(ctx, String(input.branchId));
+    assertMatchesSelectedBranch(ctx, String(input.branchId));
     data.branchId = String(input.branchId);
   }
   if (input.isActive !== undefined) {
@@ -1894,23 +1914,99 @@ function bangkokDayBounds(at = new Date()) {
   };
 }
 
-async function resolvePrimaryWorkLocation(employeeId: string) {
+/**
+ * Resolve the clock pin for an employee.
+ * Selected shell branch (`preferredBranchId`) always wins — never fall back to
+ * another branch's HQ pin while a branch is selected.
+ */
+async function resolvePrimaryWorkLocation(
+  employeeId: string,
+  preferredBranchId?: string | null,
+) {
   const { day } = bangkokDayBounds();
   const asOf = date(day);
-  const link = await db.employeeWorkLocation.findFirst({
+  const branchId = preferredBranchId?.trim() || null;
+
+  // 1) Today's shift assignment pin (when it matches the selected branch).
+  const assignment = await db.shiftAssignment.findFirst({
+    where: { employeeId, workDate: asOf },
+    include: { workLocation: true },
+    orderBy: { sequenceNo: "asc" },
+  });
+  if (assignment?.workLocation?.isActive) {
+    if (!branchId || assignment.workLocation.branchId === branchId) {
+      return assignment.workLocation;
+    }
+  }
+
+  const locationFilter = branchId
+    ? { isActive: true as const, branchId }
+    : { isActive: true as const };
+
+  // 2) Primary employee↔location link for the preferred branch.
+  const primary = await db.employeeWorkLocation.findFirst({
+    where: {
+      employeeId,
+      isPrimary: true,
+      effectiveFrom: { lte: asOf },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
+      workLocation: locationFilter,
+    },
+    include: { workLocation: true },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  if (primary?.workLocation?.isActive) return primary.workLocation;
+
+  // 3) Any effective employee link for the preferred branch.
+  const anyLink = await db.employeeWorkLocation.findFirst({
+    where: {
+      employeeId,
+      effectiveFrom: { lte: asOf },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
+      workLocation: locationFilter,
+    },
+    include: { workLocation: true },
+    orderBy: [{ isPrimary: "desc" }, { effectiveFrom: "desc" }],
+  });
+  if (anyLink?.workLocation?.isActive) return anyLink.workLocation;
+
+  // 4) Branch's own active work location (pin may exist without employee link).
+  if (branchId) {
+    const employee = await db.employee.findFirst({
+      where: { id: employeeId },
+      select: { organizationId: true },
+    });
+    if (employee) {
+      const branchLoc = await db.workLocation.findFirst({
+        where: {
+          organizationId: employee.organizationId,
+          branchId,
+          isActive: true,
+          latitude: { not: null },
+          longitude: { not: null },
+        },
+        orderBy: { name: "asc" },
+      });
+      if (branchLoc) return branchLoc;
+    }
+    // Selected branch has no pin — do NOT leak another branch's HQ.
+    return null;
+  }
+
+  // 5) "ทุกสาขา" only: legacy primary without branch filter.
+  const legacyPrimary = await db.employeeWorkLocation.findFirst({
     where: {
       employeeId,
       isPrimary: true,
       effectiveFrom: { lte: asOf },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOf } }],
     },
-    include: {
-      workLocation: true,
-    },
+    include: { workLocation: true },
     orderBy: { effectiveFrom: "desc" },
   });
-  if (link?.workLocation?.isActive) return link.workLocation;
-  const fallback = await db.employeeWorkLocation.findFirst({
+  if (legacyPrimary?.workLocation?.isActive) return legacyPrimary.workLocation;
+
+  const legacyAny = await db.employeeWorkLocation.findFirst({
     where: {
       employeeId,
       effectiveFrom: { lte: asOf },
@@ -1920,13 +2016,14 @@ async function resolvePrimaryWorkLocation(employeeId: string) {
     include: { workLocation: true },
     orderBy: [{ isPrimary: "desc" }, { effectiveFrom: "desc" }],
   });
-  return fallback?.workLocation ?? null;
+  return legacyAny?.workLocation ?? null;
 }
 
 function serializeWorkLocation(location: {
   id: string;
   code: string;
   name: string;
+  branchId?: string;
   latitude: { toString(): string } | number | null;
   longitude: { toString(): string } | number | null;
   geofenceRadiusMeters: number;
@@ -1936,6 +2033,7 @@ function serializeWorkLocation(location: {
     id: location.id,
     code: location.code,
     name: location.name,
+    branchId: location.branchId ?? null,
     latitude: location.latitude == null ? null : Number(location.latitude),
     longitude: location.longitude == null ? null : Number(location.longitude),
     geofenceRadiusMeters: location.geofenceRadiusMeters,
@@ -2056,7 +2154,11 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
   assertHrPermission(ctx, HR_PERMISSIONS.attendanceSelf);
   const employee = await resolveSelfEmployee(ctx);
   const { day: today } = bangkokDayBounds();
-  const workLocation = await resolvePrimaryWorkLocation(employee.id);
+  const preferredBranchId = ctx.branchId ?? employee.branchId;
+  const workLocation = await resolvePrimaryWorkLocation(
+    employee.id,
+    preferredBranchId,
+  );
 
   const scheduleRows = (await db.shiftAssignment.findMany({
     where: { employeeId: employee.id },
@@ -2580,14 +2682,27 @@ export async function clock(ctx: HrServiceContext, input: any) {
     };
   }
 
-  const location = input.workLocationId
-    ? await owned("workLocation", ctx, input.workLocationId)
-    : await resolvePrimaryWorkLocation(employee.id);
+  const preferredBranchId = ctx.branchId ?? employee.branchId;
+  let location = await resolvePrimaryWorkLocation(
+    employee.id,
+    preferredBranchId,
+  );
+  // Client may send a stale workLocationId from a previous branch selection —
+  // only honor it when it belongs to the preferred branch.
+  if (input.workLocationId) {
+    const requested = await owned("workLocation", ctx, input.workLocationId);
+    if (!preferredBranchId || requested.branchId === preferredBranchId) {
+      location = requested;
+    }
+  }
   if (!location) {
     throw new HrError("NOT_FOUND", {
-      message: "ยังไม่ได้กำหนดสถานที่ลงเวลาให้พนักงานคนนี้",
+      message: preferredBranchId
+        ? "สาขาที่เลือกยังไม่มีจุดลงเวลา (หมุด) — ตั้งสถานที่ทำงานของสาขานี้ก่อน"
+        : "ยังไม่ได้กำหนดสถานที่ลงเวลาให้พนักงานคนนี้",
     });
   }
+  assertMatchesSelectedBranch(ctx, location.branchId);
   if (location.latitude == null || location.longitude == null) {
     throw new HrError("VALIDATION_ERROR", {
       message: "สถานที่ลงเวลายังไม่มีพิกัด GPS",
@@ -4633,7 +4748,12 @@ export async function listLeaveBalances(ctx: HrServiceContext, employeeId?: stri
     where: {
       ...(employeeId
         ? { employeeId }
-        : { employee: { organizationId: ctx.organizationId } }),
+        : {
+            employee: {
+              organizationId: ctx.organizationId,
+              ...employeeOwnBranchWhere(ctx),
+            },
+          }),
     },
     include: {
       leaveType: { select: { id: true, code: true, name: true } },

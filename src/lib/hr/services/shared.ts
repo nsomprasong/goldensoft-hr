@@ -178,14 +178,19 @@ export function resolveBranchScope(
   requestedBranchId?: string | null,
 ): { branchIds: readonly string[] | null; branchId: string | null } {
   const allowed = ctx.allowedBranchIds ?? null;
+  // Shell header branch wins when the caller did not pass an explicit branch.
+  const effectiveRequested =
+    (requestedBranchId && String(requestedBranchId).trim()) ||
+    ctx.branchId ||
+    null;
 
-  if (requestedBranchId) {
-    if (allowed != null && !allowed.includes(requestedBranchId)) {
+  if (effectiveRequested) {
+    if (allowed != null && !allowed.includes(effectiveRequested)) {
       throw new HrError("BRANCH_OUT_OF_SCOPE", {
-        details: { branchId: requestedBranchId },
+        details: { branchId: effectiveRequested },
       });
     }
-    return { branchIds: allowed, branchId: requestedBranchId };
+    return { branchIds: allowed, branchId: effectiveRequested };
   }
 
   return { branchIds: allowed, branchId: null };

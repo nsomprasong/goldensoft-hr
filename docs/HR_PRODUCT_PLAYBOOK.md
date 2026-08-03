@@ -65,7 +65,8 @@ Organization → Branch → Employee(+photoUrl)
 ```
 
 Scope บังคับ: `organizationId` + branch allow-list ใน authorize/API ทุกครั้ง  
-**Header branch:** ถ้าเลือกสาขาใน shell ต้องกรองตามสาขานั้นแม้ OWNER/ADMIN — ใช้ `employeeBranchWhere` / `employeeOwnBranchWhere` (กฎ `.cursor/rules/hr-branch-scope.mdc`)
+**Header branch = CRITICAL #1:** ถ้าเลือกสาขาใน shell ต้องกรองตามสาขานั้นแม้ OWNER/ADMIN (หมุดลงเวลา / รายการ / ฟอร์ม) — ใช้ `employeeBranchWhere` / `employeeOwnBranchWhere` / `resolveBranchScope` (กฎ `.cursor/rules/hr-branch-scope.mdc`)  
+หมุด GPS: `resolvePrimaryWorkLocation(employeeId, ctx.branchId ?? employee.branchId)` — ห้าม fallback ไปหมุดสาขาอื่น
 
 ---
 

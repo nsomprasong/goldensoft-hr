@@ -56,6 +56,7 @@ type SchedulePeriodInfo = {
 type WorkLocationInfo = {
   id: string;
   name: string;
+  branchId?: string | null;
   latitude: number | null;
   longitude: number | null;
   geofenceRadiusMeters: number;
