@@ -143,6 +143,11 @@ export default function OvertimeRuleForm({
         <h2>{mode === "create" ? "เพิ่มกฎ OT ใหม่" : "แก้ไขกฎ OT"}</h2>
       )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {mode === "create" ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          รหัสกฎ OT จะถูกสร้างอัตโนมัติเมื่อบันทึก
+        </p>
+      ) : null}
 
       <div className="form-grid">
         <Field id="ot-name" label="ชื่อกฎ OT" required error={errors.name}>

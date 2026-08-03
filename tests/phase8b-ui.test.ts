@@ -322,23 +322,22 @@ describe("Phase 8B permission gating", () => {
 
   it("only renders management controls for permitted roles", () => {
     const workspaces: Record<string, string> = {
+      "src/app/hr/settings/departments/page.tsx":
+        "src/components/hr/departments-workspace.tsx",
+      "src/app/hr/settings/positions/page.tsx":
+        "src/components/hr/positions-workspace.tsx",
       "src/app/hr/settings/shifts/page.tsx":
         "src/components/hr/shifts-workspace.tsx",
+      "src/app/hr/settings/overtime-rules/page.tsx":
+        "src/components/hr/overtime-rules-workspace.tsx",
+      "src/app/hr/settings/payroll-schedules/page.tsx":
+        "src/components/hr/payroll-schedules-workspace.tsx",
     };
-    for (const page of [
-      "src/app/hr/settings/departments/page.tsx",
-      "src/app/hr/settings/positions/page.tsx",
-      "src/app/hr/settings/shifts/page.tsx",
-      "src/app/hr/settings/overtime-rules/page.tsx",
-      "src/app/hr/settings/payroll-schedules/page.tsx",
-    ]) {
+    for (const [page, workspacePath] of Object.entries(workspaces)) {
       const source = read(page);
       assert.match(source, /canHr\(ctx, HR_PERMISSIONS\.\w+Manage\)/, page);
-      const workspacePath = workspaces[page];
-      const gateSource = workspacePath
-        ? `${source}\n${read(workspacePath)}`
-        : source;
-      assert.match(gateSource, /canManage \?/, page);
+      const gateSource = `${source}\n${read(workspacePath)}`;
+      assert.match(gateSource, /canManage\s*(\?|&&)/, page);
     }
   });
 });

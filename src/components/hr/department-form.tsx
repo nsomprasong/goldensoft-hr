@@ -114,6 +114,11 @@ export default function DepartmentForm({
         <h2>{mode === "create" ? "เพิ่มแผนกใหม่" : "แก้ไขแผนก"}</h2>
       )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {mode === "create" ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          รหัสแผนกจะถูกสร้างอัตโนมัติเมื่อบันทึก
+        </p>
+      ) : null}
 
       <div className="form-grid">
         <Field id="dept-nameTh" label="ชื่อแผนก" required error={errors.nameTh}>

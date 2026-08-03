@@ -119,6 +119,11 @@ export default function PositionForm({
         <h2>{mode === "create" ? "เพิ่มตำแหน่งใหม่" : "แก้ไขตำแหน่ง"}</h2>
       )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {mode === "create" ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          รหัสตำแหน่งจะถูกสร้างอัตโนมัติเมื่อบันทึก
+        </p>
+      ) : null}
 
       <div className="form-grid">
         <Field

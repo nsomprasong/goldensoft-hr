@@ -136,6 +136,11 @@ export default function PayrollScheduleForm({
         <h2>{mode === "create" ? "เพิ่มรอบจ่ายใหม่" : "แก้ไขรอบจ่าย"}</h2>
       )}
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
+      {mode === "create" ? (
+        <p className="muted" style={{ marginTop: 0 }}>
+          รหัสรอบจ่ายจะถูกสร้างอัตโนมัติเมื่อบันทึก
+        </p>
+      ) : null}
 
       <div className="form-grid">
         <Field id="sched-name" label="ชื่อรอบจ่าย" required error={errors.name}>
