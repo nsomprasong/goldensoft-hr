@@ -93,6 +93,29 @@ function StatusBadges({ row }: { row: AttendanceRow }) {
   );
 }
 
+/** Visual tone for attendance day cards. */
+function attendanceCardTone(statusCode: string): string {
+  switch (statusCode) {
+    case "PRESENT":
+      return "present";
+    case "LATE":
+      return "late";
+    case "ABSENT":
+      return "absent";
+    case "REST_DAY":
+    case "HOLIDAY":
+      return "off";
+    case "INCOMPLETE":
+    case "MISSING_CLOCK_IN":
+    case "MISSING_CLOCK_OUT":
+      return "incomplete";
+    case "LEAVE":
+      return "leave";
+    default:
+      return "default";
+  }
+}
+
 /** Holiday / weekly rest — status cell spans across clock columns. */
 function isOffDayStatus(statusCode: string): boolean {
   return statusCode === "REST_DAY" || statusCode === "HOLIDAY";
@@ -191,11 +214,6 @@ export default function AttendanceDayWorkspace({
       // ignore
     }
   }
-
-  const selectedEmployeeLabel = useMemo(() => {
-    if (!employeeId) return "ทุกคน";
-    return employees.find((e) => e.id === employeeId)?.label ?? "พนักงาน";
-  }, [employeeId, employees]);
 
   const rowGroups = useMemo(() => {
     const map = new Map<
@@ -388,16 +406,11 @@ export default function AttendanceDayWorkspace({
     }
   }
 
-  const rangeLabel =
-    fromDate === toDate
-      ? formatThaiDateReadable(fromDate)
-      : `${formatThaiDateReadable(fromDate)} – ${formatThaiDateReadable(toDate)}`;
-
   return (
     <>
-      <section className="card">
-        <div className="form-grid">
-          <div className="field">
+      <section className="card hr-attendance-filter">
+        <div className="hr-attendance-filter-grid">
+          <div className="field hr-attendance-filter-employee">
             <label htmlFor="attendance-employee">พนักงาน</label>
             <select
               id="attendance-employee"
@@ -425,32 +438,48 @@ export default function AttendanceDayWorkspace({
               ))}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="attendance-from">จากวันที่</label>
-            <ThaiDateInput
-              id="attendance-from"
-              value={fromDate}
-              onChange={(iso) => {
-                const next = toIsoDate(iso) || today;
-                setFromDate(next);
-                setToDate(addIsoDays(next, 10));
-              }}
-            />
+
+          <div className="hr-attendance-filter-dates">
+            <div className="field">
+              <label htmlFor="attendance-from">จากวันที่</label>
+              <ThaiDateInput
+                id="attendance-from"
+                value={fromDate}
+                onChange={(iso) => {
+                  const next = toIsoDate(iso) || today;
+                  setFromDate(next);
+                  setToDate(addIsoDays(next, 10));
+                }}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="attendance-to">ถึงวันที่</label>
+              <ThaiDateInput
+                id="attendance-to"
+                value={toDate}
+                onChange={(iso) => {
+                  const next = toIsoDate(iso) || today;
+                  setToDate(next);
+                  if (next < fromDate) setFromDate(next);
+                }}
+              />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="attendance-to">ถึงวันที่</label>
-            <ThaiDateInput
-              id="attendance-to"
-              value={toDate}
-              onChange={(iso) => {
-                const next = toIsoDate(iso) || today;
-                setToDate(next);
-                if (next < fromDate) setFromDate(next);
-              }}
-            />
-          </div>
-          <div className="field">
-            <span className="field-label">การแสดงผล</span>
+
+          <div className="hr-attendance-filter-view">
+            <p className="hr-attendance-filter-view-label">
+              การแสดงผล
+              <span>
+                {" "}
+                · {loading ? "…" : `${rows.length} รายการ`}
+              </span>
+              {branchLabel ? (
+                <span className="muted"> · สาขา {branchLabel}</span>
+              ) : null}
+              {!employeeId && fromDate !== toDate ? (
+                <span className="muted"> · ไม่เกิน 14 วัน</span>
+              ) : null}
+            </p>
             <div
               className="hr-view-toggle"
               role="group"
@@ -459,7 +488,9 @@ export default function AttendanceDayWorkspace({
               <button
                 type="button"
                 className={
-                  viewMode === "cards" ? "btn btn-sm btn-primary" : "btn btn-sm"
+                  viewMode === "cards"
+                    ? "btn btn-sm btn-primary"
+                    : "btn btn-sm"
                 }
                 aria-pressed={viewMode === "cards"}
                 onClick={() => changeViewMode("cards")}
@@ -485,13 +516,6 @@ export default function AttendanceDayWorkspace({
             </div>
           </div>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          {branchLabel ? `สาขา: ${branchLabel} · ` : null}
-          {selectedEmployeeLabel} · {rangeLabel} · {rows.length} รายการ
-          {!employeeId && fromDate !== toDate
-            ? " (ดูทุกคนจำกัดไม่เกิน 14 วัน)"
-            : null}
-        </p>
       </section>
 
       {error ? <Alert kind="error">{error}</Alert> : null}
@@ -602,7 +626,7 @@ export default function AttendanceDayWorkspace({
           {rows.map((row) => (
             <article
               key={`${row.employeeId}:${row.workDate}:${row.id ?? "new"}`}
-              className="card hr-entity-card hr-attendance-day-card"
+              className={`card hr-entity-card hr-attendance-day-card hr-attendance-day-card--${attendanceCardTone(row.statusCode)}`}
             >
               <div className="hr-entity-card-top">
                 <div className="hr-employee-card-head">
