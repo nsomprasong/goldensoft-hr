@@ -5,4 +5,5 @@ export {
   listAttendanceDays,
   listSelfAttendanceToday,
   reviewAttendanceAdjustment,
+  updateAttendanceDayClocks,
 } from "@/lib/hr/services/operations";

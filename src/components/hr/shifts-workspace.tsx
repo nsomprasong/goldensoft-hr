@@ -6,6 +6,7 @@ import { useEffect, useId, useState } from "react";
 
 import ShiftForm, { type ShiftFormValues } from "@/components/hr/shift-form";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
+import HrButton from "@/components/ui/hr-button";
 import type { ShiftRow } from "@/lib/hr/data";
 
 type BranchOption = { id: string; label: string };
@@ -203,14 +204,14 @@ export default function ShiftsWorkspace({
               <h2 id={titleId}>
                 {mode === "create" ? "เพิ่มกะงาน" : "แก้ไขกะงาน"}
               </h2>
-              <button
+              <HrButton
                 type="button"
                 className="btn btn-sm"
                 onClick={closeOverlay}
                 aria-label="ปิด"
               >
                 ปิด
-              </button>
+              </HrButton>
             </div>
             <div className="hr-overlay-body">
               <ShiftForm

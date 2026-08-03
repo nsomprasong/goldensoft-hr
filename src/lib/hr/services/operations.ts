@@ -2855,19 +2855,50 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
   ]);
 
   const { day: today } = bangkokDayBounds();
-  const workDateIso = String(input.workDate || input.from || today).slice(0, 10);
-  const workDate = date(workDateIso);
-  const branchFilter =
-    ctx.allowedBranchIds == null
-      ? {}
-      : { branchId: { in: [...ctx.allowedBranchIds] } };
+  const fromIso = String(input.from || input.workDate || today).slice(0, 10);
+  const toIso = String(input.to || input.workDate || fromIso).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso) || !/^\d{4}-\d{2}-\d{2}$/.test(toIso)) {
+    throw new HrError("VALIDATION_ERROR", { message: "รูปแบบวันที่ไม่ถูกต้อง" });
+  }
+  if (toIso < fromIso) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น",
+    });
+  }
+
+  const employeeId =
+    typeof input.employeeId === "string" && input.employeeId.trim()
+      ? input.employeeId.trim()
+      : null;
+  const daySpan =
+    Math.round(
+      (new Date(`${toIso}T00:00:00Z`).getTime() -
+        new Date(`${fromIso}T00:00:00Z`).getTime()) /
+        86_400_000,
+    ) + 1;
+  const maxDays = employeeId ? 62 : 14;
+  if (daySpan > maxDays) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: employeeId
+        ? "ช่วงวันที่ต้องไม่เกิน 62 วัน"
+        : "เมื่อดูทุกคน ช่วงวันที่ต้องไม่เกิน 14 วัน — หรือเลือกพนักงานก่อน",
+    });
+  }
+
+  if (employeeId) {
+    await owned("employee", ctx, employeeId);
+  }
+
+  const fromDate = date(fromIso);
+  const toDate = date(toIso);
+  const branchScope = employeeBranchWhere(ctx);
 
   const rows = await db.attendanceDay.findMany({
     where: {
       organizationId: ctx.organizationId,
-      workDate,
-      ...branchFilter,
-      ...(input.employeeId ? { employeeId: input.employeeId } : {}),
+      workDate: { gte: fromDate, lte: toDate },
+      ...(employeeId ? { employeeId } : {}),
+      ...branchScope,
     },
     include: {
       employee: {
@@ -2882,28 +2913,109 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
       status: { select: { code: true, name: true } },
     },
     orderBy: [
+      { workDate: "asc" },
       { employee: { firstNameTh: "asc" } },
       { employee: { lastNameTh: "asc" } },
     ],
   });
 
-  const { start, end } = (() => {
-    return {
-      start: new Date(`${workDateIso}T00:00:00+07:00`),
-      end: new Date(`${workDateIso}T23:59:59.999+07:00`),
+  const dayRows: Array<{
+    id: string;
+    employeeId: string;
+    workDate: Date;
+    clockInAt: Date | null;
+    clockOutAt: Date | null;
+    lateMinutes: number;
+    earlyLeaveMinutes: number;
+    shiftMismatchStatus?: string | null;
+    employee: {
+      id: string;
+      firstNameTh: string;
+      lastNameTh: string;
+      photoUrl: string | null;
+      branchId: string;
     };
+    status: { code: string; name: string };
+  }> = rows.map((row: (typeof rows)[number]) => ({
+    id: row.id,
+    employeeId: row.employeeId,
+    workDate: row.workDate,
+    clockInAt: row.clockInAt,
+    clockOutAt: row.clockOutAt,
+    lateMinutes: row.lateMinutes,
+    earlyLeaveMinutes: row.earlyLeaveMinutes,
+    shiftMismatchStatus: row.shiftMismatchStatus ?? null,
+    employee: row.employee,
+    status: row.status,
+  }));
+
+  // When a single employee is selected, fill days that have a shift assignment
+  // but no attendance row yet so admins can enter clocks.
+  if (employeeId) {
+    const existingDates = new Set(
+      dayRows.map((row) => row.workDate.toISOString().slice(0, 10)),
+    );
+    const assignments = await db.shiftAssignment.findMany({
+      where: {
+        employeeId,
+        workDate: { gte: fromDate, lte: toDate },
+        isRestDay: false,
+      },
+      select: { workDate: true },
+    });
+    const employee = await db.employee.findFirst({
+      where: { id: employeeId, organizationId: ctx.organizationId },
+      select: {
+        id: true,
+        firstNameTh: true,
+        lastNameTh: true,
+        photoUrl: true,
+        branchId: true,
+      },
+    });
+    if (employee) {
+      const absentStatus = await master("attendanceStatus", "ABSENT");
+      for (const assignment of assignments as Array<{ workDate: Date }>) {
+        const iso = assignment.workDate.toISOString().slice(0, 10);
+        if (existingDates.has(iso)) continue;
+        existingDates.add(iso);
+        dayRows.push({
+          id: `missing:${employeeId}:${iso}`,
+          employeeId,
+          workDate: assignment.workDate,
+          clockInAt: null,
+          clockOutAt: null,
+          lateMinutes: 0,
+          earlyLeaveMinutes: 0,
+          shiftMismatchStatus: null,
+          employee,
+          status: { code: "ABSENT", name: absentStatus.name ?? "ขาดงาน" },
+        });
+      }
+      dayRows.sort((a, b) => {
+        const byDate = a.workDate.getTime() - b.workDate.getTime();
+        if (byDate !== 0) return byDate;
+        return a.employee.firstNameTh.localeCompare(b.employee.firstNameTh, "th");
+      });
+    }
+  }
+
+  const eventStart = new Date(`${fromIso}T00:00:00+07:00`);
+  // Day after `to` at 14:00 Bangkok covers overnight clock-outs.
+  const eventEndSafe = (() => {
+    const d = new Date(`${toIso}T00:00:00+07:00`);
+    d.setDate(d.getDate() + 1);
+    d.setHours(14, 0, 0, 0);
+    return d;
   })();
 
-  const employeeIds = rows.map(
-    (row: { employeeId: string }) => row.employeeId,
-  );
+  const employeeIds = [
+    ...new Set(dayRows.map((row) => row.employeeId)),
+  ];
   const branchIds = [
     ...new Set(
-      rows
-        .map(
-          (row: { employee?: { branchId?: string | null } }) =>
-            row.employee?.branchId,
-        )
+      dayRows
+        .map((row) => row.employee?.branchId)
         .filter((id: string | null | undefined): id is string => Boolean(id)),
     ),
   ];
@@ -2930,25 +3042,49 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
           where: {
             organizationId: ctx.organizationId,
             employeeId: { in: employeeIds },
-            occurredAt: { gte: start, lte: end },
+            occurredAt: { gte: eventStart, lte: eventEndSafe },
           },
           include: { eventType: { select: { code: true } } },
           orderBy: { occurredAt: "asc" },
         });
 
-  const photoByEmployee = new Map<
+  const photoByEmployeeDay = new Map<
     string,
     { clockInPhotoUrl: string | null; clockOutPhotoUrl: string | null }
   >();
   for (const event of events as Array<{
     employeeId: string;
     id: string;
+    occurredAt: Date;
     metadata: unknown;
     eventType: { code: string };
   }>) {
     const meta = (event.metadata ?? {}) as { photoUrl?: string };
     const url = meta.photoUrl ?? attendanceEventPhotoPublicPath(event.id);
-    const bucket = photoByEmployee.get(event.employeeId) ?? {
+    const dayIso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(event.occurredAt);
+    // Night outs after midnight still belong to the previous work date.
+    let workIso = dayIso;
+    if (event.eventType.code === "CLOCK_OUT") {
+      const hour = Number(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Bangkok",
+          hour: "2-digit",
+          hour12: false,
+        }).format(event.occurredAt),
+      );
+      if (hour < 12) {
+        const prev = new Date(`${dayIso}T12:00:00+07:00`);
+        prev.setDate(prev.getDate() - 1);
+        workIso = prev.toISOString().slice(0, 10);
+      }
+    }
+    const key = `${event.employeeId}:${workIso}`;
+    const bucket = photoByEmployeeDay.get(key) ?? {
       clockInPhotoUrl: null,
       clockOutPhotoUrl: null,
     };
@@ -2958,38 +3094,28 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
     if (event.eventType.code === "CLOCK_OUT") {
       bucket.clockOutPhotoUrl = url;
     }
-    photoByEmployee.set(event.employeeId, bucket);
+    photoByEmployeeDay.set(key, bucket);
   }
 
   return {
-    workDate: workDateIso,
-    rows: rows.map(
-      (row: {
-        id: string;
-        employeeId: string;
-        clockInAt: Date | null;
-        clockOutAt: Date | null;
-        lateMinutes: number;
-        earlyLeaveMinutes: number;
-        shiftMismatchStatus?: string | null;
-        employee: {
-          firstNameTh: string;
-          lastNameTh: string;
-          photoUrl: string | null;
-          branchId: string;
-        };
-        status: { code: string; name: string };
-      }) => {
-        const photos = photoByEmployee.get(row.employeeId) ?? {
+    from: fromIso,
+    to: toIso,
+    workDate: fromIso === toIso ? fromIso : undefined,
+    employeeId,
+    rows: dayRows.map((row) => {
+        const workDateIso = row.workDate.toISOString().slice(0, 10);
+        const photos = photoByEmployeeDay.get(`${row.employeeId}:${workDateIso}`) ?? {
           clockInPhotoUrl: null,
           clockOutPhotoUrl: null,
         };
         const displayName =
           `${row.employee.firstNameTh} ${row.employee.lastNameTh}`.trim();
         const branchId = row.employee.branchId;
+        const isPlaceholder = String(row.id).startsWith("missing:");
         return {
-          id: row.id,
+          id: isPlaceholder ? null : row.id,
           employeeId: row.employeeId,
+          workDate: workDateIso,
           displayName,
           photoUrl: row.employee.photoUrl,
           branchId,
@@ -3006,10 +3132,125 @@ export async function listAttendanceDays(ctx: HrServiceContext, input: any = {})
           clockInPhotoUrl: photos.clockInPhotoUrl,
           clockOutPhotoUrl: photos.clockOutPhotoUrl,
         };
-      },
-    ),
+      }),
   };
 }
+
+/** Manager direct edit of clocks on the attendance days page (no approval queue). */
+export async function updateAttendanceDayClocks(
+  ctx: HrServiceContext,
+  input: any,
+) {
+  assertHrPermission(ctx, HR_PERMISSIONS.attendanceManage);
+  const employeeId = String(input.employeeId ?? "").trim();
+  if (!employeeId) {
+    throw new HrError("VALIDATION_ERROR", { message: "ต้องระบุพนักงาน" });
+  }
+  await owned("employee", ctx, employeeId);
+  const employee = await db.employee.findFirst({
+    where: { id: employeeId, organizationId: ctx.organizationId },
+    select: { id: true, branchId: true },
+  });
+  if (!employee) throw new HrError("NOT_FOUND");
+  assertBranchInScope(ctx, employee.branchId);
+  if (ctx.branchId && employee.branchId !== ctx.branchId) {
+    throw new HrError("FORBIDDEN", {
+      message: "พนักงานไม่อยู่ในสาขาที่เลือก",
+    });
+  }
+
+  const workDate = requireIsoDate(input.workDate, "วันที่ทำงาน");
+  const reason = String(input.reason ?? "").trim() || "แก้ไขจากหน้าเวลาทำงาน";
+  const requestedClockInAt = input.requestedClockInAt
+    ? requireDateTime(input.requestedClockInAt, "เวลาเข้า")
+    : null;
+  const requestedClockOutAt = input.requestedClockOutAt
+    ? requireDateTime(input.requestedClockOutAt, "เวลาออก")
+    : null;
+  if (!requestedClockInAt && !requestedClockOutAt) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "ต้องระบุเวลาเข้า หรือเวลาออกอย่างน้อยหนึ่งค่า",
+    });
+  }
+  if (
+    requestedClockInAt &&
+    requestedClockOutAt &&
+    requestedClockOutAt.getTime() <= requestedClockInAt.getTime()
+  ) {
+    throw new HrError("VALIDATION_ERROR", {
+      message: "เวลาออกต้องหลังเวลาเข้า",
+    });
+  }
+
+  const attendanceDayId =
+    typeof input.attendanceDayId === "string" && input.attendanceDayId.trim()
+      ? input.attendanceDayId.trim()
+      : null;
+
+  await applyAttendanceAdjustmentToDay(ctx, {
+    employeeId,
+    workDate,
+    requestedClockInAt,
+    requestedClockOutAt,
+    attendanceDayId,
+    reason,
+  });
+
+  const updatedDay = await db.attendanceDay.findUnique({
+    where: { employeeId_workDate: { employeeId, workDate } },
+    include: { status: { select: { code: true, name: true } } },
+  });
+  if (!updatedDay) throw new HrError("NOT_FOUND");
+
+  // Audit trail as an already-approved adjustment (best-effort).
+  try {
+    const approved = await master("leaveRequestStatus", "APPROVED");
+    await db.attendanceAdjustment.create({
+      data: {
+        organizationId: ctx.organizationId,
+        employeeId,
+        attendanceDayId: updatedDay.id,
+        workDate,
+        requestedClockInAt,
+        requestedClockOutAt,
+        reason,
+        statusId: approved.id,
+        requestedByAuthUserId: actor(ctx)!,
+        reviewedAt: new Date(),
+        reviewedByAuthUserId: actor(ctx),
+        reviewNote: "บันทึกจากหน้าเวลาทำงาน",
+      },
+    });
+  } catch {
+    // ignore audit insert failures
+  }
+
+  const workDateIso = isoDateOnly(workDate);
+  return {
+    ok: true,
+    workDate: workDateIso,
+    employeeId,
+    row: {
+      id: updatedDay.id as string,
+      employeeId,
+      workDate: workDateIso,
+      statusCode: updatedDay.status.code as string,
+      statusName: updatedDay.status.name as string,
+      shiftMismatchStatus: updatedDay.shiftMismatchStatus ?? null,
+      clockInAt: updatedDay.clockInAt
+        ? updatedDay.clockInAt.toISOString()
+        : null,
+      clockOutAt: updatedDay.clockOutAt
+        ? updatedDay.clockOutAt.toISOString()
+        : null,
+      lateMinutes: updatedDay.lateMinutes as number,
+      earlyLeaveMinutes: updatedDay.earlyLeaveMinutes as number,
+      lateLabel: formatMinutesLabel(updatedDay.lateMinutes),
+      earlyLeaveLabel: formatMinutesLabel(updatedDay.earlyLeaveMinutes),
+    },
+  };
+}
+
 const adjustmentEmployeeSelect = {
   id: true,
   displayName: true,

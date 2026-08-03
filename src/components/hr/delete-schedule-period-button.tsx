@@ -7,6 +7,7 @@ import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import { submitHrJson } from "@/components/hr/form-utils";
+import HrButton from "@/components/ui/hr-button";
 import { signalNavigationPending } from "@/lib/navigation-pending";
 
 export default function DeleteSchedulePeriodButton({
@@ -99,14 +100,15 @@ export default function DeleteSchedulePeriodButton({
         }}
         onConfirm={awaitingConfirm ? confirmDelete : undefined}
       />
-      <button
+      <HrButton
         type="button"
         className="btn btn-sm btn-danger"
+        action="trash"
         onClick={askDelete}
         disabled={busy || disabled}
       >
         {busy ? "กำลังลบ…" : "ลบ"}
-      </button>
+      </HrButton>
     </span>
   );
 }

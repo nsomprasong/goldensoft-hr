@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayrollPeriodForm from "@/components/hr/payroll-period-form";
 import HrShell from "@/components/hr-shell";
+import { IconOpen } from "@/components/ui/action-icons";
 import {
   combineAvailability,
   listPayrollPeriods,
@@ -198,10 +199,13 @@ export default async function PayrollPeriodsPage({
 
               <div className="hr-entity-card-actions">
                 <Link
-                  className="btn btn-sm"
+                  className="btn btn-sm btn-tab"
                   href={`/hr/payroll/periods/${row.id}`}
                 >
-                  เปิดดู
+                  <span className="btn-icon" aria-hidden="true">
+                    <IconOpen size={15} />
+                  </span>
+                  <span className="btn-label">เปิดดู</span>
                 </Link>
               </div>
             </article>

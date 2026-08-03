@@ -199,12 +199,24 @@ body:has(.gs-customer-shell-slot) .hr-product-nav-bar {
 
 .hr-product-nav .shell-nav-icon {
   display: inline-flex;
-  width: 2rem;
-  height: 2rem;
+  width: 2.15rem;
+  height: 2.15rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 0.7rem;
+  border-radius: 999px;
+  transform: translateY(0) scale(1);
+  transform-origin: center bottom;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease;
+  will-change: transform;
+}
+
+.hr-product-nav .shell-nav-link:hover .shell-nav-icon,
+.hr-product-nav .shell-nav-link.active .shell-nav-icon,
+.hr-product-nav .shell-nav-link[aria-current="page"] .shell-nav-icon {
+  transform: translateY(-0.28rem) scale(1.12);
 }
 
 .hr-product-nav .shell-nav-label {
@@ -217,13 +229,24 @@ body:has(.gs-customer-shell-slot) .hr-product-nav-bar {
 .hr-product-nav .nav-icon-idle-services {
   background: var(--dashboard-green-soft, #ecfdf5);
   color: var(--dashboard-green, #059669);
-  box-shadow: inset 0 0 0 1px var(--color-success-border, #a7f3d0);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.85),
+    inset 0 -5px 10px rgba(5, 150, 105, 0.16),
+    0 2px 3px rgba(5, 150, 105, 0.1),
+    0 10px 16px -8px rgba(5, 150, 105, 0.42),
+    0 16px 12px -12px rgba(15, 23, 42, 0.22);
 }
 
 .hr-product-nav .nav-icon-active-services {
   background: linear-gradient(145deg, #10b981 0%, #059669 100%);
   color: #fff;
-  box-shadow: 0 6px 14px rgba(5, 150, 105, 0.28);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.45),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 8px rgba(5, 150, 105, 0.28),
+    0 14px 22px -6px rgba(5, 150, 105, 0.5),
+    0 22px 16px -14px rgba(15, 23, 42, 0.28);
 }
 
 .hr-product-nav .nav-row-active-services {
@@ -1651,7 +1674,7 @@ a.card p {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
   gap: var(--space-4);
-  margin-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  margin-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
 }
 
 .hr-leave-card-grid {
@@ -2369,6 +2392,8 @@ a.card p {
   border-radius: var(--radius-md);
   background: var(--hr-surface-muted, var(--color-surface-muted));
   border: 1px solid var(--hr-border);
+  position: relative;
+  z-index: 0;
 }
 
 .hr-entity-card-meta > div,
@@ -2406,10 +2431,14 @@ a.card p {
 .hr-location-card-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: flex-end;
+  gap: 0.55rem;
   margin-top: auto;
-  padding-top: 0.15rem;
+  padding: 0.55rem 0.15rem 0.1rem;
+  border-top: 1px solid color-mix(in srgb, var(--hr-border) 70%, transparent);
+  position: relative;
+  z-index: 1;
+  background: var(--hr-surface, #fff);
 }
 
 .hr-doc-preview {
@@ -3893,9 +3922,9 @@ button.hr-schedule-empty-icon:disabled {
 }
 
 @media (max-width: 768px) {
-  /* Sit above Customer App mobile bottom nav */
+  /* Sit above Customer App mobile bottom nav (taller after icon dock) */
   .hr-fab {
-    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -3988,6 +4017,7 @@ button.hr-schedule-empty-icon:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
   min-height: var(--control-height);
   padding: 0.5rem 0.875rem;
   border: 1px solid var(--hr-border);
@@ -4000,42 +4030,243 @@ button.hr-schedule-empty-icon:disabled {
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.85),
+    inset 0 -4px 8px rgba(15, 23, 42, 0.08),
+    0 2px 3px rgba(15, 23, 42, 0.06),
+    0 10px 14px -10px rgba(15, 23, 42, 0.28);
+  transform: translateY(0) scale(1);
+  transform-origin: center bottom;
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .hr-root .btn:hover {
   background: var(--hr-surface-muted);
+  transform: translateY(-0.2rem) scale(1.04);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.9),
+    inset 0 -5px 10px rgba(15, 23, 42, 0.1),
+    0 4px 8px rgba(15, 23, 42, 0.1),
+    0 14px 18px -10px rgba(15, 23, 42, 0.28);
 }
 
 .hr-root .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
 }
 
 .hr-root .btn-primary {
   background: linear-gradient(180deg, #c2610f 0%, var(--hr-accent) 100%);
   border-color: transparent;
   color: var(--hr-on-accent);
-  box-shadow: var(--shadow-glow);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.35),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.18),
+    0 2px 3px rgba(180, 83, 9, 0.14),
+    0 10px 16px -8px rgba(180, 83, 9, 0.42),
+    0 16px 12px -12px rgba(15, 23, 42, 0.22);
 }
 
 .hr-root .btn-primary:hover {
   background: linear-gradient(180deg, #b45309 0%, var(--hr-accent-dark) 100%);
-  transform: translateY(-1px);
+  transform: translateY(-0.2rem) scale(1.04);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.4),
+    inset 0 -5px 10px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(180, 83, 9, 0.28),
+    0 14px 22px -6px rgba(180, 83, 9, 0.5),
+    0 22px 16px -14px rgba(15, 23, 42, 0.28);
 }
 
 .hr-root .btn-danger {
   background: var(--hr-surface);
   border-color: var(--hr-danger);
   color: var(--hr-danger);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.85),
+    inset 0 -4px 8px rgba(185, 28, 28, 0.08),
+    0 2px 3px rgba(185, 28, 28, 0.08),
+    0 10px 14px -10px rgba(185, 28, 28, 0.28);
 }
 
 .hr-root .btn-danger:hover {
   background: var(--hr-danger-bg);
+  transform: translateY(-0.2rem) scale(1.04);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.9),
+    inset 0 -5px 10px rgba(185, 28, 28, 0.12),
+    0 4px 8px rgba(185, 28, 28, 0.14),
+    0 14px 18px -10px rgba(185, 28, 28, 0.32);
 }
 
 .hr-root .btn-sm {
   padding: 0.3rem 0.55rem;
   font-size: 0.875rem;
+}
+
+/* Action buttons with icons → same layout as bottom submenu tabs */
+.hr-root .btn.btn-tab,
+.hr-root .btn:has(.btn-icon) {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  min-height: 0;
+  min-width: 3.6rem;
+  max-width: 6.75rem;
+  padding: 0.35rem 0.4rem 0.25rem;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--hr-text-muted, #526174);
+  box-shadow: none;
+  white-space: normal;
+  transform: none;
+}
+
+.hr-root .btn:has(.btn-icon):hover:not(:disabled) {
+  background: transparent;
+  color: var(--hr-accent, #b45309);
+  box-shadow: none;
+  transform: none;
+}
+
+.hr-root .btn:has(.btn-icon):disabled {
+  transform: none;
+}
+
+.hr-root .btn:has(.btn-icon) .btn-icon {
+  display: inline-flex;
+  width: 2.35rem;
+  height: 2.35rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--hr-accent, #b45309);
+  background: var(--hr-accent-soft, #fff7ed);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.85),
+    inset 0 -5px 10px rgba(180, 83, 9, 0.16),
+    0 2px 3px rgba(180, 83, 9, 0.1),
+    0 10px 16px -8px rgba(180, 83, 9, 0.42),
+    0 16px 12px -12px rgba(15, 23, 42, 0.22);
+  transform: translateY(0) scale(1);
+  transform-origin: center bottom;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease;
+  will-change: transform;
+}
+
+.hr-root .btn:has(.btn-icon):hover:not(:disabled) .btn-icon {
+  transform: translateY(-0.42rem) scale(1.18);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.45),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 8px rgba(180, 83, 9, 0.28),
+    0 14px 22px -6px rgba(180, 83, 9, 0.5),
+    0 22px 16px -14px rgba(15, 23, 42, 0.28);
+}
+
+.hr-root .btn:has(.btn-icon) .btn-label {
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hr-root .btn-primary:has(.btn-icon),
+.hr-root .btn.btn-primary:has(.btn-icon) {
+  background: transparent;
+  color: var(--hr-accent, #b45309);
+  box-shadow: none;
+}
+
+.hr-root .btn-primary:has(.btn-icon):hover:not(:disabled),
+.hr-root .btn.btn-primary:has(.btn-icon):hover:not(:disabled) {
+  background: transparent;
+  color: var(--hr-accent-dark, #9a3412);
+  box-shadow: none;
+  transform: none;
+}
+
+.hr-root .btn-primary:has(.btn-icon) .btn-icon,
+.hr-root .btn.btn-primary:has(.btn-icon) .btn-icon {
+  color: #fff;
+  background: linear-gradient(145deg, #d97706 0%, #b45309 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.45),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 8px rgba(180, 83, 9, 0.28),
+    0 14px 22px -6px rgba(180, 83, 9, 0.5),
+    0 22px 16px -14px rgba(15, 23, 42, 0.28);
+}
+
+.hr-root .btn-danger:has(.btn-icon),
+.hr-root .btn.btn-danger:has(.btn-icon) {
+  background: transparent;
+  border: none;
+  color: var(--hr-danger);
+  box-shadow: none;
+}
+
+.hr-root .btn-danger:has(.btn-icon):hover:not(:disabled),
+.hr-root .btn.btn-danger:has(.btn-icon):hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.hr-root .btn-danger:has(.btn-icon) .btn-icon,
+.hr-root .btn.btn-danger:has(.btn-icon) .btn-icon {
+  color: #fff;
+  background: linear-gradient(145deg, #f87171 0%, #dc2626 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.4),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(185, 28, 28, 0.28),
+    0 14px 22px -6px rgba(185, 28, 28, 0.5),
+    0 22px 16px -14px rgba(15, 23, 42, 0.28);
+}
+
+.hr-root .btn-sm:has(.btn-icon) {
+  min-width: 3.25rem;
+  max-width: 5.75rem;
+  padding: 0.25rem 0.3rem 0.2rem;
+  font-size: inherit;
+}
+
+.hr-root .btn-sm:has(.btn-icon) .btn-icon {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
+.hr-root .btn-sm:has(.btn-icon) .btn-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.hr-root a.btn.btn-tab,
+.hr-root a.btn:has(.btn-icon) {
+  text-decoration: none;
+}
+
+.hr-root .form-actions:has(.btn-icon),
+.hr-root .inline-actions:has(.btn-icon) {
+  align-items: flex-end;
+  gap: 0.55rem;
 }
 
 /* ?? Feedback ???????????????????????????????????????????????????????? */
@@ -4433,6 +4664,24 @@ button.hr-schedule-empty-icon:disabled {
   color: var(--hr-success);
 }
 
+.badge-late {
+  background: #f97316;
+  border-color: #ea580c;
+  color: #111827;
+}
+
+.badge-absent {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+.badge-off-day {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
 .badge-inactive {
   background: var(--hr-danger-bg);
   border-color: var(--hr-danger-border);
@@ -4736,8 +4985,137 @@ button.hr-schedule-empty-icon:disabled {
 
 /* Compact attendance day cards */
 .hr-attendance-day-grid {
+  margin-top: 1rem;
   grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
   gap: 0.75rem;
+}
+
+.hr-view-toggle {
+  display: inline-flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.hr-view-toggle .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hr-attendance-row-groups {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.hr-attendance-person-group {
+  padding: 0;
+  overflow: hidden;
+}
+
+.hr-attendance-person-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--hr-border);
+  background: var(--hr-surface-muted, color-mix(in srgb, var(--hr-border) 18%, transparent));
+}
+
+.hr-attendance-person-group-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.hr-attendance-person-group-title strong {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.hr-attendance-person-group-title .muted {
+  font-size: 0.8rem;
+}
+
+.hr-attendance-person-group .table-wrap {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.hr-attendance-person-table {
+  margin: 0;
+  min-width: 36rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.hr-attendance-person-table th,
+.hr-attendance-person-table td {
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+  vertical-align: middle;
+}
+
+.hr-attendance-person-table .col-sticky-date {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 6.5rem;
+  white-space: nowrap;
+  background: var(--hr-surface);
+  box-shadow: 4px 0 8px -4px rgba(15, 23, 42, 0.16);
+}
+
+.hr-attendance-person-table thead .col-sticky-date {
+  z-index: 3;
+  background: var(--hr-surface-muted);
+}
+
+.hr-attendance-person-table tbody tr:hover .col-sticky-date {
+  background: var(--hr-surface-muted);
+}
+
+.hr-attendance-person-table .col-status-span {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hr-attendance-person-table .col-status-span .hr-me-clock-day-flags {
+  justify-content: center;
+  width: 100%;
+}
+
+.hr-attendance-person-table .col-status {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hr-attendance-person-table .col-status .hr-me-clock-day-flags {
+  justify-content: center;
+}
+
+.hr-attendance-person-table .col-actions {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.hr-attendance-evidence--compact {
+  gap: 0.3rem;
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+
+.hr-attendance-evidence--compact .hr-attendance-evidence-link {
+  gap: 0;
+}
+
+.hr-attendance-evidence--compact .hr-attendance-evidence-link img {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.3rem;
 }
 
 .hr-attendance-day-card {

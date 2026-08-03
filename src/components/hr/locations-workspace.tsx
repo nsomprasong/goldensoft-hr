@@ -8,6 +8,7 @@ import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import WorkLocationForm, {
   type WorkLocationFormValues,
 } from "@/components/hr/work-location-form";
+import HrButton from "@/components/ui/hr-button";
 
 export type LocationListRow = {
   id: string;
@@ -202,14 +203,14 @@ export default function LocationsWorkspace({
                   ? "เพิ่มสถานที่ทำงาน"
                   : "แก้ไขสถานที่ทำงาน"}
               </h2>
-              <button
+              <HrButton
                 type="button"
                 className="btn btn-sm"
                 onClick={closeOverlay}
                 aria-label="ปิด"
               >
                 ปิด
-              </button>
+              </HrButton>
             </div>
             <div className="hr-overlay-body">
               <WorkLocationForm

@@ -1,10 +1,6 @@
-# (เลิกใช้) HR Demo Dataset
+# HR Demo Dataset (เลิกใช้)
 
-เอกสารนี้ถูกแทนที่ด้วยชุดล็อกอินจริง:
+เอกสารชุด DEMO เก่าถูกเลิกใช้
 
-→ **[`HR_LOGIN_TEST_DATASET.md`](./HR_LOGIN_TEST_DATASET.md)**
-
-ใช้ `npm run seed:login-test` ที่ Platform แล้วตามด้วย HR  
-รหัสผ่านทดสอบทุกคน: `12345678`
-
-สคริปต์เก่า `seed:hr:demo` ยังอยู่เพื่อความเข้ากันได้ แต่ไม่แนะนำสำหรับทดสอบล็อกอิน
+- ชุดล็อกอินเล็ก: [`HR_LOGIN_TEST_DATASET.md`](./HR_LOGIN_TEST_DATASET.md) (แพลูกแพรว)
+- ชุดทดสอบระบบครบ (2 องค์กร × 2 สาขา × 10 คน + ลงเวลา มิ.ย.–ก.ค. 2569): [`HR_FULL_QA_DATASET.md`](./HR_FULL_QA_DATASET.md)

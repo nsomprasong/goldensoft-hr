@@ -495,6 +495,8 @@ export type EmployeeListFilters = {
   employeeStatusId?: string;
   employmentTypeId?: string;
   page?: number;
+  pageSize?: number;
+  isActive?: boolean;
 };
 
 export type EmployeeListResult = {
@@ -623,11 +625,15 @@ export async function listEmployees(
   filters: EmployeeListFilters,
 ): Promise<HrDataResult<EmployeeListResult>> {
   const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(
+    500,
+    Math.max(1, filters.pageSize ?? EMPLOYEE_PAGE_SIZE),
+  );
   const fallback: EmployeeListResult = {
     rows: [],
     total: 0,
     page,
-    pageSize: EMPLOYEE_PAGE_SIZE,
+    pageSize,
     pageCount: 1,
   };
 
@@ -636,11 +642,12 @@ export async function listEmployees(
     const [result, lookups, branchNameById] = await Promise.all([
       listEmployeesService(repository, service, {
         page,
-        pageSize: EMPLOYEE_PAGE_SIZE,
+        pageSize,
         search: filters.search || null,
         branchId: filters.branchId || null,
         employeeStatusId: filters.employeeStatusId || null,
         employmentTypeId: filters.employmentTypeId || null,
+        isActive: filters.isActive ?? null,
       }),
       loadNameLookups(repository, ctx.organizationId),
       loadOrgBranchNameMap(ctx.organizationId),

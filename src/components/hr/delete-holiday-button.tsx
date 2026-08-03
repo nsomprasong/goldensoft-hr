@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { submitHrJson } from "@/components/hr/form-utils";
+import HrButton from "@/components/ui/hr-button";
 
 export default function DeleteHolidayButton({
   holidayId,
@@ -38,14 +39,15 @@ export default function DeleteHolidayButton({
 
   return (
     <span className="inline-actions">
-      <button
+      <HrButton
         type="button"
         className="btn btn-sm btn-danger"
+        action="trash"
         onClick={run}
         disabled={busy || disabled}
       >
         {busy ? "กำลังลบ…" : "ลบ"}
-      </button>
+      </HrButton>
       {error ? (
         <span className="field-error" role="alert">
           {error}

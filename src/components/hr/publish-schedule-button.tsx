@@ -7,6 +7,7 @@ import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import { submitHrJson } from "@/components/hr/form-utils";
+import HrButton from "@/components/ui/hr-button";
 
 export default function PublishScheduleButton({
   scheduleId,
@@ -65,14 +66,15 @@ export default function PublishScheduleButton({
         }}
         onConfirm={awaitingConfirm ? confirmPublish : undefined}
       />
-      <button
+      <HrButton
         type="button"
         className="btn btn-sm btn-primary"
+        action="publish"
         onClick={askPublish}
         disabled={busy || disabled}
       >
         {busy ? "กำลังเปิดใช้…" : "เปิดใช้ตารางกะ"}
-      </button>
+      </HrButton>
     </span>
   );
 }

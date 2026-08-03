@@ -7,6 +7,7 @@ import Alert from "@/components/hr/alert";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
+import HrButton from "@/components/ui/hr-button";
 import { createClientId } from "@/lib/hr/client-id";
 import { extractFaceDescriptor } from "@/lib/hr/client/face-descriptor";
 import { compressImageForUpload } from "@/lib/hr/compress-image-client";
@@ -736,9 +737,10 @@ export default function MeAttendanceWorkspace() {
           </div>
 
           <div className="hr-me-clock-actions">
-            <button
+            <HrButton
               type="button"
               className={`btn hr-me-clock-btn${clockAction ? " btn-primary" : ""}`}
+              action="clock"
               disabled={submitting || !clockAction || !photoBase64}
               onClick={() => {
                 if (clockAction) void submit(clockAction);
@@ -746,7 +748,7 @@ export default function MeAttendanceWorkspace() {
               title={clockButtonTitle}
             >
               {clockButtonLabel}
-            </button>
+            </HrButton>
           </div>
         </div>
 
@@ -863,14 +865,14 @@ export default function MeAttendanceWorkspace() {
                     </div>
                   ) : null}
                   {!off ? (
-                    <button
+                    <HrButton
                       type="button"
                       className="btn btn-sm"
                       onClick={() => openAdjust(row)}
                       disabled={!isOnline || adjustSubmitting}
                     >
                       ขอแก้เวลา
-                    </button>
+                    </HrButton>
                   ) : null}
                 </li>
               );
@@ -898,7 +900,7 @@ export default function MeAttendanceWorkspace() {
                 <p className="hr-period-create-overlay-kicker">ลงเวลาของฉัน</p>
                 <h2 id={adjustTitleId}>ขอแก้ไขเวลา</h2>
               </div>
-              <button
+              <HrButton
                 type="button"
                 className="btn btn-sm"
                 onClick={() => setAdjustDay(null)}
@@ -906,7 +908,7 @@ export default function MeAttendanceWorkspace() {
                 aria-label="ปิด"
               >
                 ปิด
-              </button>
+              </HrButton>
             </div>
             <div className="hr-overlay-body">
               <form
@@ -961,13 +963,14 @@ export default function MeAttendanceWorkspace() {
                   />
                 </label>
                 <div className="form-actions hr-ot-form-actions">
-                  <button
+                  <HrButton
                     type="submit"
                     className="btn btn-primary"
+                    action="send"
                     disabled={adjustSubmitting}
                   >
                     {adjustSubmitting ? "กำลังส่ง…" : "ส่งคำขอ"}
-                  </button>
+                  </HrButton>
                 </div>
               </form>
             </div>
@@ -1051,17 +1054,18 @@ export default function MeAttendanceWorkspace() {
               </p>
             </div>
             <div className="hr-mismatch-dialog-actions">
-              <button
+              <HrButton
                 type="button"
                 className="btn"
                 disabled={submitting}
                 onClick={() => setMismatchConfirm(null)}
               >
                 ยกเลิก
-              </button>
-              <button
+              </HrButton>
+              <HrButton
                 type="button"
                 className="btn btn-primary"
+                action="approve"
                 disabled={submitting || !mismatchConfirm.suggested}
                 onClick={() =>
                   void submit("clockIn", {
@@ -1071,7 +1075,7 @@ export default function MeAttendanceWorkspace() {
                 }
               >
                 {submitting ? "กำลังบันทึก…" : "ยืนยันเข้างาน"}
-              </button>
+              </HrButton>
             </div>
           </div>
         </div>

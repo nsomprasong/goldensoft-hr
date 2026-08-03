@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import HrButton from "@/components/ui/hr-button";
+
 export default function ReviewRequestButtons({
   kind,
   id,
@@ -43,23 +45,30 @@ export default function ReviewRequestButtons({
 
   return (
     <div className="inline-actions">
-      <button
-        type="button"
+      <HrButton
         className="btn btn-sm btn-primary"
+        action="approve"
         disabled={busy !== null}
         onClick={() => review("approve")}
       >
         {busy === "approve" ? "กำลังอนุมัติ…" : "อนุมัติ"}
-      </button>
-      <button
-        type="button"
+      </HrButton>
+      <HrButton
         className="btn btn-sm btn-danger"
+        action="reject"
         disabled={busy !== null}
         onClick={() => review("reject")}
       >
         {busy === "reject" ? "กำลังปฏิเสธ…" : "ไม่อนุมัติ"}
-      </button>
-      {error ? <span className="field-hint" style={{ color: "var(--hr-danger, #b91c1c)" }}>{error}</span> : null}
+      </HrButton>
+      {error ? (
+        <span
+          className="field-hint"
+          style={{ color: "var(--hr-danger, #b91c1c)" }}
+        >
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

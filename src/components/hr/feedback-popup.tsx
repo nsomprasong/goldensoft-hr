@@ -2,6 +2,8 @@
 
 import { useEffect, useId } from "react";
 
+import HrButton from "@/components/ui/hr-button";
+
 export type FeedbackKind = "success" | "error" | "warning" | "info";
 
 export type FeedbackPopupState = {
@@ -197,29 +199,29 @@ export default function FeedbackPopup({
           >
             {isConfirm ? (
               <>
-                <button
-                  type="button"
+                <HrButton
                   className="btn hr-feedback-popup-dismiss"
+                  action="cancel"
                   onClick={onClose}
                 >
                   ยกเลิก
-                </button>
-                <button
-                  type="button"
+                </HrButton>
+                <HrButton
                   className="btn btn-primary"
+                  action="approve"
                   onClick={onConfirm}
                 >
                   {feedback.confirmLabel}
-                </button>
+                </HrButton>
               </>
             ) : (
-              <button
-                type="button"
+              <HrButton
                 className="btn hr-feedback-popup-dismiss"
+                action="close"
                 onClick={onClose}
               >
                 ปิด
-              </button>
+              </HrButton>
             )}
           </div>
         ) : null}

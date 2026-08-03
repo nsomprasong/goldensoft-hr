@@ -10,6 +10,7 @@ import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import Field, { fieldProps } from "@/components/hr/field";
+import HrButton from "@/components/ui/hr-button";
 import { formatThb } from "@/lib/hr/money";
 import type {
   DisbursementMode,
@@ -157,14 +158,14 @@ export default function AdvanceApprovalList({
                     </p>
                     <h2 id={titleId}>อนุมัติคำขอ</h2>
                   </div>
-                  <button
+                  <HrButton
                     type="button"
                     className="btn btn-sm"
                     disabled={saving}
                     onClick={() => setReviewing(null)}
                   >
                     ปิด
-                  </button>
+                  </HrButton>
                 </div>
                 <div className="hr-overlay-body">
                   <form className="hr-advance-form" onSubmit={approve}>
@@ -217,21 +218,22 @@ export default function AdvanceApprovalList({
                       </p>
                     )}
                     <div className="form-actions hr-advance-form-actions">
-                      <button
+                      <HrButton
                         type="button"
                         className="btn"
                         disabled={saving}
                         onClick={() => setReviewing(null)}
                       >
                         ยกเลิก
-                      </button>
-                      <button
+                      </HrButton>
+                      <HrButton
                         type="submit"
                         className="btn btn-primary"
+                        action="approve"
                         disabled={saving}
                       >
                         {saving ? "กำลังบันทึก…" : "ยืนยันอนุมัติ"}
-                      </button>
+                      </HrButton>
                     </div>
                   </form>
                 </div>
@@ -290,22 +292,22 @@ export default function AdvanceApprovalList({
                   </span>
                   {canApprove && pending ? (
                     <div className="hr-leave-approval-actions">
-                      <button
+                      <HrButton
                         type="button"
                         className="btn btn-sm btn-primary"
                         disabled={busy}
                         onClick={() => openReview(row)}
                       >
                         อนุมัติ
-                      </button>
-                      <button
+                      </HrButton>
+                      <HrButton
                         type="button"
                         className="btn btn-sm btn-danger"
                         disabled={busy}
                         onClick={() => void reject(row)}
                       >
                         ไม่อนุมัติ
-                      </button>
+                      </HrButton>
                     </div>
                   ) : null}
                 </div>

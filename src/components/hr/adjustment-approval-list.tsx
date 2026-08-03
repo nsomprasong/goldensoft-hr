@@ -8,6 +8,7 @@ import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
+import HrButton from "@/components/ui/hr-button";
 import type { AttendanceAdjustmentRow } from "@/lib/hr/data";
 import { formatThaiDateReadable } from "@/lib/hr/thai-date";
 
@@ -171,22 +172,23 @@ export default function AdjustmentApprovalList({
                       </span>
                       {canApprove && pending ? (
                         <div className="hr-leave-approval-actions">
-                          <button
+                          <HrButton
                             type="button"
                             className="btn btn-sm btn-primary"
+                            action="approve"
                             disabled={busy}
                             onClick={() => void review(row, "approve")}
                           >
                             {busy ? "…" : "อนุมัติ"}
-                          </button>
-                          <button
+                          </HrButton>
+                          <HrButton
                             type="button"
                             className="btn btn-sm btn-danger"
                             disabled={busy}
                             onClick={() => void review(row, "reject")}
                           >
                             ไม่อนุมัติ
-                          </button>
+                          </HrButton>
                         </div>
                       ) : null}
                     </div>

@@ -8,6 +8,7 @@ import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
+import HrButton from "@/components/ui/hr-button";
 import type {
   LeaveCoverCandidate,
   LeaveRequestRow,
@@ -265,22 +266,22 @@ export default function LeaveApprovalCards({
                   </span>
                   {canApprove && pending ? (
                     <div className="hr-leave-approval-actions">
-                      <button
+                      <HrButton
                         type="button"
                         className="btn btn-sm btn-primary"
                         disabled={busy}
                         onClick={() => void review(row, "approve")}
                       >
                         อนุมัติ
-                      </button>
-                      <button
+                      </HrButton>
+                      <HrButton
                         type="button"
                         className="btn btn-sm btn-danger"
                         disabled={busy}
                         onClick={() => void review(row, "reject")}
                       >
                         ไม่อนุมัติ
-                      </button>
+                      </HrButton>
                     </div>
                   ) : null}
                 </div>
@@ -348,14 +349,15 @@ export default function LeaveApprovalCards({
                           ไม่มีพนักงานกะอื่นในสาขาเดียวกับผู้ลา ในวันที่ลา
                         </p>
                       ) : null}
-                      <button
+                      <HrButton
                         type="button"
                         className="btn btn-sm"
+                        action="save"
                         disabled={busy || loading}
                         onClick={() => void saveCover(row)}
                       >
                         {busy ? "กำลังบันทึก…" : "บันทึกคนแทน / ย้ายกะ"}
-                      </button>
+                      </HrButton>
                     </div>
                   ) : null}
                 </div>

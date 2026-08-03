@@ -22,6 +22,8 @@
     "seed:hr:demo:cleanup": "tsx scripts/seed-hr-demo-cleanup.ts",
     "seed:login-test": "tsx scripts/seed-login-test.ts",
     "seed:login-test:cleanup": "tsx scripts/seed-login-test-cleanup.ts",
+    "seed:full-qa": "tsx scripts/seed-full-qa.ts",
+    "seed:full-qa:cleanup": "tsx scripts/seed-full-qa-cleanup.ts",
     "test:attendance-gps": "tsx scripts/test-attendance-gps.ts",
     "test:leave-branch-approval": "tsx scripts/test-leave-branch-approval.ts",
     "test:payroll-phase4": "tsx scripts/test-payroll-phase4.ts",

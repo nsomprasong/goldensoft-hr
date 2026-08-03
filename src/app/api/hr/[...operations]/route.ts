@@ -5,7 +5,7 @@ import {
   createNotification, createPayrollRun, createSchedulePeriod, createWorkLocation, deleteCalendar, deleteHoliday, deleteSchedulePeriod, getSchedulePeriod, issuePayslips,
   assignLeaveCover, listAttendanceAdjustments, listAttendanceDays, listCalendars, listHolidayTypes, listLeaveBalances, listLeaveCoverCandidates, listLeaveRequests, listLeaveTypes, listNotifications, listOvertimeRequests, listPayItems, listSchedulePeriods, listSelfAttendanceToday, listShiftMismatchRequests, listWorkLocations,
   markAllNotificationsRead, markNotificationRead, payrollAction, report, resolveSelfEmployee, reviewAttendanceAdjustment, reviewLeave, reviewOvertime, reviewShiftMismatchRequest, saveCalendar, saveHoliday, saveRecurringPayItem, scheduleAction, seedThaiPublicHolidays, selfService, submitLeave, submitOvertime,
-  toCsv, updateSchedulePeriod, updateWorkLocation,
+  toCsv, updateAttendanceDayClocks, updateSchedulePeriod, updateWorkLocation,
 } from "@/lib/hr/services/operations";
 import {
   getPayrollRun,
@@ -177,7 +177,23 @@ async function dispatch(request: Request, params: Params): Promise<Response> {
     }
     return jsonResponse(await enrollMyFace(service, body), 201);
   }
-  if (path === "attendance/days") return jsonResponse(await listAttendanceDays(service, Object.fromEntries(new URL(request.url).searchParams)));
+  if (path === "attendance/days") {
+    if (request.method === "GET") {
+      return jsonResponse(
+        await listAttendanceDays(
+          service,
+          Object.fromEntries(new URL(request.url).searchParams),
+        ),
+      );
+    }
+    if (body.action === "updateClocks") {
+      return jsonResponse(await updateAttendanceDayClocks(service, body));
+    }
+    return jsonResponse(
+      { error: { message: "รองรับเฉพาะ GET หรือ action=updateClocks" } },
+      400,
+    );
+  }
   if (path === "attendance/adjustments") {
     if (request.method === "GET") {
       const params = new URL(request.url).searchParams;
