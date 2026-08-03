@@ -21,6 +21,44 @@ import {
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
 import type { HrServiceContext } from "@/lib/hr/services/shared";
 
+function facePhotoSaveErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message.trim() : "";
+  if (raw === "PHOTO_TOO_LARGE") return "ไฟล์รูปใหญ่เกิน 2.5 MB";
+  if (raw === "UNSUPPORTED_PHOTO_TYPE") {
+    return "รองรับเฉพาะไฟล์ JPG, PNG, WEBP หรือ GIF";
+  }
+  if (raw === "EMPTY_PHOTO") return "ไฟล์รูปว่างเปล่า — ถ่ายใหม่";
+  if (/EACCES|EPERM|permission denied/i.test(raw)) {
+    return "บันทึกรูปใบหน้าไม่สำเร็จ — เซิร์ฟเวอร์ไม่มีสิทธิ์เขียนโฟลเดอร์เก็บรูป (storage/face-enrollments)";
+  }
+  if (/ENOSPC/i.test(raw)) {
+    return "บันทึกรูปใบหน้าไม่สำเร็จ — พื้นที่ดิสก์ของเซิร์ฟเวอร์เต็ม";
+  }
+  if (/ENOENT|EROFS|read-only/i.test(raw)) {
+    return "บันทึกรูปใบหน้าไม่สำเร็จ — สร้างโฟลเดอร์เก็บรูปบนเซิร์ฟเวอร์ไม่ได้";
+  }
+  if (raw) return `บันทึกรูปใบหน้าไม่สำเร็จ — ${raw.slice(0, 180)}`;
+  return "บันทึกรูปใบหน้าไม่สำเร็จ";
+}
+
+function faceEnrollmentDbErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message.trim() : String(err ?? "");
+  if (/employee_face_enrollments|42P01|does not exist/i.test(raw)) {
+    return "บันทึกใบหน้าไม่สำเร็จ — ยังไม่มีตารางใบหน้าในฐานข้อมูล (ต้องรัน migration 0015_face_matching)";
+  }
+  if (/foreign key|23503/i.test(raw)) {
+    return "บันทึกใบหน้าไม่สำเร็จ — ข้อมูลพนักงานไม่พร้อมใช้งาน";
+  }
+  if (/unique|23505/i.test(raw)) {
+    return "บันทึกใบหน้าไม่สำเร็จ — มีข้อมูลใบหน้าซ้ำในระบบ";
+  }
+  if (raw) {
+    const short = raw.replace(/\s+/g, " ").slice(0, 180);
+    return `บันทึกใบหน้าไม่สำเร็จ — ${short}`;
+  }
+  return "บันทึกใบหน้าไม่สำเร็จ — เกิดข้อผิดพลาดฐานข้อมูล";
+}
+
 async function resolveSelfEmployee(ctx: HrServiceContext) {
   const employee = await prisma.employee.findFirst({
     where: {
@@ -290,25 +328,15 @@ export async function enrollMyFace(
     });
     photoUrl = saved.photoUrl;
   } catch (err) {
-    const code = err instanceof Error ? err.message : "PHOTO_ERROR";
-    if (code === "PHOTO_TOO_LARGE") {
-      throw new HrError("VALIDATION_ERROR", {
-        message: "ไฟล์รูปใหญ่เกิน 2.5 MB",
-      });
-    }
-    if (code === "UNSUPPORTED_PHOTO_TYPE") {
-      throw new HrError("VALIDATION_ERROR", {
-        message: "รองรับเฉพาะไฟล์ JPG, PNG, WEBP หรือ GIF",
-      });
-    }
     throw new HrError("VALIDATION_ERROR", {
-      message: "บันทึกรูปใบหน้าไม่สำเร็จ",
+      message: facePhotoSaveErrorMessage(err),
     });
   }
 
   const id = randomUUID();
   const descriptorJson = JSON.stringify(descriptor);
-  await prisma.$executeRaw`
+  try {
+    await prisma.$executeRaw`
     INSERT INTO hr.employee_face_enrollments (
       id, organization_id, employee_id, descriptor, descriptor_version,
       photo_url, enrolled_at, enrolled_by_auth_user_id, created_at, updated_at
@@ -333,6 +361,12 @@ export async function enrollMyFace(
       enrolled_by_auth_user_id = EXCLUDED.enrolled_by_auth_user_id,
       updated_at = CURRENT_TIMESTAMP
   `;
+  } catch (err) {
+    console.error("[face-enroll] insert failed", err);
+    throw new HrError("INTERNAL_ERROR", {
+      message: faceEnrollmentDbErrorMessage(err),
+    });
+  }
 
   const saved = await findEnrollmentMeta(ctx.organizationId, employee.id);
   return {

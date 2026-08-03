@@ -11,6 +11,29 @@ import { compressImageForUpload } from "@/lib/hr/compress-image-client";
 import { formatThaiDate } from "@/lib/hr/thai-date";
 import type { SelfFaceMatchStatus } from "@/lib/hr/services/face-matching";
 
+function readApiErrorMessage(
+  body: unknown,
+  fallback: string,
+  status?: number,
+): string {
+  if (body && typeof body === "object") {
+    const root = body as {
+      error?: { code?: string; message?: string };
+      message?: string;
+    };
+    const message =
+      root.error?.message?.trim() || root.message?.trim() || "";
+    if (message) {
+      const code = root.error?.code?.trim();
+      return code && !message.includes(code) ? `${message} (${code})` : message;
+    }
+  }
+  if (status && status >= 400) {
+    return `${fallback} (HTTP ${status})`;
+  }
+  return fallback;
+}
+
 export default function MeFaceEnrollWorkspace({
   initial,
 }: {
@@ -51,8 +74,12 @@ export default function MeFaceEnrollWorkspace({
       setPhotoPreview(compressed.previewUrl);
       setPhotoBase64(compressed.dataUrl);
       setFeedback(null);
-    } catch {
-      setFeedback({ kind: "error", message: "อ่านรูปไม่สำเร็จ" });
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "อ่านรูปไม่สำเร็จ";
+      setFeedback({ kind: "error", message: detail });
     }
   }
 
@@ -72,26 +99,40 @@ export default function MeFaceEnrollWorkspace({
       }
 
       setFeedback({ kind: "info", message: "กำลังบันทึก…" });
-      const response = await fetch("/api/hr/me/face", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          photoBase64,
-          faceDescriptor: extracted.descriptor,
-        }),
-      });
-      if (!response.ok) {
-        let detail = "ลงทะเบียนใบหน้าไม่สำเร็จ";
-        try {
-          const body = (await response.json()) as {
-            error?: { message?: string };
-            message?: string;
-          };
-          detail = body.error?.message?.trim() || body.message?.trim() || detail;
-        } catch {
-          // keep fallback
-        }
+      let response: Response;
+      try {
+        response = await fetch("/api/hr/me/face", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            photoBase64,
+            faceDescriptor: extracted.descriptor,
+          }),
+        });
+      } catch (err) {
+        const detail =
+          err instanceof Error && err.message.trim()
+            ? `เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ — ${err.message.trim()}`
+            : "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต";
         setFeedback({ kind: "error", message: detail });
+        return;
+      }
+
+      if (!response.ok) {
+        let body: unknown = null;
+        try {
+          body = await response.json();
+        } catch {
+          body = null;
+        }
+        setFeedback({
+          kind: "error",
+          message: readApiErrorMessage(
+            body,
+            "ลงทะเบียนใบหน้าไม่สำเร็จ",
+            response.status,
+          ),
+        });
         return;
       }
 
@@ -103,6 +144,12 @@ export default function MeFaceEnrollWorkspace({
       if (photoPreview) URL.revokeObjectURL(photoPreview);
       setPhotoPreview(null);
       await refresh();
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "ลงทะเบียนใบหน้าไม่สำเร็จ";
+      setFeedback({ kind: "error", message: detail });
     } finally {
       setSubmitting(false);
     }
@@ -115,13 +162,42 @@ export default function MeFaceEnrollWorkspace({
     setSubmitting(true);
     setFeedback({ kind: "info", message: "กำลังลบ…" });
     try {
-      const response = await fetch("/api/hr/me/face", { method: "DELETE" });
+      let response: Response;
+      try {
+        response = await fetch("/api/hr/me/face", { method: "DELETE" });
+      } catch (err) {
+        const detail =
+          err instanceof Error && err.message.trim()
+            ? `เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ — ${err.message.trim()}`
+            : "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต";
+        setFeedback({ kind: "error", message: detail });
+        return;
+      }
       if (!response.ok) {
-        setFeedback({ kind: "error", message: "ลบไม่สำเร็จ" });
+        let body: unknown = null;
+        try {
+          body = await response.json();
+        } catch {
+          body = null;
+        }
+        setFeedback({
+          kind: "error",
+          message: readApiErrorMessage(
+            body,
+            "ลบใบหน้าไม่สำเร็จ",
+            response.status,
+          ),
+        });
         return;
       }
       setFeedback({ kind: "success", message: "ลบใบหน้าแล้ว" });
       await refresh();
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "ลบใบหน้าไม่สำเร็จ";
+      setFeedback({ kind: "error", message: detail });
     } finally {
       setSubmitting(false);
     }

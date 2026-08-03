@@ -43,6 +43,14 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/certs ./certs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Writable dirs for face / attendance / employee photo uploads (USER nextjs).
+# Mount a volume at /app/storage in compose to persist across redeploys.
+RUN mkdir -p \
+      storage/face-enrollments \
+      storage/attendance-photos \
+      storage/employee-photos \
+      storage/employee-documents \
+  && chown -R nextjs:nodejs storage
 USER nextjs
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
