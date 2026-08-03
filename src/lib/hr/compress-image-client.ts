@@ -3,7 +3,15 @@
  * Safe for Client Components — no Node APIs.
  */
 
-export const ATTENDANCE_PHOTO_MAX_BYTES = Math.floor(2.5 * 1024 * 1024);
+/** Evidence photos — keep under reverse-proxy limits after base64 (~+33%). */
+export const ATTENDANCE_PHOTO_MAX_BYTES = Math.floor(650 * 1024);
+
+/**
+ * Face enrollment only needs a mid-res face crop for face-api + reference photo.
+ * Keep well under typical nginx `client_max_body_size 1m`.
+ */
+export const FACE_ENROLL_PHOTO_MAX_BYTES = Math.floor(350 * 1024);
+export const FACE_ENROLL_PHOTO_MAX_EDGE = 720;
 
 export type CompressedImage = {
   /** `data:image/jpeg;base64,…` for API payloads */
@@ -51,30 +59,25 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 
 /**
  * Downscale + JPEG-encode until the binary size is ≤ maxBytes.
- * Already-small images are returned as JPEG only when needed.
+ * Pass `force: true` to always re-encode (needed so base64 JSON stays small).
  */
 export async function compressImageForUpload(
   file: File,
-  options?: { maxBytes?: number; maxEdge?: number },
+  options?: { maxBytes?: number; maxEdge?: number; force?: boolean },
 ): Promise<CompressedImage> {
   const maxBytes = options?.maxBytes ?? ATTENDANCE_PHOTO_MAX_BYTES;
-  const maxEdgeStart = options?.maxEdge ?? 1600;
+  const maxEdgeStart = options?.maxEdge ?? 1280;
+  const force = options?.force === true;
 
   if (!file.type.startsWith("image/")) {
     throw new Error("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
   }
 
-  if (file.size <= maxBytes && file.type === "image/jpeg") {
-    const dataUrl = await blobToDataUrl(file);
-    return {
-      dataUrl,
-      previewUrl: URL.createObjectURL(file),
-      byteSize: file.size,
-      file,
-    };
-  }
-
-  if (file.size <= maxBytes) {
+  if (
+    !force &&
+    file.size <= maxBytes &&
+    (file.type === "image/jpeg" || file.type === "image/jpg")
+  ) {
     const dataUrl = await blobToDataUrl(file);
     return {
       dataUrl,
@@ -85,8 +88,14 @@ export async function compressImageForUpload(
   }
 
   const image = await loadImage(file);
-  const edges = [maxEdgeStart, 1280, 1024, 800, 640];
-  const qualities = [0.82, 0.72, 0.62, 0.52, 0.42];
+  const edges = [
+    maxEdgeStart,
+    Math.min(maxEdgeStart, 1024),
+    Math.min(maxEdgeStart, 800),
+    Math.min(maxEdgeStart, 640),
+    480,
+  ].filter((value, index, all) => all.indexOf(value) === index && value > 0);
+  const qualities = [0.8, 0.7, 0.58, 0.48, 0.38, 0.3];
 
   let best: Blob | null = null;
 
@@ -106,7 +115,7 @@ export async function compressImageForUpload(
       if (!blob) continue;
       best = blob;
       if (blob.size <= maxBytes) {
-        const compressed = new File([blob], "attendance.jpg", {
+        const compressed = new File([blob], "photo.jpg", {
           type: "image/jpeg",
         });
         return {
@@ -120,10 +129,12 @@ export async function compressImageForUpload(
   }
 
   if (!best || best.size > maxBytes) {
-    throw new Error("ย่อขนาดรูปไม่สำเร็จ — ลองถ่ายใหม่ในโหมดความละเอียดต่ำกว่า");
+    throw new Error(
+      "ย่อขนาดรูปไม่สำเร็จ — ลองถ่ายใหม่ในโหมดความละเอียดต่ำกว่า",
+    );
   }
 
-  const compressed = new File([best], "attendance.jpg", {
+  const compressed = new File([best], "photo.jpg", {
     type: "image/jpeg",
   });
   return {

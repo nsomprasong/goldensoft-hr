@@ -270,7 +270,7 @@ export default function MeAttendanceWorkspace() {
     }
     setFeedback({ kind: "info", message: "กำลังย่อขนาดรูป…" });
     try {
-      const compressed = await compressImageForUpload(file);
+      const compressed = await compressImageForUpload(file, { force: true });
       setPhotoPreview(compressed.previewUrl);
       setPhotoBase64(compressed.dataUrl);
       setFeedback(null);

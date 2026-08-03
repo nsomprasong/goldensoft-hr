@@ -7,7 +7,11 @@ import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
 import { extractFaceDescriptor } from "@/lib/hr/client/face-descriptor";
-import { compressImageForUpload } from "@/lib/hr/compress-image-client";
+import {
+  FACE_ENROLL_PHOTO_MAX_BYTES,
+  FACE_ENROLL_PHOTO_MAX_EDGE,
+  compressImageForUpload,
+} from "@/lib/hr/compress-image-client";
 import { formatThaiDate } from "@/lib/hr/thai-date";
 import type { SelfFaceMatchStatus } from "@/lib/hr/services/face-matching";
 
@@ -16,6 +20,9 @@ function readApiErrorMessage(
   fallback: string,
   status?: number,
 ): string {
+  if (status === 413) {
+    return "รูปใหญ่เกินที่เซิร์ฟเวอร์รับได้ — ระบบจะย่อรูปให้อัตโนมัติ ลองถ่ายใหม่ในที่สว่างแล้วบันทึกอีกครั้ง";
+  }
   if (body && typeof body === "object") {
     const root = body as {
       error?: { code?: string; message?: string };
@@ -69,7 +76,11 @@ export default function MeFaceEnrollWorkspace({
   async function applyPhoto(file: File | null) {
     if (!file) return;
     try {
-      const compressed = await compressImageForUpload(file);
+      const compressed = await compressImageForUpload(file, {
+        maxBytes: FACE_ENROLL_PHOTO_MAX_BYTES,
+        maxEdge: FACE_ENROLL_PHOTO_MAX_EDGE,
+        force: true,
+      });
       if (photoPreview) URL.revokeObjectURL(photoPreview);
       setPhotoPreview(compressed.previewUrl);
       setPhotoBase64(compressed.dataUrl);
