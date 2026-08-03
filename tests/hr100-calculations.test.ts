@@ -7,9 +7,26 @@ import { calculatePayroll } from "../src/lib/hr/payroll-calc";
 import { findMinimumRestViolations, findOverlappingAssignments } from "../src/lib/hr/schedule-conflicts";
 
 describe("HR 100% pure calculations", () => {
-  it("calculates distance and rejects low-accuracy geofence readings", () => {
+  it("calculates distance and expands fence by GPS uncertainty", () => {
     assert.ok(haversineMeters({ latitude: 13.7563, longitude: 100.5018 }, { latitude: 13.7563, longitude: 100.5018 }) < 0.01);
-    assert.equal(insideGeofence({ latitude: 13.7563, longitude: 100.5018 }, { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 101 }, 50).reason, "ACCURACY_TOO_LOW");
+    // Same spot with moderate phone accuracy should still pass.
+    assert.equal(
+      insideGeofence(
+        { latitude: 13.7563, longitude: 100.5018 },
+        { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 40 },
+        10,
+      ).accepted,
+      true,
+    );
+    // Absurd accuracy is still rejected.
+    assert.equal(
+      insideGeofence(
+        { latitude: 13.7563, longitude: 100.5018 },
+        { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 400 },
+        50,
+      ).reason,
+      "ACCURACY_TOO_LOW",
+    );
   });
 
   it("calculates an overnight attendance day", () => {

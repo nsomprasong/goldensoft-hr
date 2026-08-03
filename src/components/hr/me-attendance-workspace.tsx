@@ -11,6 +11,7 @@ import HrButton from "@/components/ui/hr-button";
 import { createClientId } from "@/lib/hr/client-id";
 import { extractFaceDescriptor } from "@/lib/hr/client/face-descriptor";
 import { compressImageForUpload } from "@/lib/hr/compress-image-client";
+import { haversineMeters } from "@/lib/hr/geo";
 import type { SelfFaceMatchStatus } from "@/lib/hr/services/face-matching";
 import {
   formatThaiDate,
@@ -137,15 +138,89 @@ async function readCurrentPosition(): Promise<GeoReadResult> {
   }
   const precise = await readCurrentPositionOnce({
     enableHighAccuracy: true,
-    timeout: 12_000,
+    timeout: 20_000,
     maximumAge: 0,
   });
   if (precise.ok || precise.reason === "denied") return precise;
   // Retry without high accuracy (some phones fail the first attempt).
-  return readCurrentPositionOnce({
+  const coarse = await readCurrentPositionOnce({
     enableHighAccuracy: false,
-    timeout: 12_000,
+    timeout: 20_000,
     maximumAge: 60_000,
+  });
+  if (coarse.ok || coarse.reason === "denied") return coarse;
+  // Last try: briefly watch for a fresher fix (common when first fix is cached/stale).
+  return readPositionViaWatch({
+    enableHighAccuracy: true,
+    timeout: 18_000,
+    maximumAge: 0,
+  });
+}
+
+function readPositionViaWatch(options: PositionOptions): Promise<GeoReadResult> {
+  if (!navigator.geolocation?.watchPosition) {
+    return Promise.resolve({ ok: false, reason: "unavailable" });
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let best: GeolocationPosition | null = null;
+    const finish = (result: GeoReadResult) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      resolve(result);
+    };
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        best = position;
+        // Accept as soon as accuracy is usable, or after we get any fix.
+        if (
+          position.coords.accuracy != null &&
+          position.coords.accuracy <= 80
+        ) {
+          finish({
+            ok: true,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracyMeters: position.coords.accuracy,
+          });
+        }
+      },
+      (error) => {
+        if (best) {
+          finish({
+            ok: true,
+            latitude: best.coords.latitude,
+            longitude: best.coords.longitude,
+            accuracyMeters: best.coords.accuracy,
+          });
+          return;
+        }
+        if (error.code === error.PERMISSION_DENIED) {
+          finish({ ok: false, reason: "denied" });
+          return;
+        }
+        if (error.code === error.TIMEOUT) {
+          finish({ ok: false, reason: "timeout" });
+          return;
+        }
+        finish({ ok: false, reason: "unavailable" });
+      },
+      options,
+    );
+    const timer = window.setTimeout(() => {
+      if (best) {
+        finish({
+          ok: true,
+          latitude: best.coords.latitude,
+          longitude: best.coords.longitude,
+          accuracyMeters: best.coords.accuracy,
+        });
+        return;
+      }
+      finish({ ok: false, reason: "timeout" });
+    }, options.timeout ?? 18_000);
   });
 }
 
@@ -161,12 +236,12 @@ function geoErrorMessage(
     return "ไม่อนุญาตการเข้าถึงตำแหน่ง — เปิด Location ในเบราว์เซอร์แล้วลองใหม่";
   }
   if (reason === "timeout") {
-    return "อ่านตำแหน่งช้าเกินไป — เปิด GPS ของเครื่องแล้วลองใหม่";
+    return "อ่านตำแหน่งช้าเกินไป — เปิด GPS ของเครื่อง ยืนกลางแจ้งแล้วลองใหม่";
   }
   if (reason === "unsupported") {
     return "อุปกรณ์นี้ไม่รองรับการอ่านตำแหน่ง";
   }
-  return "ไม่สามารถอ่านตำแหน่งได้ จึงยังไม่บันทึกลงเวลา";
+  return "ไม่สามารถอ่านตำแหน่งจากอุปกรณ์ได้ — เปิด Location/GPS แล้วลองใหม่";
 }
 
 export default function MeAttendanceWorkspace() {
@@ -200,6 +275,13 @@ export default function MeAttendanceWorkspace() {
   const [faceMatching, setFaceMatching] = useState<SelfFaceMatchStatus | null>(
     null,
   );
+  const [gpsPreview, setGpsPreview] = useState<{
+    distanceMeters: number;
+    accuracyMeters?: number;
+    deviceLat: number;
+    deviceLng: number;
+  } | null>(null);
+  const [gpsPreviewLoading, setGpsPreviewLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -342,6 +424,57 @@ export default function MeAttendanceWorkspace() {
     }
 
     return { ok: false, message: geoErrorMessage(device.reason) };
+  }
+
+  async function previewGpsDistance() {
+    if (
+      workLocation?.latitude == null ||
+      workLocation?.longitude == null
+    ) {
+      setFeedback({
+        kind: "error",
+        message: "ยังไม่มีหมุดสถานที่ทำงาน — แจ้งแอดมินตั้งค่าก่อน",
+      });
+      return;
+    }
+    setGpsPreviewLoading(true);
+    setGpsPreview(null);
+    try {
+      const device = await readCurrentPosition();
+      if (!device.ok) {
+        setFeedback({ kind: "error", message: geoErrorMessage(device.reason) });
+        return;
+      }
+      const distanceMeters = haversineMeters(
+        {
+          latitude: workLocation.latitude,
+          longitude: workLocation.longitude,
+        },
+        { latitude: device.latitude, longitude: device.longitude },
+      );
+      setGpsPreview({
+        distanceMeters,
+        accuracyMeters: device.accuracyMeters,
+        deviceLat: device.latitude,
+        deviceLng: device.longitude,
+      });
+      if (distanceMeters > Math.max(workLocation.geofenceRadiusMeters, 50) + 80) {
+        setFeedback({
+          kind: "warning",
+          message:
+            distanceMeters >= 500
+              ? `ตอนนี้อยู่ห่างหมุดประมาณ ${Math.round(distanceMeters)} ม. — หมุด「${workLocation.name}」อาจปักผิดที่ หรือเครื่องอ่านตำแหน่งคนละจุด ให้แอดมินตรวจพิกัดในเมนูสถานที่ทำงาน`
+              : `ตอนนี้อยู่ห่างหมุดประมาณ ${Math.round(distanceMeters)} ม. (รัศมี ${workLocation.geofenceRadiusMeters} ม.)`,
+        });
+      } else {
+        setFeedback({
+          kind: "success",
+          message: `อยู่ในระยะหมุด (ห่างประมาณ ${Math.round(distanceMeters)} ม.)`,
+        });
+      }
+    } finally {
+      setGpsPreviewLoading(false);
+    }
   }
 
   function openAdjust(row: AttendanceDayRow) {
@@ -688,6 +821,44 @@ export default function MeAttendanceWorkspace() {
                 ? `${workLocation.name} · รัศมี ${workLocation.geofenceRadiusMeters} ม.`
                 : "ยังไม่ได้ผูกจุดลงเวลา — แจ้งแอดมินตั้งสถานที่ทำงาน"}
             </p>
+            {workLocation?.latitude != null &&
+            workLocation?.longitude != null ? (
+              <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                หมุด: {workLocation.latitude.toFixed(5)},{" "}
+                {workLocation.longitude.toFixed(5)}
+              </p>
+            ) : null}
+            {workLocation && workLocation.geofenceRadiusMeters < 30 ? (
+              <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                รัศมีจุดลงเวลาแคบมาก — ถ้าลงเวลาไม่ผ่าน ให้แอดมินขยายเป็นอย่างน้อย 50–100 ม.
+              </p>
+            ) : null}
+            {gpsPreview ? (
+              <p style={{ margin: "0.35rem 0 0" }}>
+                ตอนนี้ห่างหมุดประมาณ{" "}
+                <strong>{Math.round(gpsPreview.distanceMeters)} ม.</strong>
+                {gpsPreview.accuracyMeters != null
+                  ? ` (±${Math.round(gpsPreview.accuracyMeters)} ม.)`
+                  : ""}
+                <span className="muted">
+                  {" "}
+                  · เครื่อง: {gpsPreview.deviceLat.toFixed(5)},{" "}
+                  {gpsPreview.deviceLng.toFixed(5)}
+                </span>
+              </p>
+            ) : null}
+            {workLocation?.latitude != null ? (
+              <div className="inline-actions" style={{ marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={submitting || gpsPreviewLoading}
+                  onClick={() => void previewGpsDistance()}
+                >
+                  {gpsPreviewLoading ? "กำลังอ่านตำแหน่ง…" : "ตรวจระยะจากหมุด"}
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="hr-me-clock-times" aria-label="สถานะวันนี้">
             <div>

@@ -38,8 +38,31 @@ test("self approval is blocked by default", () => {
 });
 
 test("inaccurate and out-of-fence clock readings are rejected", () => {
-  assert.equal(insideGeofence({ latitude: 13.7563, longitude: 100.5018 }, { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 101 }, 50).accepted, false);
-  assert.equal(insideGeofence({ latitude: 13.7563, longitude: 100.5018 }, { latitude: 13.8, longitude: 100.5, accuracyMeters: 5 }, 50).accepted, false);
+  assert.equal(
+    insideGeofence(
+      { latitude: 13.7563, longitude: 100.5018 },
+      { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 400 },
+      50,
+    ).accepted,
+    false,
+  );
+  assert.equal(
+    insideGeofence(
+      { latitude: 13.7563, longitude: 100.5018 },
+      { latitude: 13.8, longitude: 100.5, accuracyMeters: 5 },
+      50,
+    ).accepted,
+    false,
+  );
+  // Tight pin + typical phone accuracy at the pin should pass.
+  assert.equal(
+    insideGeofence(
+      { latitude: 13.7563, longitude: 100.5018 },
+      { latitude: 13.7563, longitude: 100.5018, accuracyMeters: 35 },
+      10,
+    ).accepted,
+    true,
+  );
 });
 
 test("approved payroll snapshots cannot be recalculated", () => {

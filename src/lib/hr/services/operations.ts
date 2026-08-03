@@ -2594,14 +2594,18 @@ export async function clock(ctx: HrServiceContext, input: any) {
     });
   }
 
+  const pinLat = Number(location.latitude);
+  const pinLng = Number(location.longitude);
+  const deviceLat = Number(input.latitude);
+  const deviceLng = Number(input.longitude);
   const check = insideGeofence(
     {
-      latitude: Number(location.latitude),
-      longitude: Number(location.longitude),
+      latitude: pinLat,
+      longitude: pinLng,
     },
     {
-      latitude: Number(input.latitude),
-      longitude: Number(input.longitude),
+      latitude: deviceLat,
+      longitude: deviceLng,
       accuracyMeters:
         input.accuracyMeters == null ? undefined : Number(input.accuracyMeters),
     },
@@ -2609,17 +2613,24 @@ export async function clock(ctx: HrServiceContext, input: any) {
   );
   const distance = check.distanceMeters;
   if (!check.accepted) {
+    const pinLabel = `${pinLat.toFixed(5)}, ${pinLng.toFixed(5)}`;
+    const deviceLabel = `${deviceLat.toFixed(5)}, ${deviceLng.toFixed(5)}`;
     const reason =
       check.reason === "ACCURACY_TOO_LOW"
-        ? "ความแม่นยำของ GPS ต่ำเกินไป"
-        : `อยู่นอกพื้นที่ลงเวลา (ห่างประมาณ ${Math.round(distance)} ม. จากรัศมี ${location.geofenceRadiusMeters} ม.)`;
+        ? `ความแม่นยำของ GPS ต่ำเกินไป (±${Math.round(Number(input.accuracyMeters) || 0)} ม.) — ยืนกลางแจ้งแล้วลองใหม่`
+        : distance >= 500
+          ? `อยู่นอกพื้นที่ลงเวลา (ห่างประมาณ ${Math.round(distance)} ม. จาก「${location.name}」) — หมุดอยู่ที่ ${pinLabel} แต่เครื่องอ่านได้ ${deviceLabel} ถ้าคุณยืนที่ทำงานจริง ให้แอดมินไปเมนูสถานที่ทำงาน ปักหมุดใหม่แล้วกดบันทึก`
+          : `อยู่นอกพื้นที่ลงเวลา (ห่างประมาณ ${Math.round(distance)} ม. จากหมุด · รัศมีที่ใช้ตรวจ ${Math.round(check.effectiveRadiusMeters)} ม.)`;
     throw new HrError("FORBIDDEN", {
       message: reason,
       details: {
         reason: check.reason,
         distanceMeters: Math.round(distance),
-        radiusMeters: location.geofenceRadiusMeters,
+        effectiveRadiusMeters: Math.round(check.effectiveRadiusMeters),
         workLocationId: location.id,
+        workLocationName: location.name,
+        pin: { latitude: pinLat, longitude: pinLng },
+        device: { latitude: deviceLat, longitude: deviceLng },
       },
     });
   }

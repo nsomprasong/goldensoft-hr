@@ -38,7 +38,7 @@ const DEFAULTS: WorkLocationFormValues = {
   branchId: "",
   latitude: "",
   longitude: "",
-  geofenceRadiusMeters: "50",
+  geofenceRadiusMeters: "100",
 };
 
 function parseCoord(
@@ -104,40 +104,55 @@ export default function WorkLocationForm({
       });
       return;
     }
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setFeedback({
+        kind: "error",
+        text: "เบราว์เซอร์ไม่ให้ใช้ GPS บน HTTP — เปิดผ่าน HTTPS หรือคลิกเลือกจุดบนแผนที่แทน",
+      });
+      return;
+    }
     setLocating(true);
+    const apply = (position: GeolocationPosition) => {
+      setValues((prev) => ({
+        ...prev,
+        latitude: position.coords.latitude.toFixed(7),
+        longitude: position.coords.longitude.toFixed(7),
+      }));
+      setMapFocusKey((key) => key + 1);
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.latitude;
+        delete next.longitude;
+        return next;
+      });
+      const accuracy =
+        position.coords.accuracy != null
+          ? ` (ความแม่นยำ ±${Math.round(position.coords.accuracy)} ม.)`
+          : "";
+      setFeedback({
+        kind: "success",
+        text: `อ่านตำแหน่งปัจจุบันแล้ว${accuracy} — ตรวจแล้วกดบันทึก`,
+      });
+      setLocating(false);
+    };
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setValues((prev) => ({
-          ...prev,
-          latitude: position.coords.latitude.toFixed(7),
-          longitude: position.coords.longitude.toFixed(7),
-        }));
-        setMapFocusKey((key) => key + 1);
-        setErrors((prev) => {
-          const next = { ...prev };
-          delete next.latitude;
-          delete next.longitude;
-          return next;
-        });
-        const accuracy =
-          position.coords.accuracy != null
-            ? ` (ความแม่นยำ ±${Math.round(position.coords.accuracy)} ม.)`
-            : "";
-        setFeedback({
-          kind: "success",
-          text: `อ่านตำแหน่งปัจจุบันแล้ว${accuracy} — ตรวจแล้วกดบันทึก`,
-        });
-        setLocating(false);
-      },
-      (error) => {
-        const text =
-          error.code === error.PERMISSION_DENIED
-            ? "ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง — เปิดสิทธิ์ตำแหน่งในเบราว์เซอร์แล้วลองใหม่"
-            : error.code === error.POSITION_UNAVAILABLE
-              ? "อ่านตำแหน่งไม่ได้ — ลองเปิด GPS หรือย้ายไปที่โล่งกว่านี้"
-              : "หมดเวลารอตำแหน่ง GPS — ลองใหม่อีกครั้ง";
-        setFeedback({ kind: "error", text });
-        setLocating(false);
+      apply,
+      () => {
+        // Retry without high accuracy.
+        navigator.geolocation.getCurrentPosition(
+          apply,
+          (error) => {
+            const text =
+              error.code === error.PERMISSION_DENIED
+                ? "ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง — เปิดสิทธิ์ตำแหน่งในเบราว์เซอร์แล้วลองใหม่"
+                : error.code === error.POSITION_UNAVAILABLE
+                  ? "อ่านตำแหน่งไม่ได้ — ลองเปิด GPS หรือคลิกเลือกจุดบนแผนที่แทน"
+                  : "หมดเวลารอตำแหน่ง GPS — ลองใหม่อีกครั้ง หรือคลิกเลือกจุดบนแผนที่";
+            setFeedback({ kind: "error", text });
+            setLocating(false);
+          },
+          { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 },
+        );
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
     );
@@ -347,7 +362,7 @@ export default function WorkLocationForm({
           id="loc-radius"
           label="รัศมี GPS (เมตร)"
           required
-          hint="ระยะที่อนุญาตให้ลงเวลาได้จากจุดนี้ เช่น 50, 100, 200"
+          hint="ระยะที่อนุญาตให้ลงเวลาจากหมุด — แนะนำ 50–100 ม. ขึ้นไป (มือถือมักคลาดเคลื่อน 20–50 ม.)"
           error={errors.geofenceRadiusMeters}
         >
           <input
