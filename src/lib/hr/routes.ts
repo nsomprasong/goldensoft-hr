@@ -491,7 +491,8 @@ export type HrNavKey =
   | "locations"
   | "overtime-rules"
   | "payroll-schedules"
-  | "payroll-periods";
+  | "payroll-periods"
+  | "settings";
 
 const NAV_KEY_TO_ROUTE: Record<HrNavKey, HrRouteKey> = {
   dashboard: "dashboard",
@@ -505,6 +506,7 @@ const NAV_KEY_TO_ROUTE: Record<HrNavKey, HrRouteKey> = {
   "overtime-rules": "overtimeRules",
   "payroll-schedules": "payrollSchedules",
   "payroll-periods": "payrollPeriods",
+  settings: "settings",
 };
 
 export function hrNavRouteKey(nav: HrNavKey): HrRouteKey {
