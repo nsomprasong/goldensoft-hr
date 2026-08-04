@@ -296,30 +296,28 @@ type OrgEnrollmentRow = {
 /**
  * Enrollments for duplicate checks — scoped to one organization only.
  * JOIN employees so mismatched organization_id rows cannot leak across orgs.
+ * Must not swallow errors: an empty fallback would allow stealing another
+ * employee's face when the lookup fails.
  */
 async function listOrgEnrollmentDescriptors(
   organizationId: string,
   exceptEmployeeId: string,
 ): Promise<OrgEnrollmentRow[]> {
-  try {
-    return await prisma.$queryRaw<OrgEnrollmentRow[]>`
-      SELECT
-        efe.employee_id::text AS employee_id,
-        efe.organization_id::text AS organization_id,
-        efe.descriptor,
-        e.email,
-        e.phone
-      FROM hr.employee_face_enrollments efe
-      INNER JOIN hr.employees e
-        ON e.id = efe.employee_id
-       AND e.organization_id = efe.organization_id
-      WHERE efe.organization_id = ${organizationId}::uuid
-        AND e.organization_id = ${organizationId}::uuid
-        AND efe.employee_id <> ${exceptEmployeeId}::uuid
-    `;
-  } catch {
-    return [];
-  }
+  return prisma.$queryRaw<OrgEnrollmentRow[]>`
+    SELECT
+      efe.employee_id::text AS employee_id,
+      efe.organization_id::text AS organization_id,
+      efe.descriptor,
+      e.email,
+      e.phone
+    FROM hr.employee_face_enrollments efe
+    INNER JOIN hr.employees e
+      ON e.id = efe.employee_id
+     AND e.organization_id = efe.organization_id
+    WHERE efe.organization_id = ${organizationId}::uuid
+      AND e.organization_id = ${organizationId}::uuid
+      AND efe.employee_id <> ${exceptEmployeeId}::uuid
+  `;
 }
 
 export async function getSelfFaceMatchStatus(
@@ -371,16 +369,26 @@ export async function enrollMyFace(
 
   // Duplicate face check is organization-scoped only (all branches in this
   // company). Faces enrolled in other organizations must never block enroll.
-  // Same company: if the face matches another employee, email OR phone must
-  // match that employee — otherwise reject (prevents registering someone else's face).
+  // Same company: any face that already belongs to another employee is blocked
+  // (never delete/transfer the other enrollment — that caused "ใบหน้าหาย").
   const settingsForDup = await findSettingsRow(ctx.organizationId);
   const threshold = settingsForDup
     ? Number(settingsForDup.match_threshold)
     : DEFAULT_FACE_MATCH_THRESHOLD;
-  const otherDescriptors = await listOrgEnrollmentDescriptors(
-    ctx.organizationId,
-    employee.id,
-  );
+  let otherDescriptors: OrgEnrollmentRow[];
+  try {
+    otherDescriptors = await listOrgEnrollmentDescriptors(
+      ctx.organizationId,
+      employee.id,
+    );
+  } catch (err) {
+    console.error("[face-enroll] duplicate lookup failed", err);
+    throw new HrError("INTERNAL_ERROR", {
+      message:
+        "ตรวจใบหน้าซ้ำในบริษัทไม่สำเร็จ — ลองใหม่อีกครั้ง หรือติดต่อผู้ดูแลระบบ",
+      details: { code: "FACE_DUPLICATE_LOOKUP_FAILED" },
+    });
+  }
   const candidates = otherDescriptors.map((row) => ({
     employeeId: row.employee_id,
     organizationId: row.organization_id,
@@ -405,20 +413,19 @@ export async function enrollMyFace(
           { email: matched.email, phone: matched.phone },
         )
       : false;
-    if (!sameIdentity) {
-      throw new HrError("FORBIDDEN", {
-        message:
-          "ใบหน้านี้ไม่ตรงกับอีเมลหรือเบอร์โทรของบัญชีคุณในบริษัทนี้ — ไม่อนุญาตให้ลงทะเบียนใบหน้าของผู้อื่น",
-        details: {
-          code: "FACE_CONTACT_MISMATCH",
-          organizationId: ctx.organizationId,
-          matchedEmployeeId: duplicate.employeeId,
-          distance: duplicate.distance,
-        },
-      });
-    }
-    // Same email or phone as the matched enrollment → treat as the same person
-    // and allow this employee row to enroll (still org-scoped only).
+    throw new HrError("FORBIDDEN", {
+      message: sameIdentity
+        ? "ใบหน้านี้ลงทะเบียนกับแถวพนักงานอื่นในบริษัทนี้แล้ว — ลบใบหน้าของแถวนั้นก่อน หรือใช้แถวเดิม"
+        : "ใบหน้านี้ถูกใช้กับพนักงานอื่นในบริษัทนี้แล้ว — ไม่อนุญาตให้ลงทะเบียนใบหน้าของผู้อื่น",
+      details: {
+        code: sameIdentity
+          ? "FACE_DUPLICATE_SAME_CONTACT"
+          : "FACE_CONTACT_MISMATCH",
+        organizationId: ctx.organizationId,
+        matchedEmployeeId: duplicate.employeeId,
+        distance: duplicate.distance,
+      },
+    });
   }
 
   // When Auth and employee both expose email or both expose phone, they must
@@ -494,6 +501,10 @@ export async function enrollMyFace(
   `;
   } catch (err) {
     console.error("[face-enroll] insert failed", err);
+    await deleteFaceEnrollmentPhoto({
+      organizationId: ctx.organizationId,
+      employeeId: employee.id,
+    }).catch(() => undefined);
     throw new HrError("INTERNAL_ERROR", {
       message: faceEnrollmentDbErrorMessage(err),
     });

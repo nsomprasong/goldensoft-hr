@@ -102,7 +102,7 @@ describe("same-org face + contact rule", () => {
     assert.equal(duplicate, null);
   });
 
-  it("same face + matching phone is same identity", () => {
+  it("treats matching contacts as same identity helper only (enroll still blocks duplicate face)", () => {
     assert.equal(
       contactsMatchByEmailOrPhone(
         { email: "b@ex.com", phone: "0812345678" },

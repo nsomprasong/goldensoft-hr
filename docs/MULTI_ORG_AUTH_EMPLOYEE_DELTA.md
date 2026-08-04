@@ -12,7 +12,7 @@ Status: implementation guide for additive work. Prefer code over this doc if the
 | HR Employee | Soft links `authUserId` / `platformUserId` (nullable); org-scoped uniques |
 | Employment status | Master `employee_statuses` (ACTIVE / INACTIVE / RESIGNED / TERMINATED / SUSPENDED) |
 | Onboarding today | `createEmployee` always unlinked; `linkPlatformUser` / Platform `UserInvitation` |
-| Face | `employee_face_enrollments` unique per `employeeId`, indexed by `organizationId`; duplicate descriptor check is **org-scoped**; same-org face match requires **email or phone** align |
+| Face | `employee_face_enrollments` unique per `employeeId`, indexed by `organizationId`; duplicate descriptor check is **org-scoped** and **always blocks** another employee’s face (no transfer/delete of the matched row) |
 | Audit | `audit_action_types` + `writeHrAudit` / Platform `writeAuditLog` |
 
 ## 2. Gaps
