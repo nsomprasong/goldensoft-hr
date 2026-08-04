@@ -105,6 +105,7 @@ export async function resolveHrRequestContext(
   const branchId = cookieUsable
     ? (cookie?.branchId ?? me.activeBranch?.id ?? null)
     : (me.activeBranch?.id ?? null);
+  const activeEmployeeId = cookieUsable ? (cookie?.employeeId ?? null) : null;
   if (input.requiredBranchId && contextMode !== "platform_admin") {
     const allowed = input.allowedBranchIds;
     if (allowed != null) {
@@ -175,6 +176,7 @@ export async function resolveHrRequestContext(
       organizationId,
     branchId,
     branch: me.activeBranch,
+    activeEmployeeId,
     contextMode,
     membershipRoles,
     membershipBranchIds,

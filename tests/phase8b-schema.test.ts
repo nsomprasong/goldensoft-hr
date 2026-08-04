@@ -23,6 +23,9 @@ const migrationSql = migration.replace(/--[^\n]*/g, " ");
 const EXPECTED_MODELS = [
   "EmploymentType",
   "EmployeeStatus",
+  "EmployeeAccountAccessStatus",
+  "EmployeeOnboardingMethod",
+  "EmployeeActivationStatus",
   "ShiftType",
   "PayFrequency",
   "WageType",
@@ -33,6 +36,7 @@ const EXPECTED_MODELS = [
   "Position",
   "WorkLocation",
   "Employee",
+  "EmployeeActivationChallenge",
   "EmployeeBranchAssignment",
   "EmployeeCompensation",
   "OvertimeRule",
@@ -128,10 +132,13 @@ describe("Phase 8B Prisma schema", () => {
     assert.doesNotMatch(schema, /@relation\([^)]*references:\s*\[id\][^)]*auth/i);
   });
 
-  it("scopes employee uniqueness per organization", () => {
+  it("scopes employee uniqueness per organization (active auth via partial unique)", () => {
     assert.match(schema, /@@unique\(\[organizationId, employeeCode\]\)/);
-    assert.match(schema, /@@unique\(\[organizationId, platformUserId\]\)/);
-    assert.match(schema, /@@unique\(\[organizationId, authUserId\]\)/);
+    assert.match(schema, /employees_org_auth_active_uidx|partial unique/i);
+    assert.match(schema, /accountAccessStatusId/);
+    assert.match(schema, /EmployeeAccountAccessStatus/);
+    assert.doesNotMatch(schema, /@@unique\(\[organizationId, authUserId\]\)/);
+    assert.doesNotMatch(schema, /@@unique\(\[organizationId, platformUserId\]\)/);
   });
 });
 

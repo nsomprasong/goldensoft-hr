@@ -274,5 +274,11 @@ export default function CompensationForm({
   );
 
   if (embedded) return <div className="hr-compensation-block">{body}</div>;
-  return <section className="card">{body}</section>;
+  return (
+    <section className="hr-employee-tab-panel hr-employee-tab-panel--green">
+      <div className="hr-settings-inner-card hr-employee-tab-panel-body">
+        {body}
+      </div>
+    </section>
+  );
 }

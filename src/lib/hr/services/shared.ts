@@ -15,6 +15,8 @@ import type { HrRequestContext } from "@/lib/platform/types";
 export type HrServiceContext = HrAccessContext & {
   /** auth.users.id recorded as created_by / updated_by and in the audit trail. */
   actorAuthUserId: string;
+  /** Optional active employee for multi-org / multi-employment context. */
+  activeEmployeeId?: string | null;
   /** Display name snapshot for approval audit (who approved). */
   actorDisplayName?: string | null;
   ip?: string | null;
@@ -37,6 +39,7 @@ export function toHrServiceContext(
     contextMode: ctx.contextMode,
     allowedBranchIds: options?.allowedBranchIds ?? null,
     actorAuthUserId: ctx.authUserId,
+    activeEmployeeId: ctx.activeEmployeeId ?? null,
     actorDisplayName: ctx.profile?.displayName?.trim() || null,
     ip: options?.ip ?? null,
     userAgent: options?.userAgent ?? null,

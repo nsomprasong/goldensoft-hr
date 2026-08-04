@@ -29,6 +29,61 @@ export const EMPLOYEE_STATUSES: MasterRow[] = [
   { code: "SUSPENDED", nameTh: "พักงาน", nameEn: "Suspended", sortOrder: 5 },
 ];
 
+export const EMPLOYEE_ACCOUNT_ACCESS_STATUSES: MasterRow[] = [
+  {
+    code: "NOT_LINKED",
+    nameTh: "ยังไม่เชื่อมบัญชี",
+    nameEn: "Not linked",
+    sortOrder: 1,
+  },
+  {
+    code: "PENDING_ACTIVATION",
+    nameTh: "รอเปิดใช้งาน",
+    nameEn: "Pending activation",
+    sortOrder: 2,
+  },
+  {
+    code: "ACTIVE",
+    nameTh: "เปิดใช้งานแล้ว",
+    nameEn: "Active",
+    sortOrder: 3,
+  },
+  {
+    code: "DISABLED",
+    nameTh: "ปิดบัญชีเข้าใช้",
+    nameEn: "Disabled",
+    sortOrder: 4,
+  },
+];
+
+export const EMPLOYEE_ONBOARDING_METHODS: MasterRow[] = [
+  {
+    code: "OTP_VERIFICATION",
+    nameTh: "ส่ง OTP",
+    nameEn: "OTP verification",
+    sortOrder: 1,
+  },
+  {
+    code: "INVITATION",
+    nameTh: "ส่งคำเชิญ",
+    nameEn: "Invitation",
+    sortOrder: 2,
+  },
+  {
+    code: "NO_NOTIFICATION",
+    nameTh: "ไม่ส่งในตอนนี้",
+    nameEn: "No notification",
+    sortOrder: 3,
+  },
+];
+
+export const EMPLOYEE_ACTIVATION_STATUSES: MasterRow[] = [
+  { code: "PENDING", nameTh: "รอยืนยัน", nameEn: "Pending", sortOrder: 1 },
+  { code: "VERIFIED", nameTh: "ยืนยันแล้ว", nameEn: "Verified", sortOrder: 2 },
+  { code: "EXPIRED", nameTh: "หมดอายุ", nameEn: "Expired", sortOrder: 3 },
+  { code: "CANCELLED", nameTh: "ยกเลิก", nameEn: "Cancelled", sortOrder: 4 },
+];
+
 export const SHIFT_TYPES: MasterRow[] = [
   { code: "REGULAR", nameTh: "กะปกติ", nameEn: "Regular", sortOrder: 1 },
   { code: "NIGHT", nameTh: "กะกลางคืน", nameEn: "Night", sortOrder: 2 },
@@ -236,11 +291,31 @@ export const AUDIT_ACTION_TYPES: MasterRow[] = [
   { code: "payroll_run.calculate", nameTh: "คำนวณเงินเดือน", nameEn: "Calculate payroll run", sortOrder: 36 },
   { code: "payroll_run.approve", nameTh: "อนุมัติเงินเดือน", nameEn: "Approve payroll run", sortOrder: 37 },
   { code: "payslip.issue", nameTh: "ออกสลิปเงินเดือน", nameEn: "Issue payslip", sortOrder: 38 },
+  { code: "employee.auth_detected", nameTh: "พบบัญชี Auth เดิม", nameEn: "Existing auth detected", sortOrder: 40 },
+  { code: "employee.auth_linked", nameTh: "เชื่อม Auth กับพนักงาน", nameEn: "Auth linked", sortOrder: 41 },
+  { code: "employee.auth_unlinked", nameTh: "ยกเลิกการเชื่อม Auth", nameEn: "Auth unlinked", sortOrder: 42 },
+  { code: "employee.otp_requested", nameTh: "ขอ OTP เปิดบัญชี", nameEn: "OTP requested", sortOrder: 43 },
+  { code: "employee.otp_verified", nameTh: "ยืนยัน OTP สำเร็จ", nameEn: "OTP verified", sortOrder: 44 },
+  { code: "employee.invitation_created", nameTh: "สร้างคำเชิญพนักงาน", nameEn: "Invitation created", sortOrder: 45 },
+  { code: "employee.invitation_accepted", nameTh: "ยอมรับคำเชิญพนักงาน", nameEn: "Invitation accepted", sortOrder: 46 },
+  { code: "employee.no_notification_selected", nameTh: "เลือกไม่ส่งการแจ้งเตือน", nameEn: "No notification selected", sortOrder: 47 },
+  { code: "employee.account_activated", nameTh: "เปิดบัญชีเข้าใช้งาน", nameEn: "Account activated", sortOrder: 48 },
+  { code: "employee.account_disabled", nameTh: "ปิดบัญชีเข้าใช้งาน", nameEn: "Account disabled", sortOrder: 49 },
+  { code: "context.organization_switched", nameTh: "เปลี่ยนบริษัทในบริบท", nameEn: "Organization switched", sortOrder: 50 },
+  { code: "context.branch_switched", nameTh: "เปลี่ยนสาขาในบริบท", nameEn: "Branch switched", sortOrder: 51 },
+  { code: "face.enrolled", nameTh: "ลงทะเบียนใบหน้า", nameEn: "Face enrolled", sortOrder: 52 },
+  { code: "face.duplicate_blocked", nameTh: "บล็อกใบหน้าซ้ำในบริษัท", nameEn: "Face duplicate blocked", sortOrder: 53 },
+  { code: "face.revoked", nameTh: "ยกเลิกใบหน้า", nameEn: "Face revoked", sortOrder: 54 },
+  { code: "employee.employment_terminated", nameTh: "สิ้นสุดการจ้างงาน", nameEn: "Employment terminated", sortOrder: 55 },
+  { code: "employee.employment_reactivated", nameTh: "เปิดการจ้างงานใหม่", nameEn: "Employment reactivated", sortOrder: 56 },
 ];
 
 export const HR_MASTER_CATALOG = {
   employmentType: EMPLOYMENT_TYPES,
   employeeStatus: EMPLOYEE_STATUSES,
+  employeeAccountAccessStatus: EMPLOYEE_ACCOUNT_ACCESS_STATUSES,
+  employeeOnboardingMethod: EMPLOYEE_ONBOARDING_METHODS,
+  employeeActivationStatus: EMPLOYEE_ACTIVATION_STATUSES,
   shiftType: SHIFT_TYPES,
   payFrequency: PAY_FREQUENCIES,
   wageType: WAGE_TYPES,

@@ -84,12 +84,19 @@ describe("HR migration safety", () => {
     assert.equal(result.ok, true);
   });
 
-  it("ignores schema names that only appear in comments", () => {
-    const sql = `
-      -- Soft reference to platform organizations and auth users (no FK).
-      ALTER TABLE "hr"."employees" ADD COLUMN IF NOT EXISTS "nickname" TEXT;
-    `;
+  it("accepts multi-org auth employee additive migration 0017", () => {
+    const sql = fs.readFileSync(
+      path.join(
+        ROOT,
+        "prisma/migrations/0017_multi_org_auth_employee/migration.sql",
+      ),
+      "utf8",
+    );
     const result = checkAdditiveMigrationSql(sql);
     assert.deepEqual(result.errors, []);
+    assert.equal(result.ok, true);
+    assert.match(sql, /employees_org_auth_active_uidx/);
+    assert.match(sql, /employee_account_access_statuses/);
+    assert.doesNotMatch(sql, /\bCREATE\s+TYPE\b/i);
   });
 });

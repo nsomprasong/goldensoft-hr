@@ -351,7 +351,19 @@ export function createPrismaHrRepository(
           where: { organizationId_employeeCode: { organizationId, employeeCode } },
         }),
       findByPlatformUserId: async (organizationId, platformUserId) =>
-        client.employee.findFirst({ where: { organizationId, platformUserId } }),
+        client.employee.findFirst({
+          where: { organizationId, platformUserId },
+          orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
+        }),
+      findByAuthUserId: async (organizationId, authUserId, options) =>
+        client.employee.findFirst({
+          where: {
+            organizationId,
+            authUserId,
+            ...(options?.activeOnly ? { isActive: true } : {}),
+          },
+          orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
+        }),
       create: async (input: EmployeeCreateInput) =>
         client.employee.create({ data: input }),
       update: async (id, patch: EmployeePatch) =>

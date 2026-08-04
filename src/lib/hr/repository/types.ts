@@ -9,6 +9,9 @@
 export const HR_MASTER_KINDS = [
   "employmentType",
   "employeeStatus",
+  "employeeAccountAccessStatus",
+  "employeeOnboardingMethod",
+  "employeeActivationStatus",
   "shiftType",
   "payFrequency",
   "wageType",
@@ -90,6 +93,10 @@ export type EmployeeRecord = {
   positionId: string | null;
   employmentTypeId: string;
   employeeStatusId: string;
+  accountAccessStatusId: string | null;
+  onboardingMethodId: string | null;
+  accountActivatedAt: Date | null;
+  accountDisabledAt: Date | null;
   firstNameTh: string;
   lastNameTh: string;
   firstNameEn: string | null;
@@ -376,6 +383,12 @@ export type EmployeeRepository = {
   findByPlatformUserId(
     organizationId: string,
     platformUserId: string,
+  ): Promise<EmployeeRecord | null>;
+  /** Prefer active row when multiple history rows share the same auth user. */
+  findByAuthUserId(
+    organizationId: string,
+    authUserId: string,
+    options?: { activeOnly?: boolean },
   ): Promise<EmployeeRecord | null>;
   create(input: EmployeeCreateInput): Promise<EmployeeRecord>;
   update(id: string, patch: EmployeePatch): Promise<EmployeeRecord>;

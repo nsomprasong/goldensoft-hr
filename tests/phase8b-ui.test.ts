@@ -256,12 +256,13 @@ describe("Phase 8B actions are real", () => {
 describe("Phase 8B permission gating", () => {
   it("gates compensation under employment behind hr.compensation.read", () => {
     const detail = read("src/app/hr/employees/[id]/page.tsx");
+    const workspace = read("src/components/hr/employee-detail-workspace.tsx");
     const employment = read("src/components/hr/employee-tab-sections.tsx");
     assert.match(detail, /HR_PERMISSIONS\.compensationRead/);
-    assert.match(detail, /documents/);
+    assert.match(workspace, /documents/);
     assert.match(
-      detail,
-      /activeTab === "employment"/,
+      workspace,
+      /tab === "employment"/,
       "compensation lives under the employment tab",
     );
     assert.match(

@@ -58,6 +58,64 @@ model EmployeeStatus {
   @@schema("hr")
 }
 
+/// NOT_LINKED | PENDING_ACTIVATION | ACTIVE | DISABLED — account login gate (not employment).
+model EmployeeAccountAccessStatus {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employees Employee[]
+
+  @@map("employee_account_access_statuses")
+  @@schema("hr")
+}
+
+/// OTP_VERIFICATION | INVITATION | NO_NOTIFICATION
+model EmployeeOnboardingMethod {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employees   Employee[]
+  challenges  EmployeeActivationChallenge[]
+
+  @@map("employee_onboarding_methods")
+  @@schema("hr")
+}
+
+/// PENDING | VERIFIED | EXPIRED | CANCELLED
+model EmployeeActivationStatus {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  nameTh      String   @map("name_th")
+  nameEn      String   @map("name_en")
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(true) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  challenges EmployeeActivationChallenge[]
+
+  @@map("employee_activation_statuses")
+  @@schema("hr")
+}
+
 /// REGULAR | NIGHT | SPLIT | OFF | LEAVE
 model ShiftType {
   id          String   @id @default(uuid()) @db.Uuid
@@ -263,6 +321,11 @@ model Employee {
   positionId       String?   @map("position_id") @db.Uuid
   employmentTypeId String    @map("employment_type_id") @db.Uuid
   employeeStatusId String    @map("employee_status_id") @db.Uuid
+  /// Separate from employment status — gates login/product access for this employee row.
+  accountAccessStatusId String? @map("account_access_status_id") @db.Uuid
+  onboardingMethodId    String? @map("onboarding_method_id") @db.Uuid
+  accountActivatedAt    DateTime? @map("account_activated_at") @db.Timestamptz(6)
+  accountDisabledAt     DateTime? @map("account_disabled_at") @db.Timestamptz(6)
   firstNameTh      String    @map("first_name_th")
   lastNameTh       String    @map("last_name_th")
   firstNameEn      String?   @map("first_name_en")
@@ -289,6 +352,8 @@ model Employee {
   position       Position?       @relation(fields: [positionId], references: [id], onDelete: SetNull)
   employmentType EmploymentType  @relation(fields: [employmentTypeId], references: [id])
   employeeStatus EmployeeStatus  @relation(fields: [employeeStatusId], references: [id])
+  accountAccessStatus EmployeeAccountAccessStatus? @relation(fields: [accountAccessStatusId], references: [id])
+  onboardingMethod    EmployeeOnboardingMethod?    @relation(fields: [onboardingMethodId], references: [id])
 
   branchAssignments EmployeeBranchAssignment[]
   compensations     EmployeeCompensation[]
@@ -313,18 +378,49 @@ model Employee {
   notifications     Notification[]
   documents         EmployeeDocument[]
   faceEnrollment    EmployeeFaceEnrollment?
+  activationChallenges EmployeeActivationChallenge[]
 
   @@unique([organizationId, employeeCode])
-  // PostgreSQL treats NULLs as distinct, so unlinked employees do not collide.
-  @@unique([organizationId, platformUserId])
-  @@unique([organizationId, authUserId])
+  // Active+linked uniqueness is enforced by partial unique indexes in migration 0017
+  // (allows terminated history rows to keep the same auth/platform user ids).
   @@index([organizationId])
   @@index([branchId])
   @@index([employeeStatusId])
+  @@index([accountAccessStatusId])
+  @@index([onboardingMethodId])
   @@index([organizationId, isActive])
+  @@index([organizationId, authUserId])
+  @@index([organizationId, platformUserId])
   @@index([departmentId])
   @@index([positionId])
   @@map("employees")
+  @@schema("hr")
+}
+
+/// OTP / invitation challenge for linking Auth to an employee (token stored hashed).
+model EmployeeActivationChallenge {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  employeeId            String    @map("employee_id") @db.Uuid
+  onboardingMethodId    String    @map("onboarding_method_id") @db.Uuid
+  statusId              String    @map("status_id") @db.Uuid
+  phoneNormalized       String?   @map("phone_normalized")
+  tokenHash             String    @map("token_hash")
+  expiresAt             DateTime  @map("expires_at") @db.Timestamptz(6)
+  verifiedAt            DateTime? @map("verified_at") @db.Timestamptz(6)
+  consumedAt            DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdByAuthUserId   String?   @map("created_by_auth_user_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee         Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  onboardingMethod EmployeeOnboardingMethod @relation(fields: [onboardingMethodId], references: [id])
+  status           EmployeeActivationStatus @relation(fields: [statusId], references: [id])
+
+  @@index([organizationId, employeeId])
+  @@index([statusId])
+  @@index([tokenHash])
+  @@map("employee_activation_challenges")
   @@schema("hr")
 }
 

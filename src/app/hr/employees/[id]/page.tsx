@@ -3,14 +3,8 @@ import { notFound } from "next/navigation";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
-import EmployeeDocumentsPanel from "@/components/hr/employee-documents-panel";
+import EmployeeDetailWorkspace from "@/components/hr/employee-detail-workspace";
 import EmployeeNameLabel from "@/components/hr/employee-name-label";
-import EmployeeRoleTab from "@/components/hr/employee-role-tab";
-import {
-  EmployeeBranchTab,
-  EmployeeEmploymentTab,
-  EmployeeGeneralTab,
-} from "@/components/hr/employee-tab-sections";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
@@ -18,31 +12,18 @@ import {
   combineAvailability,
   getEmployeeDetail,
   listDepartments,
-  listEmployeeCompensations,
   listOrganizationBranches,
   listPositions,
   loadHrMasterData,
 } from "@/lib/hr/data";
+import {
+  isEmployeeDetailTabKey,
+  type EmployeeDetailTabKey,
+} from "@/lib/hr/employee-detail-tabs";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
-import { listEmployeeDocuments } from "@/lib/hr/services/employee-documents";
-import {
-  getEmployeeRoleState,
-  type EmployeeRoleState,
-} from "@/lib/hr/services/employee-roles";
-import { toHrServiceContext } from "@/lib/hr/services/shared";
 
 export const dynamic = "force-dynamic";
-
-const TABS = [
-  { key: "general", label: "ข้อมูลทั่วไป" },
-  { key: "branches", label: "สาขา" },
-  { key: "employment", label: "การจ้าง" },
-  { key: "documents", label: "เอกสารประกอบ" },
-  { key: "roles", label: "บทบาท" },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
 
 export default async function EmployeeDetailPage({
   params,
@@ -54,7 +35,6 @@ export default async function EmployeeDetailPage({
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.employeeRead });
   const { id } = await params;
   const { tab } = await searchParams;
-  const service = toHrServiceContext(ctx);
 
   const [detail, branches, master, departments, positions] = await Promise.all([
     getEmployeeDetail(ctx, id),
@@ -74,55 +54,13 @@ export default async function EmployeeDetailPage({
   const canReadCompensation = canHr(ctx, HR_PERMISSIONS.compensationRead);
   const canManageCompensation = canHr(ctx, HR_PERMISSIONS.compensationManage);
 
-  const requested = (tab ?? "general") as TabKey;
-  const activeTab: TabKey = TABS.some((t) => t.key === requested)
+  const requested = tab ?? "general";
+  const activeTab: EmployeeDetailTabKey = isEmployeeDetailTabKey(requested)
     ? requested
     : "general";
 
   const branchName =
     branches.data.find((b) => b.id === employee?.branchId)?.label ?? "—";
-
-  let compensations: Awaited<
-    ReturnType<typeof listEmployeeCompensations>
-  >["data"] = [];
-  let compensationMessage: string | null = null;
-  let documents: Awaited<ReturnType<typeof listEmployeeDocuments>> = [];
-  let documentsMessage: string | null = null;
-  let roleState: EmployeeRoleState | null = null;
-  let rolesMessage: string | null = null;
-
-  if (
-    employee &&
-    activeTab === "employment" &&
-    (canReadCompensation || canManageCompensation)
-  ) {
-    const rows = await listEmployeeCompensations(ctx, id);
-    compensations = rows.data;
-    compensationMessage = rows.message;
-  }
-
-  if (employee && activeTab === "documents") {
-    try {
-      documents = await listEmployeeDocuments(service, id);
-    } catch (error) {
-      documentsMessage =
-        error instanceof Error
-          ? error.message
-          : "ยังโหลดเอกสารไม่ได้ — ตรวจว่า migration เอกสารพร้อมแล้ว";
-    }
-  }
-
-  if (employee && activeTab === "roles") {
-    try {
-      roleState = await getEmployeeRoleState(ctx, service, id);
-    } catch (error) {
-      rolesMessage =
-        error instanceof Error
-          ? error.message
-          : "โหลดบทบาทไม่สำเร็จ";
-    }
-  }
-
   const availability = combineAvailability(detail, branches, master);
   const showBranchLabel = showEmployeeBranchLabel(ctx);
 
@@ -170,93 +108,63 @@ export default async function EmployeeDetailPage({
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />
-      <DatabaseUnavailableNotice message={compensationMessage} />
-      <DatabaseUnavailableNotice message={documentsMessage} />
-      <DatabaseUnavailableNotice message={rolesMessage} />
 
       {!employee ? (
         <p className="empty">ยังไม่มีข้อมูลพนักงานให้แสดง</p>
       ) : (
-        <>
-          <nav className="tabs" aria-label="แท็บข้อมูลพนักงาน">
-            {TABS.map((item) => (
-              <Link
-                key={item.key}
-                href={`/hr/employees/${employee.id}?tab=${item.key}`}
-                aria-current={activeTab === item.key ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          {activeTab === "general" ? (
-            <EmployeeGeneralTab
-              employee={employee}
-              canEdit={canEdit}
-              disabled={!detail.available}
-            />
-          ) : null}
-
-          {activeTab === "branches" ? (
-            <EmployeeBranchTab
-              employee={employee}
-              branches={branches.data}
-              branchName={branchName}
-              canEdit={canEdit}
-              disabled={!detail.available}
-            />
-          ) : null}
-
-          {activeTab === "employment" ? (
-            <EmployeeEmploymentTab
-              employee={employee}
-              departments={departments.data.map((d) => ({
-                id: d.id,
-                label: d.nameTh,
-              }))}
-              positions={positions.data.map((p) => ({
-                id: p.id,
-                label: p.nameTh,
-              }))}
-              employmentTypes={master.data.employmentTypes.map((t) => ({
-                id: t.id,
-                label: t.nameTh,
-              }))}
-              employeeStatuses={master.data.employeeStatuses.map((s) => ({
-                id: s.id,
-                label: s.nameTh,
-              }))}
-              compensations={compensations}
-              wageTypes={master.data.wageTypes.map((w) => ({
-                id: w.id,
-                label: w.nameTh,
-              }))}
-              canEdit={canEdit}
-              canReadCompensation={canReadCompensation}
-              canManageCompensation={canManageCompensation}
-              disabled={!detail.available}
-            />
-          ) : null}
-
-          {activeTab === "documents" ? (
-            <EmployeeDocumentsPanel
-              employeeId={employee.id}
-              documents={documents}
-              canEdit={canEdit}
-              disabled={!detail.available}
-            />
-          ) : null}
-
-          {activeTab === "roles" && roleState ? (
-            <EmployeeRoleTab
-              key={`${roleState.membershipId ?? "none"}-${roleState.assigned.map((r) => r.membershipRoleId).join(",")}`}
-              employeeId={employee.id}
-              initial={roleState}
-              disabled={!detail.available}
-            />
-          ) : null}
-        </>
+        <EmployeeDetailWorkspace
+          employeeId={employee.id}
+          initialTab={activeTab}
+          employee={{
+            id: employee.id,
+            displayName: employee.displayName,
+            firstNameTh: employee.firstNameTh,
+            lastNameTh: employee.lastNameTh,
+            photoUrl: employee.photoUrl,
+            phone: employee.phone,
+            email: employee.email,
+            notes: employee.notes,
+            branchId: employee.branchId,
+            departmentId: employee.departmentId,
+            positionId: employee.positionId,
+            employmentTypeId: employee.employmentTypeId,
+            employeeStatusId: employee.employeeStatusId,
+            hireDate: employee.hireDate,
+            probationEndDate: employee.probationEndDate,
+            resignationDate: employee.resignationDate,
+            departmentNameTh: employee.departmentNameTh,
+            positionNameTh: employee.positionNameTh,
+            employmentTypeNameTh: employee.employmentTypeNameTh,
+            statusNameTh: employee.statusNameTh,
+            isActive: employee.isActive,
+          }}
+          branches={branches.data}
+          branchName={branchName}
+          departments={departments.data.map((d) => ({
+            id: d.id,
+            label: d.nameTh,
+          }))}
+          positions={positions.data.map((p) => ({
+            id: p.id,
+            label: p.nameTh,
+          }))}
+          employmentTypes={master.data.employmentTypes.map((t) => ({
+            id: t.id,
+            label: t.nameTh,
+          }))}
+          employeeStatuses={master.data.employeeStatuses.map((s) => ({
+            id: s.id,
+            label: s.nameTh,
+          }))}
+          wageTypes={master.data.wageTypes.map((w) => ({
+            id: w.id,
+            label: w.nameTh,
+          }))}
+          canEdit={canEdit}
+          canReadCompensation={canReadCompensation}
+          canManageCompensation={canManageCompensation}
+          dataAvailable={detail.available}
+        />
       )}
     </HrShell>
   );

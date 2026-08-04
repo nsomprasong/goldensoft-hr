@@ -142,9 +142,12 @@ export default function EmployeeDocumentsPanel({
   }
 
   return (
-    <section className="card">
-      <div className="hr-entity-card-top">
-        <h2 id={titleId}>เอกสารประกอบ</h2>
+    <section className="hr-employee-tab-panel hr-employee-tab-panel--amber">
+      <header className="hr-employee-tab-panel-head">
+        <div>
+          <h2 id={titleId}>เอกสารประกอบ</h2>
+          <p>ไฟล์สัญญา บัตรประชาชน และเอกสารอื่นของพนักงาน</p>
+        </div>
         {canEdit ? (
           <button
             type="button"
@@ -155,8 +158,9 @@ export default function EmployeeDocumentsPanel({
             แนบเอกสาร
           </button>
         ) : null}
-      </div>
+      </header>
 
+      <div className="hr-settings-inner-card hr-employee-tab-panel-body">
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       {documents.length === 0 ? (
@@ -211,6 +215,7 @@ export default function EmployeeDocumentsPanel({
           ))}
         </div>
       )}
+      </div>
 
       {open ? (
         <div

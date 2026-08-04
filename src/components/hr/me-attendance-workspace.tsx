@@ -610,6 +610,12 @@ export default function MeAttendanceWorkspace() {
       : clockAction === "clockIn"
         ? "เข้างาน"
         : "ออกงาน";
+  const clockButtonAction =
+    submitting
+      ? ("save" as const)
+      : clockAction === "clockOut" || hasClockOut
+        ? ("clockOut" as const)
+        : ("clockIn" as const);
 
   async function submit(
     action: "clockIn" | "clockOut",
@@ -747,10 +753,60 @@ export default function MeAttendanceWorkspace() {
         return;
       }
       const successBody = (await response.json().catch(() => ({}))) as {
+        occurredAt?: string;
+        day?: {
+          workDate?: string;
+          clockInAt?: string | null;
+          clockOutAt?: string | null;
+        };
         shiftMismatchPending?: boolean;
         faceMatch?: { warning?: string | null };
       };
       setMismatchConfirm(null);
+      const punchIso =
+        typeof successBody.day?.workDate === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(successBody.day.workDate)
+          ? successBody.day.workDate
+          : todayIsoBangkok();
+      const punchedIn =
+        successBody.day?.clockInAt ??
+        (action === "clockIn"
+          ? successBody.occurredAt ?? new Date().toISOString()
+          : null);
+      const punchedOut =
+        successBody.day?.clockOutAt ??
+        (action === "clockOut"
+          ? successBody.occurredAt ?? new Date().toISOString()
+          : null);
+      setDays((prev) => {
+        const idx = prev.findIndex((row) => row.workDate === punchIso);
+        const patch = {
+          ...(punchedIn ? { clockInAt: punchedIn } : {}),
+          ...(punchedOut ? { clockOutAt: punchedOut } : {}),
+        };
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx]!, ...patch };
+          return next;
+        }
+        return [
+          ...prev,
+          {
+            id: `today-${punchIso}`,
+            workDate: punchIso,
+            dutyLabel: "—",
+            isRestDay: false,
+            isLeaveDay: false,
+            plannedClockIn: null,
+            plannedClockOut: null,
+            crossesMidnight: false,
+            clockInAt: punchedIn,
+            clockOutAt: punchedOut,
+            lateLabel: "—",
+            earlyLeaveLabel: "—",
+          },
+        ];
+      });
       const faceWarning = successBody.faceMatch?.warning?.trim();
       setFeedback({
         kind: "success",
@@ -911,8 +967,14 @@ export default function MeAttendanceWorkspace() {
           <div className="hr-me-clock-actions">
             <HrButton
               type="button"
-              className={`btn hr-me-clock-btn${clockAction ? " btn-primary" : ""}`}
-              action="clock"
+              className={`btn hr-me-clock-btn${
+                clockAction === "clockOut"
+                  ? " btn-primary hr-me-clock-btn--out"
+                  : clockAction
+                    ? " btn-primary hr-me-clock-btn--in"
+                    : ""
+              }`}
+              action={clockButtonAction}
               disabled={submitting || !clockAction || !photoBase64}
               onClick={() => {
                 if (clockAction) void submit(clockAction);

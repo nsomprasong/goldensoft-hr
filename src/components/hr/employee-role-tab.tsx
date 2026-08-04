@@ -64,14 +64,17 @@ export default function EmployeeRoleTab({
   }
 
   return (
-    <section className="card">
-      <div className="hr-entity-card-top">
-        <h2>บทบาท</h2>
-      </div>
-      <p className="muted">
-        บทบาทบนแพลตฟอร์มกำหนดสิทธิ์การใช้งานระบบ เช่น เจ้าขององค์กร หรือพนักงาน
-      </p>
+    <section className="hr-employee-tab-panel hr-employee-tab-panel--violet">
+      <header className="hr-employee-tab-panel-head">
+        <div>
+          <h2>บทบาท</h2>
+          <p>
+            บทบาทบนแพลตฟอร์มกำหนดสิทธิ์การใช้งานระบบ เช่น เจ้าขององค์กร หรือพนักงาน
+          </p>
+        </div>
+      </header>
 
+      <div className="hr-settings-inner-card hr-employee-tab-panel-body">
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       {!initial.linked ? (
@@ -84,6 +87,7 @@ export default function EmployeeRoleTab({
         </p>
       ) : (
         <>
+          <div className="hr-employee-tab-subsection">
           <h3>บทบาทปัจจุบัน</h3>
           {initial.assigned.length === 0 ? (
             <p className="empty">ยังไม่มีบทบาท</p>
@@ -110,9 +114,10 @@ export default function EmployeeRoleTab({
               ))}
             </ul>
           )}
+          </div>
 
           {initial.canAssign ? (
-            <div className="hr-role-assign">
+            <div className="hr-role-assign hr-employee-tab-subsection">
               <h3>กำหนดบทบาท</h3>
               {initial.available.length === 0 ? (
                 <p className="muted">กำหนดบทบาทที่มีได้ครบแล้ว</p>
@@ -152,6 +157,7 @@ export default function EmployeeRoleTab({
           )}
         </>
       )}
+      </div>
     </section>
   );
 }

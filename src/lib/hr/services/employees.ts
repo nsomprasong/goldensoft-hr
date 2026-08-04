@@ -64,6 +64,8 @@ export type EmployeeCreateData = {
   branchId: string;
   employmentTypeId: string;
   employeeStatusId: string;
+  /** OTP_VERIFICATION | INVITATION | NO_NOTIFICATION — defaults to NO_NOTIFICATION */
+  onboardingMethodCode?: string | null;
   firstNameTh: string;
   lastNameTh: string;
   firstNameEn?: string | null;
@@ -221,6 +223,27 @@ export async function createEmployee(
   const firstNameTh = requireText(data.firstNameTh, "ชื่อ (ไทย)", 100);
   const lastNameTh = requireText(data.lastNameTh, "นามสกุล (ไทย)", 100);
 
+  const onboardingCode = (
+    data.onboardingMethodCode?.trim() || "NO_NOTIFICATION"
+  ).toUpperCase();
+  const onboardingMethod = await requireMasterByCode(
+    repository,
+    "employeeOnboardingMethod",
+    onboardingCode,
+  );
+  const notLinked = await requireMasterByCode(
+    repository,
+    "employeeAccountAccessStatus",
+    "NOT_LINKED",
+  );
+  const pendingAccess = await requireMasterByCode(
+    repository,
+    "employeeAccountAccessStatus",
+    "PENDING_ACTIVATION",
+  );
+  const accountAccessStatusId =
+    onboardingCode === "NO_NOTIFICATION" ? notLinked.id : pendingAccess.id;
+
   const created = await repository.employees.create({
     organizationId: ctx.organizationId,
     employeeCode,
@@ -231,6 +254,10 @@ export async function createEmployee(
     positionId: data.positionId ?? null,
     employmentTypeId: data.employmentTypeId,
     employeeStatusId: data.employeeStatusId,
+    accountAccessStatusId,
+    onboardingMethodId: onboardingMethod.id,
+    accountActivatedAt: null,
+    accountDisabledAt: null,
     firstNameTh,
     lastNameTh,
     firstNameEn: optionalText(data.firstNameEn, 100),
@@ -263,6 +290,20 @@ export async function createEmployee(
     ip: ctx.ip,
     userAgent: ctx.userAgent,
   });
+
+  if (onboardingCode === "NO_NOTIFICATION") {
+    await writeHrAudit(repository, {
+      organizationId: ctx.organizationId,
+      branchId: created.branchId,
+      actorAuthUserId: ctx.actorAuthUserId,
+      actionCode: HR_AUDIT_ACTIONS.employeeNoNotificationSelected,
+      entityType: "employee",
+      entityId: created.id,
+      after: { onboardingMethodCode: onboardingCode },
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+  }
 
   return created;
 }
@@ -498,15 +539,37 @@ export async function linkPlatformUser(
     ctx.organizationId,
     input.platformUserId,
   );
-  if (taken && taken.id !== employeeId) {
+  if (taken && taken.id !== employeeId && taken.isActive) {
     throw new HrError("DUPLICATE_PLATFORM_USER", {
       details: { platformUserId: input.platformUserId },
     });
   }
 
+  if (input.authUserId) {
+    const authTaken = await repository.employees.findByAuthUserId(
+      ctx.organizationId,
+      input.authUserId,
+      { activeOnly: true },
+    );
+    if (authTaken && authTaken.id !== employeeId) {
+      throw new HrError("DUPLICATE_AUTH_USER", {
+        details: { authUserId: input.authUserId },
+      });
+    }
+  }
+
+  const activeAccess = await requireMasterByCode(
+    repository,
+    "employeeAccountAccessStatus",
+    "ACTIVE",
+  );
+
   const after = await repository.employees.update(employeeId, {
     platformUserId: input.platformUserId,
     authUserId: input.authUserId ?? null,
+    accountAccessStatusId: activeAccess.id,
+    accountActivatedAt: new Date(),
+    accountDisabledAt: null,
     updatedBy: ctx.actorAuthUserId,
   });
 
@@ -542,6 +605,33 @@ export async function linkPlatformUser(
     userAgent: ctx.userAgent,
   });
 
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeAuthLinked,
+    entityType: "employee",
+    entityId: after.id,
+    after: {
+      authUserId: after.authUserId,
+      platformUserId: after.platformUserId,
+    },
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeAccountActivated,
+    entityType: "employee",
+    entityId: after.id,
+    after: { accountAccessStatusId: after.accountAccessStatusId },
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
   return after;
 }
 
@@ -559,9 +649,17 @@ export async function unlinkPlatformUser(
   if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
   assertBranchInScope(ctx, before.branchId);
 
+  const notLinked = await requireMasterByCode(
+    repository,
+    "employeeAccountAccessStatus",
+    "NOT_LINKED",
+  );
+
   const after = await repository.employees.update(employeeId, {
     platformUserId: null,
     authUserId: null,
+    accountAccessStatusId: notLinked.id,
+    accountDisabledAt: new Date(),
     updatedBy: ctx.actorAuthUserId,
   });
 
@@ -574,6 +672,18 @@ export async function unlinkPlatformUser(
     entityId: after.id,
     before,
     after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeAuthUnlinked,
+    entityType: "employee",
+    entityId: after.id,
+    before: { authUserId: before.authUserId },
     ip: ctx.ip,
     userAgent: ctx.userAgent,
   });

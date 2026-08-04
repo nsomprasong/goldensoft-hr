@@ -165,6 +165,28 @@ export function IconClock(props: IconProps) {
   );
 }
 
+/** Enter / เข้างาน */
+export function IconClockIn(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+    </Svg>
+  );
+}
+
+/** Exit / ออกงาน */
+export function IconClockOut(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </Svg>
+  );
+}
+
 export type ActionKey =
   | "save"
   | "edit"
@@ -181,7 +203,9 @@ export type ActionKey =
   | "prev"
   | "next"
   | "open"
-  | "clock";
+  | "clock"
+  | "clockIn"
+  | "clockOut";
 
 export const ACTION_ICON: Record<
   ActionKey,
@@ -203,6 +227,8 @@ export const ACTION_ICON: Record<
   next: IconChevronRight,
   open: IconOpen,
   clock: IconClock,
+  clockIn: IconClockIn,
+  clockOut: IconClockOut,
 };
 
 /** Infer action icon from Thai (or busy) button label text. */
@@ -224,6 +250,8 @@ export function inferActionFromLabel(label: string): ActionKey | null {
   if (/แก้ไข/.test(t)) return "edit";
   if (/บันทึก|กำลังบันทึก/.test(t)) return "save";
   if (/เปิดดู|เปิด\b/.test(t)) return "open";
+  if (/ออกงาน/.test(t)) return "clockOut";
+  if (/เข้างาน/.test(t)) return "clockIn";
   if (/ลงเวลา|เวลา/.test(t)) return "clock";
   return null;
 }

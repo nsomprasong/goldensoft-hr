@@ -309,11 +309,31 @@ export function createMemoryHrRepository(
       return hit ? clone(hit) : null;
     },
     async findByPlatformUserId(organizationId: string, platformUserId: string) {
-      const hit = store.employees.find(
+      const rows = store.employees.filter(
         (row) =>
           row.organizationId === organizationId &&
           row.platformUserId === platformUserId,
       );
+      const hit =
+        rows.find((row) => row.isActive) ??
+        rows[0] ??
+        null;
+      return hit ? clone(hit) : null;
+    },
+    async findByAuthUserId(
+      organizationId: string,
+      authUserId: string,
+      options?: { activeOnly?: boolean },
+    ) {
+      let rows = store.employees.filter(
+        (row) =>
+          row.organizationId === organizationId &&
+          row.authUserId === authUserId,
+      );
+      if (options?.activeOnly) {
+        rows = rows.filter((row) => row.isActive);
+      }
+      const hit = rows.find((row) => row.isActive) ?? rows[0] ?? null;
       return hit ? clone(hit) : null;
     },
     async create(input: EmployeeCreateInput) {

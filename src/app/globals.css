@@ -5647,6 +5647,77 @@ button.hr-schedule-empty-icon:disabled {
   font-weight: var(--font-weight-semibold);
 }
 
+/* Punch button: large horizontal CTA (override compact btn-tab layout) */
+.hr-root .btn.hr-me-clock-btn:has(.btn-icon),
+.hr-root .hr-me-clock-btn.btn:has(.btn-icon) {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 4.5rem;
+  padding: 0.95rem 1.35rem;
+  border: 1px solid color-mix(in srgb, var(--hr-accent) 28%, var(--hr-border));
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--hr-accent-soft) 70%, #fff);
+  color: var(--hr-text);
+  box-shadow: 0 10px 22px -16px rgba(15, 23, 42, 0.45);
+  white-space: nowrap;
+}
+
+.hr-root .btn.hr-me-clock-btn:has(.btn-icon):hover:not(:disabled),
+.hr-root .hr-me-clock-btn.btn:has(.btn-icon):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--hr-accent-soft) 88%, #fff);
+  color: var(--hr-text);
+  transform: none;
+}
+
+.hr-root .btn.hr-me-clock-btn:has(.btn-icon) .btn-icon,
+.hr-root .hr-me-clock-btn.btn:has(.btn-icon) .btn-icon {
+  width: 3.1rem;
+  height: 3.1rem;
+}
+
+.hr-root .btn.hr-me-clock-btn:has(.btn-icon) .btn-icon svg,
+.hr-root .hr-me-clock-btn.btn:has(.btn-icon) .btn-icon svg {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.hr-root .btn.hr-me-clock-btn:has(.btn-icon) .btn-label,
+.hr-root .hr-me-clock-btn.btn:has(.btn-icon) .btn-label {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.hr-root .btn.btn-primary.hr-me-clock-btn:has(.btn-icon),
+.hr-root .btn.btn-primary.hr-me-clock-btn--in:has(.btn-icon) {
+  border-color: color-mix(in srgb, var(--hr-accent) 45%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--hr-accent) 92%, #fff) 0%,
+    var(--hr-accent) 100%
+  );
+  color: #fff;
+}
+
+.hr-root .btn.btn-primary.hr-me-clock-btn--out:has(.btn-icon) {
+  border-color: color-mix(in srgb, #0f766e 42%, transparent);
+  background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%);
+  color: #fff;
+}
+
+.hr-root .btn.btn-primary.hr-me-clock-btn:has(.btn-icon) .btn-icon,
+.hr-root .btn.btn-primary.hr-me-clock-btn--in:has(.btn-icon) .btn-icon,
+.hr-root .btn.btn-primary.hr-me-clock-btn--out:has(.btn-icon) .btn-icon {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .hr-me-clock-history {
   margin-top: 1rem;
 }
@@ -5779,6 +5850,21 @@ button.hr-schedule-empty-icon:disabled {
   grid-template-columns: 1fr 1fr;
   gap: 0.65rem 0.75rem;
   align-items: end;
+  min-width: 0;
+}
+
+.hr-attendance-filter-dates .field {
+  min-width: 0;
+}
+
+.hr-attendance-filter-dates .thai-date-input {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .hr-attendance-filter-dates {
+    grid-template-columns: 1fr;
+  }
 }
 
 .hr-attendance-filter-view {
@@ -5843,7 +5929,8 @@ button.hr-schedule-empty-icon:disabled {
 
 .hr-attendance-person-group {
   padding: 0;
-  overflow: hidden;
+  /* overflow:hidden breaks position:sticky on iPad Safari — clip via children */
+  overflow: visible;
 }
 
 .hr-attendance-person-group-head {
@@ -5852,6 +5939,7 @@ button.hr-schedule-empty-icon:disabled {
   gap: 0.75rem;
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--hr-border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--hr-surface-muted, color-mix(in srgb, var(--hr-border) 18%, transparent));
 }
 
@@ -5874,40 +5962,50 @@ button.hr-schedule-empty-icon:disabled {
 .hr-attendance-person-group .table-wrap {
   margin: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .hr-attendance-person-table {
   margin: 0;
-  min-width: 36rem;
+  min-width: 40rem;
   border-collapse: separate;
   border-spacing: 0;
 }
 
 .hr-attendance-person-table th,
 .hr-attendance-person-table td {
-  padding-top: 0.45rem;
-  padding-bottom: 0.45rem;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
   vertical-align: middle;
 }
 
 .hr-attendance-person-table .col-sticky-date {
+  position: -webkit-sticky;
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 6.5rem;
+  min-width: 7.5rem;
   white-space: nowrap;
-  background: var(--hr-surface);
+  /* Solid fill — translucent/mix backgrounds make Safari “lose” sticky cells */
+  background-color: #ffffff;
+  background-clip: padding-box;
   box-shadow: 4px 0 8px -4px rgba(15, 23, 42, 0.16);
 }
 
 .hr-attendance-person-table thead .col-sticky-date {
   z-index: 3;
-  background: var(--hr-surface-muted);
+  background-color: #f8fafc;
+}
+
+.hr-attendance-person-table tbody tr:nth-child(even) .col-sticky-date {
+  background-color: #fbfcfd;
 }
 
 .hr-attendance-person-table tbody tr:hover .col-sticky-date {
-  background: var(--hr-surface-muted);
+  background-color: #f1f5f9;
 }
 
 .hr-attendance-person-table .col-status-span {
@@ -6077,18 +6175,110 @@ button.hr-schedule-empty-icon:disabled {
   margin-bottom: var(--hr-gap);
 }
 
-.tabs a {
+.tabs a,
+.tabs button {
   padding: 0.45rem 0.75rem;
-  text-decoration: none;
-  color: var(--hr-text-muted);
+  border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  background: transparent;
+  color: var(--hr-text-muted);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.tabs a[aria-current="page"] {
+.tabs a[aria-current="page"],
+.tabs button[aria-selected="true"],
+.tabs button.is-active {
   color: var(--hr-accent);
   border-bottom-color: var(--hr-accent);
   font-weight: 600;
+}
+
+/* Employee detail tab panels — outer tone + inner white card */
+.hr-employee-tab-panel {
+  margin: 0 0 1rem;
+  padding: 0.85rem 0.9rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--hr-border) 85%, transparent);
+  border-radius: 1rem;
+  background: linear-gradient(165deg, #fffaf3 0%, rgba(255, 255, 255, 0.94) 55%);
+}
+
+.hr-employee-tab-panel--amber {
+  border-color: var(--color-warning-border);
+  background: linear-gradient(180deg, var(--dashboard-amber-soft, #fffbeb) 0%, #fff 58%);
+}
+
+.hr-employee-tab-panel--blue {
+  border-color: var(--color-info-border);
+  background: linear-gradient(180deg, var(--dashboard-blue-soft, #eef5ff) 0%, #fff 58%);
+}
+
+.hr-employee-tab-panel--green {
+  border-color: var(--color-success-border, #a7f3d0);
+  background: linear-gradient(180deg, var(--dashboard-green-soft, #ecfdf5) 0%, #fff 58%);
+}
+
+.hr-employee-tab-panel--violet {
+  border-color: var(--color-violet-border);
+  background: linear-gradient(180deg, var(--dashboard-violet-soft, #f5f3ff) 0%, #fff 58%);
+}
+
+.hr-employee-tab-panel--rose {
+  border-color: var(--hr-danger-border);
+  background: linear-gradient(180deg, var(--hr-danger-bg) 0%, #fff 58%);
+}
+
+.hr-employee-tab-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.hr-employee-tab-panel-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.hr-employee-tab-panel-head p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--hr-text-muted);
+  line-height: 1.4;
+}
+
+.hr-employee-tab-panel-body {
+  margin-top: 0;
+}
+
+.hr-employee-tab-panel-body > .empty,
+.hr-employee-tab-panel-body > .muted,
+.hr-employee-tab-panel-body > .field-hint {
+  margin: 0;
+}
+
+.hr-employee-tab-subsection {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--hr-border) 80%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--hr-surface-muted, #f8fafc) 88%, #fff);
+}
+
+.hr-employee-tab-subsection:last-child {
+  margin-bottom: 0;
+}
+
+.hr-employee-tab-subsection h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.95rem;
+}
+
+.hr-employee-tab-panel .hr-role-list {
+  margin: 0;
 }
 
 .hr-approvals-tabs {
@@ -6401,52 +6591,64 @@ button.hr-schedule-empty-icon:disabled {
   gap: 0.35rem;
   align-items: center;
   position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.thai-date-input > input[type="text"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.thai-date-input > input[readonly] {
+  cursor: pointer;
+}
+
+.thai-date-picker-hit {
+  display: inline-flex;
+  width: var(--control-height, 2.5rem);
+  height: var(--control-height, 2.5rem);
+  min-width: var(--control-height, 2.5rem);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.thai-date-picker-hit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .thai-date-picker-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-height, 2.5rem);
-  height: var(--control-height, 2.5rem);
-  min-width: var(--control-height, 2.5rem);
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 1px solid var(--hr-border);
   border-radius: var(--radius-md);
   background: var(--hr-surface, #fff);
   color: var(--hr-text-muted);
-  cursor: pointer;
+  pointer-events: none;
 }
 
-.thai-date-picker-btn:hover:not(:disabled) {
+.thai-date-picker-hit:hover:not(:disabled) .thai-date-picker-btn,
+.thai-date-picker-hit:focus-visible .thai-date-picker-btn {
   color: var(--hr-text);
   border-color: var(--hr-accent, var(--color-primary));
   background: var(--hr-surface-muted, var(--color-surface-muted));
-}
-
-.thai-date-picker-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .thai-date-picker-icon {
   display: block;
 }
 
-/* Native picker stays for the OS calendar UI; not shown as a second control. */
-.thai-date-picker-native {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-}
+/* Month calendar overlay styles live in thai-date-input.tsx (in-bundle)
+   so Customer App /__hr_assets CSS lag cannot break the iPad grid. */
 
 .workday-chips {
   display: flex;

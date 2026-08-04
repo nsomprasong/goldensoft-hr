@@ -177,6 +177,38 @@ describe("Phase 8A HR platform integration", () => {
     assert.ok(ctx.entitlements[HR_ENTITLEMENTS.access]?.allowed);
   });
 
+  it("accepts legacy cookies without employeeId", async () => {
+    const { state, organizationId, branchId } = mockEntitledHrUser();
+    const client = createMockPlatformClient(state);
+    const value = encodePlatformContextCookie({
+      organizationId,
+      branchId,
+    });
+    const ctx = await resolveHrRequestContext({
+      cookieHeader: `${PLATFORM_CONTEXT_COOKIE_NAME}=${value}`,
+      platformClient: client,
+    });
+    assert.equal(ctx.organizationId, organizationId);
+    assert.equal(ctx.activeEmployeeId ?? null, null);
+  });
+
+  it("surfaces signed employeeId from cookie for later DB validation", async () => {
+    const { state, organizationId, branchId } = mockEntitledHrUser();
+    const client = createMockPlatformClient(state);
+    const employeeId = "44444444-4444-4444-8444-444444444444";
+    const value = encodePlatformContextCookie({
+      organizationId,
+      branchId,
+      employeeId,
+      branchSelected: true,
+    });
+    const ctx = await resolveHrRequestContext({
+      cookieHeader: `${PLATFORM_CONTEXT_COOKIE_NAME}=${value}`,
+      platformClient: client,
+    });
+    assert.equal(ctx.activeEmployeeId, employeeId);
+  });
+
   it("ignores client-forged organizationId header", async () => {
     const { state, organizationId, branchId } = mockEntitledHrUser();
     const client = createMockPlatformClient(state);

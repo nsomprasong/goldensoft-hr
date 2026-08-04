@@ -2260,27 +2260,24 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
       workDate: day,
       workLocation: serializeWorkLocation(workLocation),
       schedulePeriod: null,
-      days:
-        clockInAt || clockOutAt
-          ? [
-              {
-                id: dayRow?.id ?? `today-${day}`,
-                workDate: day,
-                dutyLabel: assignment?.shift?.name ?? "—",
-                isRestDay: Boolean(assignment?.isRestDay),
-                isLeaveDay: Boolean(assignment?.isLeaveDay),
-                plannedClockIn,
-                plannedClockOut,
-                crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
-                clockInAt: clockInAt ? clockInAt.toISOString() : null,
-                clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
-                lateMinutes,
-                earlyLeaveMinutes,
-                lateLabel: formatMinutesLabel(lateMinutes),
-                earlyLeaveLabel: formatMinutesLabel(earlyLeaveMinutes),
-              },
-            ]
-          : [],
+      days: [
+        {
+          id: dayRow?.id ?? `today-${day}`,
+          workDate: day,
+          dutyLabel: assignment?.shift?.name ?? "—",
+          isRestDay: Boolean(assignment?.isRestDay),
+          isLeaveDay: Boolean(assignment?.isLeaveDay),
+          plannedClockIn,
+          plannedClockOut,
+          crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+          clockInAt: clockInAt ? clockInAt.toISOString() : null,
+          clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
+          lateMinutes,
+          earlyLeaveMinutes,
+          lateLabel: formatMinutesLabel(lateMinutes),
+          earlyLeaveLabel: formatMinutesLabel(earlyLeaveMinutes),
+        },
+      ],
     };
   }
 
@@ -2446,6 +2443,98 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
           ? "—"
           : formatMinutesLabel(earlyLeaveMinutes),
     });
+  }
+
+  // Punch UI keys off Bangkok "today". A published period may be upcoming or
+  // missing today's assignment — still surface today's attendance row.
+  if (!seenDates.has(today)) {
+    const workDate = date(today);
+    const { start, end } = bangkokDayBounds();
+    const [dayRow, todayEvents, assignment] = await Promise.all([
+      db.attendanceDay.findUnique({
+        where: {
+          employeeId_workDate: { employeeId: employee.id, workDate },
+        },
+      }),
+      db.attendanceEvent.findMany({
+        where: {
+          employeeId: employee.id,
+          occurredAt: { gte: start, lte: end },
+        },
+        include: { eventType: { select: { code: true } } },
+        orderBy: { occurredAt: "asc" },
+      }),
+      db.shiftAssignment.findFirst({
+        where: { employeeId: employee.id, workDate },
+        include: { shift: true },
+        orderBy: { sequenceNo: "asc" },
+      }),
+    ]);
+    const clockInFromEvents =
+      todayEvents.find(
+        (row: { eventType: { code: string } }) =>
+          row.eventType.code === "CLOCK_IN",
+      )?.occurredAt ?? null;
+    const clockOutFromEvents =
+      [...todayEvents]
+        .reverse()
+        .find(
+          (row: { eventType: { code: string } }) =>
+            row.eventType.code === "CLOCK_OUT",
+        )?.occurredAt ?? null;
+    const clockInAt = dayRow?.clockInAt ?? clockInFromEvents;
+    const clockOutAt = dayRow?.clockOutAt ?? clockOutFromEvents;
+    let dutyLabel = assignment?.shift?.name ?? "—";
+    if (assignment?.isRestDay) dutyLabel = "วันหยุด";
+    else if (assignment?.isLeaveDay) dutyLabel = "ลา";
+    const computed =
+      assignment?.isRestDay || assignment?.isLeaveDay
+        ? { lateMinutes: 0, earlyLeaveMinutes: 0 }
+        : computeLateEarlyMinutes({
+            workDate: today,
+            clockInAt,
+            clockOutAt,
+            startTime: assignment?.shift?.startTime ?? null,
+            endTime: assignment?.shift?.endTime ?? null,
+            graceLateMinutes: assignment?.shift?.graceLateMinutes ?? 0,
+            graceEarlyLeaveMinutes:
+              assignment?.shift?.graceEarlyLeaveMinutes ?? 0,
+            crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+          });
+    const lateMinutes =
+      dayRow?.lateMinutes && dayRow.lateMinutes > 0
+        ? dayRow.lateMinutes
+        : computed.lateMinutes;
+    const earlyLeaveMinutes =
+      dayRow?.earlyLeaveMinutes && dayRow.earlyLeaveMinutes > 0
+        ? dayRow.earlyLeaveMinutes
+        : computed.earlyLeaveMinutes;
+    const todayEntry = {
+      id: dayRow?.id ?? `today-${today}`,
+      workDate: today,
+      dutyLabel,
+      isRestDay: Boolean(assignment?.isRestDay),
+      isLeaveDay: Boolean(assignment?.isLeaveDay),
+      plannedClockIn: formatShiftClock(assignment?.shift?.startTime),
+      plannedClockOut: formatShiftClock(assignment?.shift?.endTime),
+      crossesMidnight: assignment?.shift?.crossesMidnight ?? false,
+      shiftMismatchStatus: null as string | null,
+      clockInAt: clockInAt ? clockInAt.toISOString() : null,
+      clockOutAt: clockOutAt ? clockOutAt.toISOString() : null,
+      lateMinutes,
+      earlyLeaveMinutes,
+      lateLabel:
+        assignment?.isRestDay || assignment?.isLeaveDay
+          ? "—"
+          : formatMinutesLabel(lateMinutes),
+      earlyLeaveLabel:
+        assignment?.isRestDay || assignment?.isLeaveDay
+          ? "—"
+          : formatMinutesLabel(earlyLeaveMinutes),
+    };
+    const insertAt = days.findIndex((row) => row.workDate > today);
+    if (insertAt === -1) days.push(todayEntry);
+    else days.splice(insertAt, 0, todayEntry);
   }
 
   const now = new Date();
@@ -2968,9 +3057,15 @@ export async function clock(ctx: HrServiceContext, input: any) {
 
   return {
     ...created,
+    occurredAt: occurredAt.toISOString(),
     photoUrl,
     shiftMismatchPending: Boolean(mismatchForRequest),
     faceMatch: faceCheck,
+    day: {
+      workDate: day,
+      clockInAt: nextClockIn ? nextClockIn.toISOString() : null,
+      clockOutAt: nextClockOut ? nextClockOut.toISOString() : null,
+    },
   };
 }
 
@@ -5736,7 +5831,37 @@ export async function approvalInbox(ctx: HrServiceContext) {
   };
 }
 export async function resolveSelfEmployee(ctx: HrServiceContext, platformUserId?: string | null) {
-  const employee = await db.employee.findFirst({ where: { organizationId: ctx.organizationId, OR: [{ platformUserId: platformUserId ?? undefined }, { authUserId: actor(ctx) ?? undefined }] } });
+  if (ctx.activeEmployeeId) {
+    // Never trust client/cookie employeeId without DB ownership + active checks.
+    const pinned = await db.employee.findFirst({
+      where: {
+        id: ctx.activeEmployeeId,
+        organizationId: ctx.organizationId,
+        isActive: true,
+        OR: [
+          { authUserId: actor(ctx) ?? undefined },
+          { platformUserId: platformUserId ?? undefined },
+        ],
+      },
+    });
+    if (!pinned) {
+      throw new HrError("FORBIDDEN", {
+        message: "บริบทพนักงานไม่ถูกต้องหรือไม่มีสิทธิ์",
+        details: { employeeId: ctx.activeEmployeeId },
+      });
+    }
+    return pinned;
+  }
+  const employee = await db.employee.findFirst({
+    where: {
+      organizationId: ctx.organizationId,
+      isActive: true,
+      OR: [
+        { platformUserId: platformUserId ?? undefined },
+        { authUserId: actor(ctx) ?? undefined },
+      ],
+    },
+  });
   if (!employee) throw new HrError("NOT_FOUND", { message: "บัญชีนี้ยังไม่ได้เชื่อมกับข้อมูลพนักงาน" });
   return employee;
 }

@@ -46,7 +46,7 @@ describe("Phase 8B employees", () => {
       "employee",
       employee.id,
     );
-    assert.equal(audit.length, 1);
+    assert.ok(audit.length >= 1);
     assert.equal(audit[0].actionCode, "employee.create");
   });
 

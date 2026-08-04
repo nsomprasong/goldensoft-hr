@@ -58,8 +58,18 @@ export function decodePlatformContextCookie(
         typeof parsed.branchId === "string" || parsed.branchId === null
           ? parsed.branchId
           : null,
+      employeeId:
+        typeof parsed.employeeId === "string" || parsed.employeeId === null
+          ? parsed.employeeId
+          : undefined,
+      branchSelected:
+        typeof parsed.branchSelected === "boolean"
+          ? parsed.branchSelected
+          : undefined,
       mode:
-        parsed.mode === "platform_admin" || parsed.mode === "membership"
+        parsed.mode === "platform_admin" ||
+        parsed.mode === "membership" ||
+        parsed.mode === "managed_org"
           ? parsed.mode
           : undefined,
     };

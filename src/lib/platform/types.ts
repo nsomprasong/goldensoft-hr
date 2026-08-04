@@ -59,6 +59,10 @@ export type EntitlementCheckResponse = {
 export type PlatformContextCookie = {
   organizationId: string;
   branchId: string | null;
+  /** Optional active HR employee id — validated before use in HR services. */
+  employeeId?: string | null;
+  /** True after the user finished the branch step (including all-branches). */
+  branchSelected?: boolean;
   mode?: PlatformContextMode;
 };
 
@@ -92,6 +96,8 @@ export type HrRequestContext = {
   organizationName: string;
   branchId: string | null;
   branch: PlatformMeResponse["activeBranch"];
+  /** Soft claim from context cookie; services must verify ownership. */
+  activeEmployeeId?: string | null;
   contextMode: PlatformContextMode;
   membershipRoles: string[];
   /**

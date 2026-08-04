@@ -266,6 +266,28 @@ async function findEnrollmentDescriptor(
   }
 }
 
+type OrgEnrollmentRow = {
+  employee_id: string;
+  descriptor: unknown;
+};
+
+/** All enrollments in the org except one employee — used for duplicate face checks. */
+async function listOrgEnrollmentDescriptors(
+  organizationId: string,
+  exceptEmployeeId: string,
+): Promise<OrgEnrollmentRow[]> {
+  try {
+    return await prisma.$queryRaw<OrgEnrollmentRow[]>`
+      SELECT employee_id::text AS employee_id, descriptor
+      FROM hr.employee_face_enrollments
+      WHERE organization_id = ${organizationId}::uuid
+        AND employee_id <> ${exceptEmployeeId}::uuid
+    `;
+  } catch {
+    return [];
+  }
+}
+
 export async function getSelfFaceMatchStatus(
   ctx: HrServiceContext,
 ): Promise<SelfFaceMatchStatus> {
@@ -312,6 +334,29 @@ export async function enrollMyFace(
       message: "ไม่พบข้อมูลใบหน้าสำหรับลงทะเบียน — ถ่ายรูปให้เห็นใบหน้าชัดเจน",
     });
   }
+
+  // Org-wide duplicate check (all branches). Never reveal other organizations.
+  const settingsForDup = await findSettingsRow(ctx.organizationId);
+  const threshold = settingsForDup
+    ? Number(settingsForDup.match_threshold)
+    : DEFAULT_FACE_MATCH_THRESHOLD;
+  const otherDescriptors = await listOrgEnrollmentDescriptors(
+    ctx.organizationId,
+    employee.id,
+  );
+  for (const other of otherDescriptors) {
+    const otherDesc = parseFaceDescriptor(other.descriptor);
+    if (!otherDesc) continue;
+    const distance = euclideanDistance(otherDesc, descriptor);
+    if (isFaceMatch(distance, threshold)) {
+      throw new HrError("FORBIDDEN", {
+        message:
+          "ใบหน้านี้ถูกใช้กับพนักงานอื่นในบริษัทนี้แล้ว — ติดต่อผู้ดูแลองค์กร",
+        details: { code: "FACE_DUPLICATE_IN_ORG" },
+      });
+    }
+  }
+
   const photoBuffer = decodePhotoBase64(input.photoBase64);
   if (!photoBuffer) {
     throw new HrError("VALIDATION_ERROR", {

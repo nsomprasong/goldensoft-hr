@@ -64,6 +64,8 @@ export type CompensationRowView = {
 
 function SectionChrome({
   title,
+  description,
+  tone = "amber",
   editing,
   canEdit,
   onEdit,
@@ -71,6 +73,8 @@ function SectionChrome({
   children,
 }: {
   title: string;
+  description?: string;
+  tone?: "amber" | "blue" | "green" | "violet" | "rose";
   editing: boolean;
   canEdit: boolean;
   onEdit: () => void;
@@ -78,9 +82,12 @@ function SectionChrome({
   children: ReactNode;
 }) {
   return (
-    <section className="card">
-      <div className="hr-entity-card-top">
-        <h2>{title}</h2>
+    <section className={`hr-employee-tab-panel hr-employee-tab-panel--${tone}`}>
+      <header className="hr-employee-tab-panel-head">
+        <div>
+          <h2>{title}</h2>
+          {description ? <p>{description}</p> : null}
+        </div>
         {canEdit ? (
           editing ? (
             <button type="button" className="btn btn-sm" onClick={onCancel}>
@@ -92,8 +99,10 @@ function SectionChrome({
             </button>
           )
         ) : null}
+      </header>
+      <div className="hr-settings-inner-card hr-employee-tab-panel-body">
+        {children}
       </div>
-      {children}
     </section>
   );
 }
@@ -212,6 +221,8 @@ export function EmployeeGeneralTab({
   return (
     <SectionChrome
       title="ข้อมูลทั่วไป"
+      description="ชื่อ ช่องทางติดต่อ และรูปโปรไฟล์พนักงาน"
+      tone="amber"
       editing={editing}
       canEdit={canEdit}
       onEdit={() => setEditing(true)}
@@ -393,6 +404,8 @@ export function EmployeeBranchTab({
   return (
     <SectionChrome
       title="สาขา"
+      description="สาขาที่พนักงานสังกัดในองค์กรนี้"
+      tone="blue"
       editing={editing}
       canEdit={canEdit}
       onEdit={() => setEditing(true)}
@@ -551,6 +564,8 @@ export function EmployeeEmploymentTab({
     <>
       <SectionChrome
         title="การจ้าง"
+        description="ประเภทการจ้าง แผนก ตำแหน่ง และสถานะ"
+        tone="green"
         editing={editing}
         canEdit={canEdit}
         onEdit={() => setEditing(true)}
@@ -735,8 +750,14 @@ export function EmployeeEmploymentTab({
           ) : null}
 
           {canReadCompensation && compensations.length > 1 ? (
-            <section className="card">
-              <h2>ประวัติค่าจ้าง</h2>
+            <section className="hr-employee-tab-panel hr-employee-tab-panel--green">
+              <header className="hr-employee-tab-panel-head">
+                <div>
+                  <h2>ประวัติค่าจ้าง</h2>
+                  <p>รายการค่าจ้างที่เคยมีผลกับพนักงานคนนี้</p>
+                </div>
+              </header>
+              <div className="hr-settings-inner-card hr-employee-tab-panel-body">
               <div className="table-wrap table-wrap--fit">
                 <table>
                   <thead>
@@ -769,23 +790,35 @@ export function EmployeeEmploymentTab({
                   </tbody>
                 </table>
               </div>
+              </div>
             </section>
           ) : null}
 
           {!canManageCompensation &&
           canReadCompensation &&
           compensations.length === 0 ? (
-            <section className="card">
-              <h2>ค่าตอบแทน</h2>
-              <p className="empty">ยังไม่มีประวัติค่าจ้าง</p>
+            <section className="hr-employee-tab-panel hr-employee-tab-panel--green">
+              <header className="hr-employee-tab-panel-head">
+                <div>
+                  <h2>ค่าตอบแทน</h2>
+                </div>
+              </header>
+              <div className="hr-settings-inner-card hr-employee-tab-panel-body">
+                <p className="empty">ยังไม่มีประวัติค่าจ้าง</p>
+              </div>
             </section>
           ) : null}
 
           {!canManageCompensation &&
           canReadCompensation &&
           compensations.length === 1 ? (
-            <section className="card">
-              <h2>ค่าตอบแทน</h2>
+            <section className="hr-employee-tab-panel hr-employee-tab-panel--green">
+              <header className="hr-employee-tab-panel-head">
+                <div>
+                  <h2>ค่าตอบแทน</h2>
+                </div>
+              </header>
+              <div className="hr-settings-inner-card hr-employee-tab-panel-body">
               <dl className="dl">
                 <dt>ประเภท</dt>
                 <dd>{compensations[0].wageTypeNameTh}</dd>
@@ -796,6 +829,7 @@ export function EmployeeEmploymentTab({
                 <dt>มีผลตั้งแต่</dt>
                 <dd>{formatThaiDate(compensations[0].effectiveFrom)}</dd>
               </dl>
+              </div>
             </section>
           ) : null}
         </>
