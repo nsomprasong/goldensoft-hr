@@ -14,10 +14,29 @@ export function isFaceMatchMode(value: unknown): value is FaceMatchMode {
   return value === "OFF" || value === "WARN" || value === "REQUIRE";
 }
 
+/**
+ * Accepts a 128-d array, JSON string of that array, or array-like object
+ * (some drivers return JSONB as a plain object with numeric keys).
+ */
 export function parseFaceDescriptor(raw: unknown): number[] | null {
-  if (!Array.isArray(raw) || raw.length !== FACE_DESCRIPTOR_LENGTH) return null;
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.length === FACE_DESCRIPTOR_LENGTH) {
+      value = Array.from({ length: FACE_DESCRIPTOR_LENGTH }, (_, i) => obj[String(i)]);
+    }
+  }
+  if (!Array.isArray(value) || value.length !== FACE_DESCRIPTOR_LENGTH) return null;
   const out: number[] = [];
-  for (const item of raw) {
+  for (const item of value) {
     const n = typeof item === "number" ? item : Number(item);
     if (!Number.isFinite(n)) return null;
     out.push(n);
@@ -42,4 +61,39 @@ export function isFaceMatch(
   threshold: number = DEFAULT_FACE_MATCH_THRESHOLD,
 ): boolean {
   return Number.isFinite(distance) && distance <= threshold;
+}
+
+export type FaceEnrollmentCandidate = {
+  employeeId: string;
+  /** Owning organization of the enrollment row (must already be org-scoped). */
+  organizationId: string;
+  descriptor: unknown;
+  email?: string | null;
+  phone?: string | null;
+};
+
+/**
+ * Find another employee in the *same* organization whose enrolled face matches.
+ * Candidates from other organizations are ignored even if passed in.
+ * Returns null when no in-org duplicate exists.
+ */
+export function findDuplicateFaceInOrganization(input: {
+  organizationId: string;
+  exceptEmployeeId: string;
+  descriptor: number[];
+  threshold: number;
+  candidates: FaceEnrollmentCandidate[];
+}): { employeeId: string; distance: number } | null {
+  const orgId = input.organizationId;
+  for (const row of input.candidates) {
+    if (row.organizationId !== orgId) continue;
+    if (row.employeeId === input.exceptEmployeeId) continue;
+    const other = parseFaceDescriptor(row.descriptor);
+    if (!other) continue;
+    const distance = euclideanDistance(other, input.descriptor);
+    if (isFaceMatch(distance, input.threshold)) {
+      return { employeeId: row.employeeId, distance };
+    }
+  }
+  return null;
 }

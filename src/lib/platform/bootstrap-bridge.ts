@@ -17,6 +17,7 @@ const bridgeSchema = z.object({
   profile: z.object({
     displayName: z.string(),
     email: z.string(),
+    phone: z.string().nullable().optional(),
     statusCode: z.string(),
   }),
   platformRoles: z.array(z.string()),

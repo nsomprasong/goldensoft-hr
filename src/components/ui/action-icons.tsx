@@ -156,6 +156,17 @@ export function IconOpen(props: IconProps) {
   );
 }
 
+/** Locate / ตรวจระยะจากหมุด */
+export function IconLocate(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      <circle cx="12" cy="12" r="7" />
+    </Svg>
+  );
+}
+
 export function IconClock(props: IconProps) {
   return (
     <Svg {...props}>

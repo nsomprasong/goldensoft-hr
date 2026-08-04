@@ -7,6 +7,12 @@ import Alert from "@/components/hr/alert";
 import FeedbackPopup, {
   type FeedbackPopupState,
 } from "@/components/hr/feedback-popup";
+import {
+  IconClock,
+  IconClockIn,
+  IconClockOut,
+  IconLocate,
+} from "@/components/ui/action-icons";
 import HrButton from "@/components/ui/hr-button";
 import { createClientId } from "@/lib/hr/client-id";
 import { extractFaceDescriptor } from "@/lib/hr/client/face-descriptor";
@@ -584,19 +590,20 @@ export default function MeAttendanceWorkspace() {
     : canClockOut
       ? "clockOut"
       : null;
-  const clockButtonLabel = submitting
-    ? "กำลังบันทึก…"
-    : hasClockOut
-      ? "ออกงานแล้ว"
-      : todayRow?.isRestDay
-        ? "วันหยุด"
-        : todayRow?.isLeaveDay
-          ? "วันลา"
-          : canClockIn
-            ? "เข้างาน"
-            : canClockOut
-              ? "ออกงาน"
-              : "เข้างานแล้ว";
+  const clockCaption =
+    submitting
+      ? "กำลังบันทึก…"
+      : clockAction === "clockIn"
+        ? "ลงเวลาเข้างาน"
+        : clockAction === "clockOut"
+          ? "ลงเวลาออกงาน"
+          : hasClockOut
+            ? "ออกงานแล้ว"
+            : todayRow?.isRestDay
+              ? "วันหยุด"
+              : todayRow?.isLeaveDay
+                ? "วันลา"
+                : "เข้างานแล้ว";
   const clockButtonTitle = !clockAction
     ? hasClockOut
       ? "วันนี้ลงเวลาเข้า–ออกงานครบแล้ว"
@@ -607,9 +614,7 @@ export default function MeAttendanceWorkspace() {
           : "วันนี้ลงเวลาเข้างานแล้ว"
     : !photoBase64
       ? "ถ่ายรูปก่อน"
-      : clockAction === "clockIn"
-        ? "เข้างาน"
-        : "ออกงาน";
+      : clockCaption;
   const clockButtonAction =
     submitting
       ? ("save" as const)
@@ -870,51 +875,69 @@ export default function MeAttendanceWorkspace() {
       <FeedbackPopup feedback={feedback} onClose={() => setFeedback(null)} />
 
       <section className="hr-me-clock" aria-label="ลงเวลาวันนี้">
-        <div className="hr-me-clock-status">
-          <div>
-            <p className="hr-me-clock-kicker">วันนี้ · {formatThaiDate(todayIso)}</p>
-            <p className="hr-me-clock-location">
-              {workLocation
-                ? `${workLocation.name} · รัศมี ${workLocation.geofenceRadiusMeters} ม.`
-                : "ยังไม่ได้ผูกจุดลงเวลา — แจ้งแอดมินตั้งสถานที่ทำงาน"}
-            </p>
-            {workLocation?.latitude != null &&
-            workLocation?.longitude != null ? (
-              <p className="muted" style={{ margin: "0.25rem 0 0" }}>
-                หมุด: {workLocation.latitude.toFixed(5)},{" "}
-                {workLocation.longitude.toFixed(5)}
+        <header className="hr-me-clock-status">
+          <div className="hr-me-clock-meta">
+            <div className="hr-me-clock-kicker-row">
+              <p className="hr-me-clock-kicker">
+                วันนี้ · {formatThaiDate(todayIso)}
+                {workLocation
+                  ? ` · ${workLocation.name} · รัศมี ${workLocation.geofenceRadiusMeters} ม.`
+                  : " · ยังไม่ได้ผูกจุดลงเวลา"}
+              </p>
+              {workLocation?.latitude != null ? (
+                <button
+                  type="button"
+                  className={`hr-me-clock-locate-btn${
+                    gpsPreviewLoading ? " hr-me-clock-locate-btn--busy" : ""
+                  }`}
+                  disabled={submitting || gpsPreviewLoading}
+                  onClick={() => void previewGpsDistance()}
+                  aria-label={
+                    gpsPreviewLoading
+                      ? "กำลังอ่านตำแหน่ง"
+                      : "ตรวจระยะจากหมุด"
+                  }
+                  title={
+                    gpsPreviewLoading
+                      ? "กำลังอ่านตำแหน่ง…"
+                      : "ตรวจระยะจากหมุด"
+                  }
+                >
+                  <span className="hr-me-clock-locate-orb" aria-hidden="true">
+                    <span className="hr-me-clock-locate-shine" />
+                    <span className="hr-me-clock-locate-glyph">
+                      <IconLocate />
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+              {gpsPreviewLoading ? (
+                <span className="hr-me-clock-gps-inline muted" aria-live="polite">
+                  …
+                </span>
+              ) : gpsPreview ? (
+                <span
+                  className="hr-me-clock-gps-inline"
+                  aria-live="polite"
+                  title={
+                    gpsPreview.accuracyMeters != null
+                      ? `ความคลาดเคลื่อน ±${Math.round(gpsPreview.accuracyMeters)} ม.`
+                      : undefined
+                  }
+                >
+                  {Math.round(gpsPreview.distanceMeters)} เมตร
+                </span>
+              ) : null}
+            </div>
+            {!workLocation ? (
+              <p className="hr-me-clock-location">
+                แจ้งแอดมินตั้งสถานที่ทำงาน
               </p>
             ) : null}
             {workLocation && workLocation.geofenceRadiusMeters < 30 ? (
-              <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+              <p className="hr-me-clock-hint muted">
                 รัศมีจุดลงเวลาแคบมาก — ถ้าลงเวลาไม่ผ่าน ให้แอดมินขยายเป็นอย่างน้อย 50–100 ม.
               </p>
-            ) : null}
-            {gpsPreview ? (
-              <p style={{ margin: "0.35rem 0 0" }}>
-                ตอนนี้ห่างหมุดประมาณ{" "}
-                <strong>{Math.round(gpsPreview.distanceMeters)} ม.</strong>
-                {gpsPreview.accuracyMeters != null
-                  ? ` (±${Math.round(gpsPreview.accuracyMeters)} ม.)`
-                  : ""}
-                <span className="muted">
-                  {" "}
-                  · เครื่อง: {gpsPreview.deviceLat.toFixed(5)},{" "}
-                  {gpsPreview.deviceLng.toFixed(5)}
-                </span>
-              </p>
-            ) : null}
-            {workLocation?.latitude != null ? (
-              <div className="inline-actions" style={{ marginTop: "0.5rem" }}>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={submitting || gpsPreviewLoading}
-                  onClick={() => void previewGpsDistance()}
-                >
-                  {gpsPreviewLoading ? "กำลังอ่านตำแหน่ง…" : "ตรวจระยะจากหมุด"}
-                </button>
-              </div>
             ) : null}
           </div>
           <div className="hr-me-clock-times" aria-label="สถานะวันนี้">
@@ -927,7 +950,7 @@ export default function MeAttendanceWorkspace() {
               <strong>{formatClockTime(todayRow?.clockOutAt ?? null)}</strong>
             </div>
           </div>
-        </div>
+        </header>
 
         <div className="hr-me-clock-punch">
           <div className="hr-me-clock-photo">
@@ -965,24 +988,36 @@ export default function MeAttendanceWorkspace() {
           </div>
 
           <div className="hr-me-clock-actions">
-            <HrButton
+            <button
               type="button"
-              className={`btn hr-me-clock-btn${
+              className={`hr-me-clock-icon-btn${
                 clockAction === "clockOut"
-                  ? " btn-primary hr-me-clock-btn--out"
+                  ? " hr-me-clock-icon-btn--out"
                   : clockAction
-                    ? " btn-primary hr-me-clock-btn--in"
-                    : ""
-              }`}
-              action={clockButtonAction}
+                    ? " hr-me-clock-icon-btn--in"
+                    : " hr-me-clock-icon-btn--idle"
+              }${submitting ? " hr-me-clock-icon-btn--busy" : ""}`}
               disabled={submitting || !clockAction || !photoBase64}
               onClick={() => {
                 if (clockAction) void submit(clockAction);
               }}
+              aria-label={clockButtonTitle}
               title={clockButtonTitle}
             >
-              {clockButtonLabel}
-            </HrButton>
+              <span className="hr-me-clock-icon-btn-orb" aria-hidden="true">
+                <span className="hr-me-clock-icon-btn-orb-shine" />
+                <span className="hr-me-clock-icon-btn-glyph">
+                  {clockButtonAction === "clockOut" || hasClockOut ? (
+                    <IconClockOut />
+                  ) : clockButtonAction === "save" ? (
+                    <IconClock />
+                  ) : (
+                    <IconClockIn />
+                  )}
+                </span>
+              </span>
+              <span className="hr-me-clock-icon-btn-label">{clockCaption}</span>
+            </button>
           </div>
         </div>
 

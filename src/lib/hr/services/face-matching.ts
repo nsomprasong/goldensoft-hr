@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { decodePhotoBase64 } from "@/lib/hr/attendance-photos";
 import { assertHrPermission } from "@/lib/hr/authorize";
 import { HrError } from "@/lib/hr/errors";
+import { contactsMatchByEmailOrPhone } from "@/lib/hr/contact-identity";
 import {
   deleteFaceEnrollmentPhoto,
   faceEnrollmentPhotoPublicPath,
@@ -13,6 +14,7 @@ import {
   DEFAULT_FACE_MATCH_THRESHOLD,
   FACE_DESCRIPTOR_VERSION,
   euclideanDistance,
+  findDuplicateFaceInOrganization,
   isFaceMatch,
   isFaceMatchMode,
   parseFaceDescriptor,
@@ -50,7 +52,7 @@ function faceEnrollmentDbErrorMessage(err: unknown): string {
     return "บันทึกใบหน้าไม่สำเร็จ — ข้อมูลพนักงานไม่พร้อมใช้งาน";
   }
   if (/unique|23505/i.test(raw)) {
-    return "บันทึกใบหน้าไม่สำเร็จ — มีข้อมูลใบหน้าซ้ำในระบบ";
+    return "บันทึกใบหน้าไม่สำเร็จ — พนักงานนี้มีใบหน้าในบริษัทนี้อยู่แล้ว";
   }
   if (raw) {
     const short = raw.replace(/\s+/g, " ").slice(0, 180);
@@ -60,6 +62,23 @@ function faceEnrollmentDbErrorMessage(err: unknown): string {
 }
 
 async function resolveSelfEmployee(ctx: HrServiceContext) {
+  if (ctx.activeEmployeeId) {
+    const pinned = await prisma.employee.findFirst({
+      where: {
+        id: ctx.activeEmployeeId,
+        organizationId: ctx.organizationId,
+        isActive: true,
+        authUserId: ctx.actorAuthUserId,
+      },
+    });
+    if (!pinned) {
+      throw new HrError("FORBIDDEN", {
+        message: "บริบทพนักงานไม่ถูกต้องหรือไม่มีสิทธิ์",
+        details: { employeeId: ctx.activeEmployeeId },
+      });
+    }
+    return pinned;
+  }
   const employee = await prisma.employee.findFirst({
     where: {
       organizationId: ctx.organizationId,
@@ -268,20 +287,35 @@ async function findEnrollmentDescriptor(
 
 type OrgEnrollmentRow = {
   employee_id: string;
+  organization_id: string;
   descriptor: unknown;
+  email: string | null;
+  phone: string | null;
 };
 
-/** All enrollments in the org except one employee — used for duplicate face checks. */
+/**
+ * Enrollments for duplicate checks — scoped to one organization only.
+ * JOIN employees so mismatched organization_id rows cannot leak across orgs.
+ */
 async function listOrgEnrollmentDescriptors(
   organizationId: string,
   exceptEmployeeId: string,
 ): Promise<OrgEnrollmentRow[]> {
   try {
     return await prisma.$queryRaw<OrgEnrollmentRow[]>`
-      SELECT employee_id::text AS employee_id, descriptor
-      FROM hr.employee_face_enrollments
-      WHERE organization_id = ${organizationId}::uuid
-        AND employee_id <> ${exceptEmployeeId}::uuid
+      SELECT
+        efe.employee_id::text AS employee_id,
+        efe.organization_id::text AS organization_id,
+        efe.descriptor,
+        e.email,
+        e.phone
+      FROM hr.employee_face_enrollments efe
+      INNER JOIN hr.employees e
+        ON e.id = efe.employee_id
+       AND e.organization_id = efe.organization_id
+      WHERE efe.organization_id = ${organizationId}::uuid
+        AND e.organization_id = ${organizationId}::uuid
+        AND efe.employee_id <> ${exceptEmployeeId}::uuid
     `;
   } catch {
     return [];
@@ -335,7 +369,10 @@ export async function enrollMyFace(
     });
   }
 
-  // Org-wide duplicate check (all branches). Never reveal other organizations.
+  // Duplicate face check is organization-scoped only (all branches in this
+  // company). Faces enrolled in other organizations must never block enroll.
+  // Same company: if the face matches another employee, email OR phone must
+  // match that employee — otherwise reject (prevents registering someone else's face).
   const settingsForDup = await findSettingsRow(ctx.organizationId);
   const threshold = settingsForDup
     ? Number(settingsForDup.match_threshold)
@@ -344,17 +381,65 @@ export async function enrollMyFace(
     ctx.organizationId,
     employee.id,
   );
-  for (const other of otherDescriptors) {
-    const otherDesc = parseFaceDescriptor(other.descriptor);
-    if (!otherDesc) continue;
-    const distance = euclideanDistance(otherDesc, descriptor);
-    if (isFaceMatch(distance, threshold)) {
+  const candidates = otherDescriptors.map((row) => ({
+    employeeId: row.employee_id,
+    organizationId: row.organization_id,
+    descriptor: row.descriptor,
+    email: row.email,
+    phone: row.phone,
+  }));
+  const duplicate = findDuplicateFaceInOrganization({
+    organizationId: ctx.organizationId,
+    exceptEmployeeId: employee.id,
+    descriptor,
+    threshold,
+    candidates,
+  });
+  if (duplicate) {
+    const matched = candidates.find(
+      (row) => row.employeeId === duplicate.employeeId,
+    );
+    const sameIdentity = matched
+      ? contactsMatchByEmailOrPhone(
+          { email: employee.email, phone: employee.phone },
+          { email: matched.email, phone: matched.phone },
+        )
+      : false;
+    if (!sameIdentity) {
       throw new HrError("FORBIDDEN", {
         message:
-          "ใบหน้านี้ถูกใช้กับพนักงานอื่นในบริษัทนี้แล้ว — ติดต่อผู้ดูแลองค์กร",
-        details: { code: "FACE_DUPLICATE_IN_ORG" },
+          "ใบหน้านี้ไม่ตรงกับอีเมลหรือเบอร์โทรของบัญชีคุณในบริษัทนี้ — ไม่อนุญาตให้ลงทะเบียนใบหน้าของผู้อื่น",
+        details: {
+          code: "FACE_CONTACT_MISMATCH",
+          organizationId: ctx.organizationId,
+          matchedEmployeeId: duplicate.employeeId,
+          distance: duplicate.distance,
+        },
       });
     }
+    // Same email or phone as the matched enrollment → treat as the same person
+    // and allow this employee row to enroll (still org-scoped only).
+  }
+
+  // When Auth and employee both expose email or both expose phone, they must
+  // align. Skip when there is no comparable pair (link is already via authUserId).
+  const actorEmail = ctx.actorEmail ?? null;
+  const actorPhone = ctx.actorPhone ?? null;
+  const canCompareActor =
+    (Boolean(actorEmail?.trim()) && Boolean(employee.email?.trim())) ||
+    (Boolean(actorPhone?.trim()) && Boolean(employee.phone?.trim()));
+  if (
+    canCompareActor &&
+    !contactsMatchByEmailOrPhone(
+      { email: actorEmail, phone: actorPhone },
+      { email: employee.email, phone: employee.phone },
+    )
+  ) {
+    throw new HrError("FORBIDDEN", {
+      message:
+        "อีเมลหรือเบอร์โทรของบัญชีที่เข้าสู่ระบบต้องตรงกับข้อมูลพนักงานก่อนลงทะเบียนใบหน้า",
+      details: { code: "FACE_ACTOR_CONTACT_MISMATCH" },
+    });
   }
 
   const photoBuffer = decodePhotoBase64(input.photoBase64);
@@ -399,6 +484,7 @@ export async function enrollMyFace(
       CURRENT_TIMESTAMP
     )
     ON CONFLICT (employee_id) DO UPDATE SET
+      organization_id = EXCLUDED.organization_id,
       descriptor = EXCLUDED.descriptor,
       descriptor_version = EXCLUDED.descriptor_version,
       photo_url = EXCLUDED.photo_url,

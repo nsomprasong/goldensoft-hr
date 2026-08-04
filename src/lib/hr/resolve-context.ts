@@ -166,6 +166,7 @@ export async function resolveHrRequestContext(
   return {
     authUserId: me.user.id,
     email: me.user.email,
+    phone: me.profile?.phone ?? null,
     profile: me.profile,
     platformRoles: me.platformRoles,
     permissions: [...me.permissions, ...hrPermissions],

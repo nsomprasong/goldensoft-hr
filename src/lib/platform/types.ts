@@ -20,6 +20,7 @@ export type PlatformMeResponse = {
   profile: {
     displayName: string;
     email: string;
+    phone?: string | null;
     statusCode: string;
   } | null;
   platformRoles: string[];
@@ -89,6 +90,7 @@ export type PlatformClient = {
 export type HrRequestContext = {
   authUserId: string;
   email: string | null;
+  phone?: string | null;
   profile: PlatformMeResponse["profile"];
   platformRoles: string[];
   permissions: string[];

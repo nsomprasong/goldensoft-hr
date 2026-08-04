@@ -12,7 +12,7 @@ Status: implementation guide for additive work. Prefer code over this doc if the
 | HR Employee | Soft links `authUserId` / `platformUserId` (nullable); org-scoped uniques |
 | Employment status | Master `employee_statuses` (ACTIVE / INACTIVE / RESIGNED / TERMINATED / SUSPENDED) |
 | Onboarding today | `createEmployee` always unlinked; `linkPlatformUser` / Platform `UserInvitation` |
-| Face | `employee_face_enrollments` unique per `employeeId`, indexed by `organizationId` |
+| Face | `employee_face_enrollments` unique per `employeeId`, indexed by `organizationId`; duplicate descriptor check is **org-scoped**; same-org face match requires **email or phone** align |
 | Audit | `audit_action_types` + `writeHrAudit` / Platform `writeAuditLog` |
 
 ## 2. Gaps
@@ -21,7 +21,7 @@ Status: implementation guide for additive work. Prefer code over this doc if the
 - No HR onboarding method (OTP / invitation / none)
 - `@@unique(organizationId, authUserId)` blocks **rehire** while keeping prior row’s auth link
 - Context cookie has no `employeeId`
-- Face enroll lacks org-wide duplicate descriptor check + audit
+- Face enroll lacks audit on duplicate block (check itself is org-scoped)
 - Phone Auth probe must not leak other orgs
 
 ## 3. Chosen delta (minimal)

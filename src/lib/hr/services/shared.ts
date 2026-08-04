@@ -17,6 +17,10 @@ export type HrServiceContext = HrAccessContext & {
   actorAuthUserId: string;
   /** Optional active employee for multi-org / multi-employment context. */
   activeEmployeeId?: string | null;
+  /** Auth / profile email for identity checks (e.g. face enroll). */
+  actorEmail?: string | null;
+  /** Auth / profile phone (E.164 or local) for identity checks. */
+  actorPhone?: string | null;
   /** Display name snapshot for approval audit (who approved). */
   actorDisplayName?: string | null;
   ip?: string | null;
@@ -40,6 +44,8 @@ export function toHrServiceContext(
     allowedBranchIds: options?.allowedBranchIds ?? null,
     actorAuthUserId: ctx.authUserId,
     activeEmployeeId: ctx.activeEmployeeId ?? null,
+    actorEmail: ctx.email ?? ctx.profile?.email ?? null,
+    actorPhone: ctx.phone ?? ctx.profile?.phone ?? null,
     actorDisplayName: ctx.profile?.displayName?.trim() || null,
     ip: options?.ip ?? null,
     userAgent: options?.userAgent ?? null,
