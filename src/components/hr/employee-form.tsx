@@ -214,96 +214,102 @@ export default function EmployeeForm({
     };
 
     setSaving(true);
-    const result =
-      mode === "create"
-        ? await submitHrJson(
-            "/api/hr/employees",
-            "POST",
-            payload,
-            "สร้างพนักงานเรียบร้อยแล้ว",
-          )
-        : await submitHrJson(
-            `/api/hr/employees/${employeeId}`,
-            "PATCH",
-            payload,
-            "บันทึกการแก้ไขเรียบร้อยแล้ว",
-          );
+    try {
+      const result =
+        mode === "create"
+          ? await submitHrJson(
+              "/api/hr/employees",
+              "POST",
+              payload,
+              "สร้างพนักงานเรียบร้อยแล้ว",
+            )
+          : await submitHrJson(
+              `/api/hr/employees/${employeeId}`,
+              "PATCH",
+              payload,
+              "บันทึกการแก้ไขเรียบร้อยแล้ว",
+            );
 
-    if (!result.ok) {
-      setSaving(false);
-      setErrors(result.fieldErrors);
-      setFeedback({ kind: "error", text: result.message });
-      return;
-    }
+      if (!result.ok) {
+        setErrors(result.fieldErrors);
+        setFeedback({ kind: "error", text: result.message });
+        return;
+      }
 
-    const savedId =
-      mode === "create" ? extractEmployeeId(result.data) : employeeId;
+      const savedId =
+        mode === "create" ? extractEmployeeId(result.data) : employeeId;
 
-    if (savedId && photoFile) {
-      const upload = await uploadEmployeePhoto(savedId, photoFile);
-      if (!upload.ok) {
-        setSaving(false);
-        setFeedback({
-          kind: "error",
-          text: `${result.message} แต่${upload.message}`,
-        });
-        router.refresh();
-        if (mode === "create") {
-          router.push(`/hr/employees/${savedId}`);
+      if (savedId && photoFile) {
+        const upload = await uploadEmployeePhoto(savedId, photoFile);
+        if (!upload.ok) {
+          setFeedback({
+            kind: "error",
+            text: `${result.message} แต่${upload.message}`,
+          });
+          router.refresh();
+          if (mode === "create") {
+            router.push(`/hr/employees/${savedId}`);
+          }
+          return;
         }
-        return;
+        if (upload.photoUrl) {
+          setValues((prev) => ({ ...prev, photoUrl: upload.photoUrl ?? "" }));
+        }
+        setPhotoFile(null);
+        setPhotoCleared(false);
+      } else if (savedId && photoCleared && mode === "edit") {
+        const cleared = await clearEmployeePhoto(savedId);
+        if (!cleared.ok) {
+          setFeedback({
+            kind: "error",
+            text: `${result.message} แต่${cleared.message}`,
+          });
+          router.refresh();
+          return;
+        }
+        setValues((prev) => ({ ...prev, photoUrl: "" }));
+        setPhotoCleared(false);
       }
-      if (upload.photoUrl) {
-        setValues((prev) => ({ ...prev, photoUrl: upload.photoUrl ?? "" }));
-      }
-      setPhotoFile(null);
-      setPhotoCleared(false);
-    } else if (savedId && photoCleared && mode === "edit") {
-      const cleared = await clearEmployeePhoto(savedId);
-      if (!cleared.ok) {
-        setSaving(false);
-        setFeedback({
-          kind: "error",
-          text: `${result.message} แต่${cleared.message}`,
-        });
-        router.refresh();
-        return;
-      }
-      setValues((prev) => ({ ...prev, photoUrl: "" }));
-      setPhotoCleared(false);
-    }
 
-    if (savedId && showCompensation) {
-      const compResult = await submitHrJson(
-        `/api/hr/employees/${savedId}/compensations`,
-        "POST",
-        {
-          wageTypeId: comp.wageTypeId,
-          amount: Number(comp.amount),
-          currency: comp.currency.trim().toUpperCase() || "THB",
-          effectiveFrom: comp.effectiveFrom || values.hireDate,
-          overtimeEligible: comp.overtimeEligible,
-        },
-        "บันทึกค่าจ้างเรียบร้อยแล้ว",
-      );
-      if (!compResult.ok) {
-        setSaving(false);
-        setFeedback({
-          kind: "error",
-          text: `${result.message} แต่บันทึกค่าตอบแทนไม่สำเร็จ: ${compResult.message}`,
-        });
-        router.push(`/hr/employees/${savedId}?tab=employment`);
-        return;
+      if (savedId && showCompensation) {
+        const compResult = await submitHrJson(
+          `/api/hr/employees/${savedId}/compensations`,
+          "POST",
+          {
+            wageTypeId: comp.wageTypeId,
+            amount: Number(comp.amount),
+            currency: comp.currency.trim().toUpperCase() || "THB",
+            effectiveFrom: comp.effectiveFrom || values.hireDate,
+            overtimeEligible: comp.overtimeEligible,
+          },
+          "บันทึกค่าจ้างเรียบร้อยแล้ว",
+        );
+        if (!compResult.ok) {
+          setFeedback({
+            kind: "error",
+            text: `${result.message} แต่บันทึกค่าตอบแทนไม่สำเร็จ: ${compResult.message}`,
+          });
+          router.push(`/hr/employees/${savedId}?tab=employment`);
+          return;
+        }
       }
-    }
 
-    setSaving(false);
-    setFeedback({ kind: "success", text: result.message });
-    router.refresh();
-    if (mode === "create") {
-      router.push(savedId ? `/hr/employees/${savedId}` : "/hr/employees");
-    } else if (employeeId) {
-      router.push(`/hr/employees/${employeeId}`);
+      setFeedback({ kind: "success", text: result.message });
+      router.refresh();
+      if (mode === "create") {
+        router.push(savedId ? `/hr/employees/${savedId}` : "/hr/employees");
+      }
+      // Edit stays on the same page — avoid push+refresh which can freeze the shell.
+    } catch (err) {
+      setFeedback({
+        kind: "error",
+        text:
+          err instanceof Error && err.message.trim()
+            ? err.message.trim()
+            : "บันทึกไม่สำเร็จ กรุณาลองใหม่",
+      });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -311,7 +317,7 @@ export default function EmployeeForm({
     photoCleared && !photoFile ? null : values.photoUrl || null;
 
   return (
-    <form className="card" onSubmit={handleSubmit} noValidate>
+    <form className="card" method="post" onSubmit={handleSubmit} noValidate>
       {feedback ? <Alert kind={feedback.kind}>{feedback.text}</Alert> : null}
 
       <EmployeePhotoPicker

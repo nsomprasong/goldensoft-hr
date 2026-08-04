@@ -170,49 +170,61 @@ export function EmployeeGeneralTab({
     }
 
     setSaving(true);
-    const result = await submitHrJson(
-      `/api/hr/employees/${employee.id}`,
-      "PATCH",
-      {
-        firstNameTh: values.firstNameTh.trim(),
-        lastNameTh: values.lastNameTh.trim(),
-        displayName: values.displayName.trim(),
-        phone: values.phone.trim(),
-        email: values.email.trim() || null,
-        notes: values.notes.trim() || null,
-      },
-      "บันทึกข้อมูลทั่วไปเรียบร้อยแล้ว",
-    );
+    try {
+      const result = await submitHrJson(
+        `/api/hr/employees/${employee.id}`,
+        "PATCH",
+        {
+          firstNameTh: values.firstNameTh.trim(),
+          lastNameTh: values.lastNameTh.trim(),
+          displayName: values.displayName.trim(),
+          phone: values.phone.trim(),
+          email: values.email.trim() || null,
+          notes: values.notes.trim() || null,
+        },
+        "บันทึกข้อมูลทั่วไปเรียบร้อยแล้ว",
+      );
 
-    if (!result.ok) {
+      if (!result.ok) {
+        setErrors(result.fieldErrors);
+        setFeedback({ kind: "error", text: result.message });
+        return;
+      }
+
+      if (photoFile) {
+        const upload = await uploadEmployeePhoto(employee.id, photoFile);
+        if (!upload.ok) {
+          setFeedback({ kind: "error", text: upload.message });
+          return;
+        }
+        if (upload.photoUrl) {
+          setValues((v) => ({ ...v, photoUrl: upload.photoUrl ?? "" }));
+        }
+      } else if (photoCleared) {
+        const cleared = await clearEmployeePhoto(employee.id);
+        if (!cleared.ok) {
+          setFeedback({ kind: "error", text: cleared.message });
+          return;
+        }
+        setValues((v) => ({ ...v, photoUrl: "" }));
+      }
+
+      setFeedback({ kind: "success", text: result.message });
+      setEditing(false);
+      setPhotoFile(null);
+      setPhotoCleared(false);
+      router.refresh();
+    } catch (err) {
+      setFeedback({
+        kind: "error",
+        text:
+          err instanceof Error && err.message.trim()
+            ? err.message.trim()
+            : "บันทึกไม่สำเร็จ กรุณาลองใหม่",
+      });
+    } finally {
       setSaving(false);
-      setErrors(result.fieldErrors);
-      setFeedback({ kind: "error", text: result.message });
-      return;
     }
-
-    if (photoFile) {
-      const upload = await uploadEmployeePhoto(employee.id, photoFile);
-      if (!upload.ok) {
-        setSaving(false);
-        setFeedback({ kind: "error", text: upload.message });
-        return;
-      }
-    } else if (photoCleared) {
-      const cleared = await clearEmployeePhoto(employee.id);
-      if (!cleared.ok) {
-        setSaving(false);
-        setFeedback({ kind: "error", text: cleared.message });
-        return;
-      }
-    }
-
-    setSaving(false);
-    setFeedback({ kind: "success", text: result.message });
-    setEditing(false);
-    setPhotoFile(null);
-    setPhotoCleared(false);
-    router.refresh();
   }
 
   const shownPhoto =
@@ -246,7 +258,7 @@ export function EmployeeGeneralTab({
           <dd>{employee.notes ?? "—"}</dd>
         </dl>
       ) : (
-        <form onSubmit={save} noValidate>
+        <form method="post" onSubmit={save} noValidate>
           <EmployeePhotoPicker
             displayName={values.displayName || "พนักงาน"}
             savedPhotoUrl={shownPhoto}

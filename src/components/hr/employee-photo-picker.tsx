@@ -3,6 +3,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import EmployeeAvatar from "@/components/hr/employee-avatar";
+import { compressImageForUpload } from "@/lib/hr/compress-image-client";
+
+/** Profile avatars — keep under reverse-proxy / FormData limits. */
+export const EMPLOYEE_PHOTO_MAX_BYTES = Math.floor(800 * 1024);
+export const EMPLOYEE_PHOTO_MAX_EDGE = 1280;
 
 export type EmployeePhotoPickerProps = {
   displayName: string;
@@ -15,6 +20,7 @@ export type EmployeePhotoPickerProps = {
 
 /**
  * Capture (camera) or upload a photo — no URL typing.
+ * Compresses on pick so Save does not hang on multi-MB camera files.
  * Parent uploads the File after the employee record exists.
  */
 export default function EmployeePhotoPicker({
@@ -29,6 +35,8 @@ export default function EmployeePhotoPicker({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -36,29 +44,49 @@ export default function EmployeePhotoPicker({
     };
   }, [preview]);
 
-  function applyFile(file: File | null) {
+  async function applyFile(file: File | null) {
     if (preview?.startsWith("blob:")) URL.revokeObjectURL(preview);
+    setPrepareError(null);
     if (!file) {
       setPreview(null);
       setFileName(null);
+      setPreparing(false);
       onFileChange?.(null);
       return;
     }
     if (!file.type.startsWith("image/")) {
-      window.alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
+      setPrepareError("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
       return;
     }
-    if (file.size > 2.5 * 1024 * 1024) {
-      window.alert("ไฟล์รูปต้องไม่เกิน 2.5 MB");
-      return;
+
+    setPreparing(true);
+    try {
+      const compressed = await compressImageForUpload(file, {
+        maxBytes: EMPLOYEE_PHOTO_MAX_BYTES,
+        maxEdge: EMPLOYEE_PHOTO_MAX_EDGE,
+        force: true,
+      });
+      setPreview(compressed.previewUrl);
+      setFileName(compressed.file.name || "photo.jpg");
+      onFileChange?.(compressed.file);
+    } catch (err) {
+      setPreview(null);
+      setFileName(null);
+      onFileChange?.(null);
+      setPrepareError(
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "ย่อขนาดรูปไม่สำเร็จ — ลองถ่ายใหม่",
+      );
+    } finally {
+      setPreparing(false);
+      if (fileRef.current) fileRef.current.value = "";
+      if (cameraRef.current) cameraRef.current.value = "";
     }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    setFileName(file.name || "photo.jpg");
-    onFileChange?.(file);
   }
 
   const shown = preview || savedPhotoUrl || null;
+  const busy = disabled || preparing;
 
   return (
     <div className="employee-photo-picker">
@@ -75,15 +103,15 @@ export default function EmployeePhotoPicker({
           <button
             type="button"
             className="btn btn-sm btn-primary"
-            disabled={disabled}
+            disabled={busy}
             onClick={() => cameraRef.current?.click()}
           >
-            ถ่ายรูป
+            {preparing ? "กำลังย่อรูป…" : "ถ่ายรูป"}
           </button>
           <button
             type="button"
             className="btn btn-sm"
-            disabled={disabled}
+            disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
             โหลดรูป
@@ -92,11 +120,9 @@ export default function EmployeePhotoPicker({
             <button
               type="button"
               className="btn btn-sm btn-danger"
-              disabled={disabled}
+              disabled={busy}
               onClick={() => {
-                if (fileRef.current) fileRef.current.value = "";
-                if (cameraRef.current) cameraRef.current.value = "";
-                applyFile(null);
+                void applyFile(null);
               }}
             >
               ลบรูป
@@ -105,6 +131,11 @@ export default function EmployeePhotoPicker({
         </div>
         {fileName ? (
           <span className="field-hint">เลือกแล้ว: {fileName}</span>
+        ) : null}
+        {prepareError ? (
+          <span className="field-error" role="alert">
+            {prepareError}
+          </span>
         ) : null}
       </div>
 
@@ -115,8 +146,8 @@ export default function EmployeePhotoPicker({
         accept="image/*"
         capture="user"
         hidden
-        disabled={disabled}
-        onChange={(e) => applyFile(e.target.files?.[0] ?? null)}
+        disabled={busy}
+        onChange={(e) => void applyFile(e.target.files?.[0] ?? null)}
       />
       <input
         id={inputId}
@@ -124,24 +155,55 @@ export default function EmployeePhotoPicker({
         type="file"
         accept="image/jpeg,image/png,image/webp,image/gif"
         hidden
-        disabled={disabled}
-        onChange={(e) => applyFile(e.target.files?.[0] ?? null)}
+        disabled={busy}
+        onChange={(e) => void applyFile(e.target.files?.[0] ?? null)}
       />
     </div>
   );
 }
 
+const UPLOAD_TIMEOUT_MS = 45_000;
+
 export async function uploadEmployeePhoto(
   employeeId: string,
   file: File,
 ): Promise<{ ok: boolean; message: string; photoUrl?: string }> {
+  let uploadFile = file;
+  try {
+    if (
+      file.size > EMPLOYEE_PHOTO_MAX_BYTES ||
+      file.type !== "image/jpeg"
+    ) {
+      const compressed = await compressImageForUpload(file, {
+        maxBytes: EMPLOYEE_PHOTO_MAX_BYTES,
+        maxEdge: EMPLOYEE_PHOTO_MAX_EDGE,
+        force: true,
+      });
+      uploadFile = compressed.file;
+      if (compressed.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(compressed.previewUrl);
+      }
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      message:
+        err instanceof Error && err.message.trim()
+          ? err.message.trim()
+          : "ย่อขนาดรูปไม่สำเร็จ",
+    };
+  }
+
   const body = new FormData();
-  body.append("photo", file, file.name || "photo.jpg");
+  body.append("photo", uploadFile, uploadFile.name || "photo.jpg");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
   try {
     const response = await fetch(`/api/hr/employees/${employeeId}/photo`, {
       method: "POST",
       body,
       credentials: "same-origin",
+      signal: controller.signal,
     });
     const payload = (await response.json().catch(() => null)) as {
       photoUrl?: string;
@@ -160,8 +222,16 @@ export async function uploadEmployeePhoto(
       message: "บันทึกรูปพนักงานเรียบร้อยแล้ว",
       photoUrl: payload?.photoUrl,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return {
+        ok: false,
+        message: "อัปโหลดรูปใช้เวลานานเกินไป — ลองถ่ายใหม่หรือลดขนาดรูป",
+      };
+    }
     return { ok: false, message: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ" };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
