@@ -85,6 +85,10 @@ export const employeeDeactivateSchema = z.object({
   resignationDate: z.union([z.string(), z.date()]).nullable().optional(),
 });
 
+export const employeeReactivateSchema = z.object({
+  employeeStatusCode: nonEmpty.optional(),
+});
+
 export const linkPlatformUserSchema = z.object({
   platformUserId: uuid,
   authUserId: uuid.nullable().optional(),

@@ -42,10 +42,24 @@ export async function GET(
 ): Promise<Response> {
   return withHrApi(async () => {
     const { id } = await context.params;
-    const { service, repository } = await requireHrApi(request, {
-      permission: HR_PERMISSIONS.employeeRead,
-    });
-    const employee = await getEmployee(repository, service, id);
+    const { service, repository } = await requireHrApi(request);
+    const employee = await repository.employees.findById(
+      service.organizationId,
+      id,
+    );
+    if (!employee) {
+      throw new HrError("NOT_FOUND", { message: "ไม่พบพนักงาน" });
+    }
+    const isSelf =
+      Boolean(service.actorAuthUserId) &&
+      employee.authUserId === service.actorAuthUserId;
+    if (!isSelf) {
+      const { assertHrPermission, assertBranchInScope } = await import(
+        "@/lib/hr/authorize"
+      );
+      assertHrPermission(service, HR_PERMISSIONS.employeeRead);
+      assertBranchInScope(service, employee.branchId);
+    }
     const photo = await readEmployeePhoto({
       organizationId: service.organizationId,
       employeeId: employee.id,

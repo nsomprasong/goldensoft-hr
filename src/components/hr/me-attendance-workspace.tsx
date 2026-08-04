@@ -48,7 +48,49 @@ type AttendanceDayRow = {
   clockOutAt: string | null;
   lateLabel: string;
   earlyLeaveLabel: string;
+  clockInPhotoUrl?: string | null;
+  clockOutPhotoUrl?: string | null;
 };
+
+function EvidenceThumbs({
+  clockInPhotoUrl,
+  clockOutPhotoUrl,
+}: {
+  clockInPhotoUrl?: string | null;
+  clockOutPhotoUrl?: string | null;
+}) {
+  if (!clockInPhotoUrl && !clockOutPhotoUrl) {
+    return <span className="muted">—</span>;
+  }
+  return (
+    <div className="hr-attendance-evidence hr-attendance-evidence--compact hr-me-clock-evidence">
+      {clockInPhotoUrl ? (
+        <a
+          className="hr-attendance-evidence-link"
+          href={clockInPhotoUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={clockInPhotoUrl} alt="เข้า" />
+          <span>เข้า</span>
+        </a>
+      ) : null}
+      {clockOutPhotoUrl ? (
+        <a
+          className="hr-attendance-evidence-link"
+          href={clockOutPhotoUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={clockOutPhotoUrl} alt="ออก" />
+          <span>ออก</span>
+        </a>
+      ) : null}
+    </div>
+  );
+}
 
 type SchedulePeriodInfo = {
   id: string;
@@ -1083,6 +1125,7 @@ export default function MeAttendanceWorkspace() {
                       <th>กะ</th>
                       <th>เข้า</th>
                       <th>ออก</th>
+                      <th>หลักฐาน</th>
                       <th>สถานะ</th>
                       <th className="col-actions">แก้ไข</th>
                     </tr>
@@ -1123,6 +1166,16 @@ export default function MeAttendanceWorkspace() {
                           </td>
                           <td className="hr-me-clock-history-time">
                             {off ? "—" : formatClockTime(row.clockOutAt)}
+                          </td>
+                          <td>
+                            {off ? (
+                              <span className="muted">—</span>
+                            ) : (
+                              <EvidenceThumbs
+                                clockInPhotoUrl={row.clockInPhotoUrl}
+                                clockOutPhotoUrl={row.clockOutPhotoUrl}
+                              />
+                            )}
                           </td>
                           <td>
                             {hasFlags ? (

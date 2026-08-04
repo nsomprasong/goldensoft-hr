@@ -27,8 +27,8 @@ const RESOURCE_LABEL: Record<HrResource, string> = {
 /**
  * Soft-deactivates or re-activates an HR record.
  *
- * Employees have a dedicated endpoint that also records a resignation status;
- * masters deactivate with DELETE and come back with an isActive patch. Payroll
+ * Employees use dedicated deactivate/activate endpoints (employment status).
+ * Masters deactivate with DELETE and come back with an isActive patch. Payroll
  * schedules only expose PATCH, so both directions go through it.
  */
 export default function ToggleActiveButton({
@@ -57,19 +57,26 @@ export default function ToggleActiveButton({
     setBusy(true);
 
     let result;
-    if (!isActive) {
+    if (resource === "employees") {
+      result = isActive
+        ? await submitHrJson(
+            `/api/hr/employees/${id}/deactivate`,
+            "POST",
+            {},
+            "ปิดการใช้งานพนักงานเรียบร้อยแล้ว",
+          )
+        : await submitHrJson(
+            `/api/hr/employees/${id}/activate`,
+            "POST",
+            {},
+            "เปิดใช้งานพนักงานเรียบร้อยแล้ว",
+          );
+    } else if (!isActive) {
       result = await submitHrJson(
         `/api/hr/${resource}/${id}`,
         "PATCH",
         { isActive: true },
         `เปิดใช้งาน${label}เรียบร้อยแล้ว`,
-      );
-    } else if (resource === "employees") {
-      result = await submitHrJson(
-        `/api/hr/employees/${id}/deactivate`,
-        "POST",
-        {},
-        "ปิดการใช้งานพนักงานเรียบร้อยแล้ว",
       );
     } else if (resource === "payroll-schedules") {
       result = await submitHrJson(
@@ -95,18 +102,12 @@ export default function ToggleActiveButton({
     router.refresh();
   }
 
-  // Re-activating a person means restoring an employment status, which belongs
-  // on the edit form rather than a one-click toggle.
-  if (resource === "employees" && !isActive) {
-    return <span className="muted">แก้ไขสถานะได้ที่หน้าแก้ไขข้อมูล</span>;
-  }
-
   return (
     <span className="inline-actions">
       <button
         type="button"
         className={isActive ? "btn btn-sm btn-danger" : "btn btn-sm"}
-        onClick={run}
+        onClick={() => void run()}
         disabled={busy || disabled}
       >
         {busy ? "กำลังดำเนินการ…" : isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}

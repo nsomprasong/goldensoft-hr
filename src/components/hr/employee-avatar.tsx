@@ -1,5 +1,7 @@
 /** Circular employee photo / initials icon used in every employee list. */
 
+import { useState } from "react";
+
 export function employeeInitials(displayName: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -20,16 +22,19 @@ export default function EmployeeAvatar({
 }) {
   const initials = employeeInitials(displayName);
   const classes = `employee-avatar employee-avatar-${size}${className ? ` ${className}` : ""}`;
+  const [failed, setFailed] = useState(false);
+  const showPhoto = Boolean(photoUrl?.trim()) && !failed;
 
-  if (photoUrl) {
+  if (showPhoto) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- remote/org photo URLs; not a fixed next/image domain set
       <img
         className={classes}
-        src={photoUrl}
+        src={photoUrl!}
         alt=""
         title={displayName}
         loading="lazy"
+        onError={() => setFailed(true)}
       />
     );
   }

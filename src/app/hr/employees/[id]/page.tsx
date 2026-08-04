@@ -22,6 +22,8 @@ import {
 } from "@/lib/hr/employee-detail-tabs";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
+import { toHrServiceContext } from "@/lib/hr/services/shared";
+import { canToggleEmployeeActive } from "@/lib/hr/services/employees";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +55,12 @@ export default async function EmployeeDetailPage({
   const canDeactivate = canHr(ctx, HR_PERMISSIONS.employeeDeactivate);
   const canReadCompensation = canHr(ctx, HR_PERMISSIONS.compensationRead);
   const canManageCompensation = canHr(ctx, HR_PERMISSIONS.compensationManage);
+
+  const service = toHrServiceContext(ctx);
+  const canToggleActive =
+    employee && canDeactivate
+      ? await canToggleEmployeeActive(service, employee)
+      : false;
 
   const requested = tab ?? "general";
   const activeTab: EmployeeDetailTabKey = isEmployeeDetailTabKey(requested)
@@ -95,7 +103,7 @@ export default async function EmployeeDetailPage({
             <p>{employee?.statusNameTh ?? "ไม่ทราบสถานะ"}</p>
           </div>
         </div>
-        {employee && canDeactivate ? (
+        {employee && canToggleActive ? (
           <div className="inline-actions">
             <ToggleActiveButton
               resource="employees"
@@ -104,6 +112,10 @@ export default async function EmployeeDetailPage({
               disabled={!detail.available}
             />
           </div>
+        ) : employee && canDeactivate && employee.isActive ? (
+          <p className="muted" style={{ margin: 0 }}>
+            เจ้าขององค์กร — ปิดใช้งานได้เฉพาะพนักงาน GoldenSoft Platform
+          </p>
         ) : null}
       </div>
 

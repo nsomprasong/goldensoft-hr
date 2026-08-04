@@ -2147,6 +2147,61 @@ function pickCurrentSchedulePeriod(
 }
 
 /**
+ * Map attendance events → evidence photo URLs keyed by Bangkok work date.
+ * CLOCK_OUT before noon counts toward the previous work day (overnight).
+ */
+function selfAttendancePhotosByDay(
+  events: Array<{
+    id: string;
+    occurredAt: Date;
+    metadata: unknown;
+    eventType: { code: string };
+  }>,
+): Map<string, { clockInPhotoUrl: string | null; clockOutPhotoUrl: string | null }> {
+  const map = new Map<
+    string,
+    { clockInPhotoUrl: string | null; clockOutPhotoUrl: string | null }
+  >();
+  for (const event of events) {
+    const meta = (event.metadata ?? {}) as { photoUrl?: string };
+    const url = meta.photoUrl ?? attendanceEventPhotoPublicPath(event.id);
+    const dayIso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(event.occurredAt);
+    let workIso = dayIso;
+    if (event.eventType.code === "CLOCK_OUT") {
+      const hour = Number(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Bangkok",
+          hour: "2-digit",
+          hour12: false,
+        }).format(event.occurredAt),
+      );
+      if (hour < 12) {
+        const prev = new Date(`${dayIso}T12:00:00+07:00`);
+        prev.setDate(prev.getDate() - 1);
+        workIso = prev.toISOString().slice(0, 10);
+      }
+    }
+    const bucket = map.get(workIso) ?? {
+      clockInPhotoUrl: null,
+      clockOutPhotoUrl: null,
+    };
+    if (event.eventType.code === "CLOCK_IN" && !bucket.clockInPhotoUrl) {
+      bucket.clockInPhotoUrl = url;
+    }
+    if (event.eventType.code === "CLOCK_OUT") {
+      bucket.clockOutPhotoUrl = url;
+    }
+    map.set(workIso, bucket);
+  }
+  return map;
+}
+
+/**
  * Self-service attendance history aligned to the current published schedule
  * period (same window as ตารางงานของฉัน). Falls back to today if no schedule.
  */
@@ -2256,6 +2311,10 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
 
     const plannedClockIn = formatShiftClock(assignment?.shift?.startTime);
     const plannedClockOut = formatShiftClock(assignment?.shift?.endTime);
+    const photos = selfAttendancePhotosByDay(events).get(day) ?? {
+      clockInPhotoUrl: null,
+      clockOutPhotoUrl: null,
+    };
     return {
       workDate: day,
       workLocation: serializeWorkLocation(workLocation),
@@ -2276,6 +2335,8 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
           earlyLeaveMinutes,
           lateLabel: formatMinutesLabel(lateMinutes),
           earlyLeaveLabel: formatMinutesLabel(earlyLeaveMinutes),
+          clockInPhotoUrl: photos.clockInPhotoUrl,
+          clockOutPhotoUrl: photos.clockOutPhotoUrl,
         },
       ],
     };
@@ -2369,6 +2430,14 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
     list.push(event);
     eventsByDay.set(iso, list);
   }
+  const photosByDay = selfAttendancePhotosByDay(
+    events as Array<{
+      id: string;
+      occurredAt: Date;
+      metadata: unknown;
+      eventType: { code: string };
+    }>,
+  );
 
   // One row per schedule day (first assignment that day), same order as ตารางงาน.
   const seenDates = new Set<string>();
@@ -2418,6 +2487,11 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
         ? dayRow.earlyLeaveMinutes
         : computed.earlyLeaveMinutes;
 
+    const photos = photosByDay.get(workDateIso) ?? {
+      clockInPhotoUrl: null,
+      clockOutPhotoUrl: null,
+    };
+
     days.push({
       id: dayRow?.id ?? `schedule-${workDateIso}`,
       workDate: workDateIso,
@@ -2442,6 +2516,8 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
         assignment.isRestDay || assignment.isLeaveDay
           ? "—"
           : formatMinutesLabel(earlyLeaveMinutes),
+      clockInPhotoUrl: photos.clockInPhotoUrl,
+      clockOutPhotoUrl: photos.clockOutPhotoUrl,
     });
   }
 
@@ -2509,6 +2585,10 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
       dayRow?.earlyLeaveMinutes && dayRow.earlyLeaveMinutes > 0
         ? dayRow.earlyLeaveMinutes
         : computed.earlyLeaveMinutes;
+    const photos = selfAttendancePhotosByDay(todayEvents).get(today) ?? {
+      clockInPhotoUrl: null,
+      clockOutPhotoUrl: null,
+    };
     const todayEntry = {
       id: dayRow?.id ?? `today-${today}`,
       workDate: today,
@@ -2531,6 +2611,8 @@ export async function listSelfAttendanceToday(ctx: HrServiceContext) {
         assignment?.isRestDay || assignment?.isLeaveDay
           ? "—"
           : formatMinutesLabel(earlyLeaveMinutes),
+      clockInPhotoUrl: photos.clockInPhotoUrl,
+      clockOutPhotoUrl: photos.clockOutPhotoUrl,
     };
     const insertAt = days.findIndex((row) => row.workDate > today);
     if (insertAt === -1) days.push(todayEntry);

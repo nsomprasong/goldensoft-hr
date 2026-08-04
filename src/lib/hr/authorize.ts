@@ -21,6 +21,28 @@ export function isPlatformAdmin(ctx: HrAccessContext): boolean {
   return ctx.platformRoles.includes("SUPER_ADMIN");
 }
 
+/** GoldenSoft Platform employee (any platform role), not org-only OWNER/ADMIN. */
+export function isGoldenSoftPlatformStaff(ctx: HrAccessContext): boolean {
+  return ctx.platformRoles.length > 0;
+}
+
+/**
+ * Org OWNER employment can only be closed/reopened by GoldenSoft Platform staff.
+ * Customer org admins must not disable the organization owner.
+ */
+export function assertCanManageOrganizationOwnerEmployment(
+  ctx: HrAccessContext,
+  targetIsOrganizationOwner: boolean,
+): void {
+  if (!targetIsOrganizationOwner) return;
+  if (isGoldenSoftPlatformStaff(ctx)) return;
+  throw new HrError("FORBIDDEN", {
+    message:
+      "ปิดหรือเปิดการใช้งานเจ้าขององค์กรได้เฉพาะพนักงาน GoldenSoft Platform",
+    details: { code: "OWNER_EMPLOYMENT_LOCKED" },
+  });
+}
+
 export function hrCan(
   ctx: HrAccessContext,
   permission: HrPermission | readonly HrPermission[],

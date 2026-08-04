@@ -225,6 +225,12 @@ describe("Phase 8B actions are real", () => {
     }
     assert.match(source, /"DELETE"/);
     assert.match(source, /\/api\/hr\/employees\/\$\{id\}\/deactivate/);
+    assert.match(source, /\/api\/hr\/employees\/\$\{id\}\/activate/);
+    assert.match(source, /เปิดใช้งาน/);
+    assert.ok(
+      exists("src/app/api/hr/employees/[id]/activate/route.ts"),
+      "expected activate API route for employees",
+    );
   });
 
   it("performs mutations through fetch, never a form action attribute", () => {

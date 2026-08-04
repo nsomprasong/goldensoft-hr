@@ -6619,6 +6619,27 @@ button.hr-schedule-empty-icon:disabled {
   border-radius: 0.3rem;
 }
 
+.hr-me-clock-evidence {
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .hr-attendance-evidence--compact .hr-attendance-evidence-link img,
+  .hr-me-clock-evidence .hr-attendance-evidence-link img {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.45rem;
+  }
+
+  .hr-me-clock-evidence .hr-attendance-evidence-link span {
+    font-size: 0.65rem;
+  }
+
+  .hr-root table.hr-me-clock-history-table {
+    min-width: 38rem;
+  }
+}
+
 .hr-attendance-day-card {
   gap: 0.55rem;
   padding: 0.75rem 0.85rem;

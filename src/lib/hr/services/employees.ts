@@ -5,7 +5,13 @@
  * Platform account is a separate action. When a linked employee's home branch
  * changes, HR syncs Platform membership scope so login lands on that branch.
  */
-import { assertBranchInScope, assertHrPermission } from "@/lib/hr/authorize";
+import {
+  assertBranchInScope,
+  assertCanManageOrganizationOwnerEmployment,
+  assertHrPermission,
+  hrCan,
+  isGoldenSoftPlatformStaff,
+} from "@/lib/hr/authorize";
 import { HR_AUDIT_ACTIONS, writeHrAudit } from "@/lib/hr/audit";
 import { nextEmployeeCode } from "@/lib/hr/business-codes";
 import { HrError } from "@/lib/hr/errors";
@@ -28,6 +34,49 @@ import {
   type PagedResponse,
   type PageRequest,
 } from "@/lib/hr/services/shared";
+
+/** True when the linked Platform membership has an active OWNER role. */
+export async function employeeHasOrganizationOwnerRole(
+  organizationId: string,
+  platformUserId: string | null | undefined,
+): Promise<boolean> {
+  if (!platformUserId) return false;
+  if (!process.env.DATABASE_URL) return false;
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const rows = await prisma.$queryRaw<Array<{ ok: boolean }>>`
+      SELECT true AS ok
+      FROM platform.organization_memberships om
+      JOIN platform.membership_statuses ms ON ms.id = om.status_id
+      JOIN platform.organization_membership_roles omr
+        ON omr.membership_id = om.id
+       AND omr.revoked_at IS NULL
+      JOIN platform.assignment_statuses ast ON ast.id = omr.status_id
+      JOIN platform.organization_roles r ON r.id = omr.role_id
+      WHERE om.organization_id = ${organizationId}::uuid
+        AND om.user_profile_id = ${platformUserId}::uuid
+        AND ms.code = 'ACTIVE'
+        AND om.ended_at IS NULL
+        AND ast.code = 'ACTIVE'
+        AND upper(r.code) = 'OWNER'
+      LIMIT 1
+    `;
+    return Boolean(rows[0]?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function assertOwnerEmploymentGuard(
+  ctx: HrServiceContext,
+  employee: Pick<EmployeeRecord, "platformUserId">,
+): Promise<void> {
+  const isOwner = await employeeHasOrganizationOwnerRole(
+    ctx.organizationId,
+    employee.platformUserId,
+  );
+  assertCanManageOrganizationOwnerEmployment(ctx, isOwner);
+}
 
 async function recordAssignmentHistory(input: {
   employeeId: string;
@@ -471,6 +520,7 @@ export async function deactivateEmployee(
   );
   if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
   assertBranchInScope(ctx, before.branchId);
+  await assertOwnerEmploymentGuard(ctx, before);
 
   const status = await requireMasterByCode(
     repository,
@@ -499,6 +549,70 @@ export async function deactivateEmployee(
   });
 
   return after;
+}
+
+export async function reactivateEmployee(
+  repository: HrRepository,
+  ctx: HrServiceContext,
+  employeeId: string,
+  options: { employeeStatusCode?: string } = {},
+): Promise<EmployeeRecord> {
+  assertHrPermission(ctx, HR_PERMISSIONS.employeeDeactivate);
+
+  const before = await repository.employees.findById(
+    ctx.organizationId,
+    employeeId,
+  );
+  if (!before) throw new HrError("NOT_FOUND", { details: { employeeId } });
+  assertBranchInScope(ctx, before.branchId);
+  await assertOwnerEmploymentGuard(ctx, before);
+
+  if (before.isActive) {
+    return before;
+  }
+
+  const status = await requireMasterByCode(
+    repository,
+    "employeeStatus",
+    options.employeeStatusCode ?? "ACTIVE",
+  );
+
+  const after = await repository.employees.update(employeeId, {
+    isActive: true,
+    employeeStatusId: status.id,
+    resignationDate: null,
+    terminatedAt: null,
+    updatedBy: ctx.actorAuthUserId,
+  });
+
+  await writeHrAudit(repository, {
+    organizationId: ctx.organizationId,
+    branchId: after.branchId,
+    actorAuthUserId: ctx.actorAuthUserId,
+    actionCode: HR_AUDIT_ACTIONS.employeeEmploymentReactivated,
+    entityType: "employee",
+    entityId: after.id,
+    before,
+    after,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return after;
+}
+
+/** Whether the current actor may show deactivate/reactivate for this employee. */
+export async function canToggleEmployeeActive(
+  ctx: HrServiceContext,
+  employee: Pick<EmployeeRecord, "platformUserId" | "isActive">,
+): Promise<boolean> {
+  if (!hrCan(ctx, HR_PERMISSIONS.employeeDeactivate)) return false;
+  const isOwner = await employeeHasOrganizationOwnerRole(
+    ctx.organizationId,
+    employee.platformUserId,
+  );
+  if (!isOwner) return true;
+  return isGoldenSoftPlatformStaff(ctx);
 }
 
 export type LinkPlatformUserInput = {

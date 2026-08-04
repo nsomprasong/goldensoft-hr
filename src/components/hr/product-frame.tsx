@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import NotificationBell from "@/components/hr/notification-bell";
+import ShellUserAvatar from "@/components/hr/shell-user-avatar";
 import { HrNavIcon, hrNavIconForPath } from "@/components/ui/icons";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -110,6 +111,7 @@ export default function HrProductFrame({
       data-hr-shell="product"
       data-hr-product-nav={showProductNav ? "1" : "0"}
     >
+      <ShellUserAvatar />
       <NotificationBell
         showBranchLabel={showEmployeeBranchLabel(ctx)}
         permissions={{
