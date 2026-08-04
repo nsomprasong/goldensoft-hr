@@ -8,10 +8,7 @@ import {
   parseLimitValue,
 } from "@/components/hr/dashboard-meter";
 import HrShell from "@/components/hr-shell";
-import {
-  resolveAllowedBranchIds,
-  showEmployeeBranchLabel,
-} from "@/lib/hr/api";
+import { resolveAllowedBranchIds } from "@/lib/hr/api";
 import { loadHrDashboard } from "@/lib/hr/data";
 import { HR_ENTITLEMENTS } from "@/lib/hr/entitlements";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -33,15 +30,6 @@ function dashHref(branchId: string | null, path: string): string {
   }
   const sep = path.includes("?") ? "&" : "?";
   return `${path}${sep}branchId=${encodeURIComponent(branchId)}`;
-}
-
-function formatInboxWhen(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return formatThaiDateReadable(iso.slice(0, 10));
-  } catch {
-    return "—";
-  }
 }
 
 function ActionTile({
@@ -111,7 +99,6 @@ export default async function HrDashboardPage() {
     HR_PERMISSIONS.payrollManage,
     HR_PERMISSIONS.approvalRead,
   ]);
-  const showBranchLabel = showEmployeeBranchLabel(ctx);
   const employeeLimitRaw =
     ctx.entitlements[HR_ENTITLEMENTS.employeeLimit]?.value ?? "—";
   const employeeLimit = parseLimitValue(employeeLimitRaw);
@@ -132,8 +119,6 @@ export default async function HrDashboardPage() {
 
   const canManageSchedule = canHr(ctx, HR_PERMISSIONS.scheduleManage);
   const canManagePayroll = canHr(ctx, HR_PERMISSIONS.payrollRead);
-  const canLeaveSettings = canHr(ctx, HR_PERMISSIONS.leaveManage);
-  const canSelfAttendance = canHr(ctx, HR_PERMISSIONS.attendanceSelf);
 
   const scopeLabel =
     ctx.branch && (!branchId || ctx.branch.id === branchId)
@@ -231,129 +216,6 @@ export default async function HrDashboardPage() {
             ) : null}
           </div>
         </section>
-
-        <nav className="hr-dash-shortcuts" aria-label="ทางลัด">
-          {canApprove ? (
-            <Link className="hr-dash-chip" href="/hr/approvals">
-              คิวอนุมัติ
-            </Link>
-          ) : null}
-          {canManageAttendance ? (
-            <Link className="hr-dash-chip" href="/hr/attendance">
-              ลงเวลาสาขา
-            </Link>
-          ) : null}
-          {canManageEmployees ? (
-            <Link
-              className="hr-dash-chip"
-              href={dashHref(branchForLinks, "/hr/employees")}
-            >
-              พนักงาน
-            </Link>
-          ) : null}
-          {canManageSchedule ? (
-            <Link
-              className="hr-dash-chip"
-              href={dashHref(branchForLinks, "/hr/schedules")}
-            >
-              ตารางงาน
-            </Link>
-          ) : null}
-          {canManagePayroll ? (
-            <Link className="hr-dash-chip" href="/hr/payroll/periods">
-              เงินเดือน
-            </Link>
-          ) : null}
-          {canLeaveSettings ? (
-            <Link
-              className="hr-dash-chip"
-              href="/hr/settings/leave-entitlements"
-            >
-              สิทธิ์วันลา
-            </Link>
-          ) : null}
-          {canSelfAttendance ? (
-            <Link className="hr-dash-chip" href="/hr/me/attendance">
-              ลงเวลาของฉัน
-            </Link>
-          ) : null}
-          {canHr(ctx, HR_PERMISSIONS.leaveSelf) ? (
-            <Link className="hr-dash-chip" href="/hr/me/leave">
-              ลาของฉัน
-            </Link>
-          ) : null}
-        </nav>
-
-        {canApprove && stats.recentInbox.length > 0 ? (
-          <section className="hr-dash-panel">
-            <div className="hr-dash-panel-head">
-              <div>
-                <h2>คิอล่าสุด</h2>
-                <p>เรียงตามสาขา · รายการรออนุมัติล่าสุด</p>
-              </div>
-              <Link className="btn btn-sm" href="/hr/approvals">
-                เปิดคิวทั้งหมด
-              </Link>
-            </div>
-            <ul className="hr-dash-inbox">
-              {stats.recentInbox.map((row) => (
-                <li key={`${row.kind}:${row.id}`}>
-                  <div>
-                    <strong>{row.employeeName}</strong>
-                    {showBranchLabel ? (
-                      <span className="hr-dash-inbox-branch">
-                        {row.branchName}
-                      </span>
-                    ) : null}
-                    <span>{row.label}</span>
-                  </div>
-                  <div className="hr-dash-inbox-meta">
-                    <time>{formatInboxWhen(row.submittedAt)}</time>
-                    <Link className="btn btn-sm" href={row.href}>
-                      เปิด
-                    </Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        {canApprove && stats.recentDecisions.length > 0 ? (
-          <section className="hr-dash-panel">
-            <div className="hr-dash-panel-head">
-              <div>
-                <h2>ผลอนุมัติล่าสุด</h2>
-                <p>เรียงตามสาขา · แสดงตัวอย่างล่าสุด</p>
-              </div>
-              <Link className="btn btn-sm" href="/hr/approvals/history">
-                ดูทั้งหมด
-              </Link>
-            </div>
-            <ul className="hr-dash-inbox">
-              {stats.recentDecisions.map((row) => (
-                <li key={`decision:${row.kind}:${row.id}`}>
-                  <div>
-                    <strong>{row.employeeName}</strong>
-                    {showBranchLabel ? (
-                      <span className="hr-dash-inbox-branch">
-                        {row.branchName}
-                      </span>
-                    ) : null}
-                    <span>
-                      {row.label} ·{" "}
-                      {row.decision === "APPROVED" ? "อนุมัติ" : "ปฏิเสธ"}
-                    </span>
-                    <span className="muted">โดย {row.reviewedByName}</span>
-                  </div>
-                  <div className="hr-dash-inbox-meta">
-                    <time>{formatInboxWhen(row.reviewedAt)}</time>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
 
         {canManageEmployees ? (
           <>

@@ -392,7 +392,10 @@ export type EmployeeRepository = {
   ): Promise<EmployeeRecord | null>;
   create(input: EmployeeCreateInput): Promise<EmployeeRecord>;
   update(id: string, patch: EmployeePatch): Promise<EmployeeRecord>;
-  countActive(organizationId: string): Promise<EmployeeActiveCounts>;
+  countActive(
+    organizationId: string,
+    options?: { branchIds?: readonly string[] | null },
+  ): Promise<EmployeeActiveCounts>;
 };
 
 export type CompensationRepository = {

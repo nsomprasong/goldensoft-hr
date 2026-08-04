@@ -368,10 +368,13 @@ export function createPrismaHrRepository(
         client.employee.create({ data: input }),
       update: async (id, patch: EmployeePatch) =>
         client.employee.update({ where: { id }, data: patch }),
-      async countActive(organizationId): Promise<EmployeeActiveCounts> {
+      async countActive(organizationId, options): Promise<EmployeeActiveCounts> {
         const where: Prisma.EmployeeWhereInput = {
           organizationId,
           isActive: true,
+          ...(options?.branchIds != null
+            ? { branchId: { in: [...options.branchIds] } }
+            : {}),
         };
         const [total, byBranch, byType] = await Promise.all([
           client.employee.count({ where }),

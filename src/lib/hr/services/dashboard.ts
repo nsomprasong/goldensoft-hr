@@ -661,7 +661,9 @@ export async function getHrDashboard(
 
   const [counts, activeShifts, employmentTypes, currentOpenPeriod] =
     await Promise.all([
-      repository.employees.countActive(ctx.organizationId),
+      repository.employees.countActive(ctx.organizationId, {
+        branchIds: branchId ? [branchId] : scope.branchIds,
+      }),
       repository.shifts.countActive(ctx.organizationId),
       repository.masters.list("employmentType"),
       findCurrentOpenPeriod(repository, ctx.organizationId),

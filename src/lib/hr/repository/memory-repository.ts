@@ -355,9 +355,16 @@ export function createMemoryHrRepository(
       row.updatedAt = now();
       return clone(row);
     },
-    async countActive(organizationId: string): Promise<EmployeeActiveCounts> {
+    async countActive(
+      organizationId: string,
+      options?: { branchIds?: readonly string[] | null },
+    ): Promise<EmployeeActiveCounts> {
       const rows = store.employees.filter(
-        (row) => row.organizationId === organizationId && row.isActive,
+        (row) =>
+          row.organizationId === organizationId &&
+          row.isActive &&
+          (options?.branchIds == null ||
+            options.branchIds.includes(row.branchId)),
       );
       const byBranchId: Record<string, number> = {};
       const byEmploymentTypeId: Record<string, number> = {};
