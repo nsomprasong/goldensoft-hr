@@ -214,3 +214,6 @@ npm run seed:full-qa:cleanup
 | เอกสารนี้ | `goldensoft-hr/docs/HR_FULL_QA_DATASET.md` |
 
 ชุดเล็กสำหรับ smoke test ล็อกอินอย่างเดียว: ดู `HR_LOGIN_TEST_DATASET.md` (แพลูกแพรว / รหัส `12345678`)
+
+ชุด Multi-org Auth ↔ Employee (พนักงาน 2 บริษัท + account access / onboarding / rehire):
+ดู `MULTI_ORG_AUTH_QA_DATASET.md` — `npm run seed:multi-org-auth-qa`

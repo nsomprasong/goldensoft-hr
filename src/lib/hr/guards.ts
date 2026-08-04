@@ -78,7 +78,7 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
     if (error instanceof PlatformIntegrationError) {
       if (error.code === "UNAUTHENTICATED") redirect("/login");
       if (error.code === "TENANT_CONTEXT_REQUIRED") {
-        redirect("/select-organization");
+        redirect("/");
       }
       redirect(`/access?reason=${encodeURIComponent(error.code)}`);
     }

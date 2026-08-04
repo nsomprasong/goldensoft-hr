@@ -5722,19 +5722,104 @@ button.hr-schedule-empty-icon:disabled {
   margin-top: 1rem;
 }
 
+/* Outer frame */
+.hr-me-clock-history-card {
+  padding: 0.85rem 0.9rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--hr-accent) 28%, var(--hr-border));
+  border-radius: 1rem;
+  background:
+    radial-gradient(520px 180px at 0% 0%, #ffe8c8 0%, transparent 55%),
+    radial-gradient(420px 160px at 100% 0%, #eef4ff 0%, transparent 50%),
+    linear-gradient(165deg, #fffaf3 0%, rgba(255, 255, 255, 0.96) 58%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset,
+    0 10px 28px rgba(21, 32, 51, 0.06);
+}
+
 .hr-me-clock-history-head {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.7rem;
 }
 
 .hr-me-clock-history-head h2 {
   margin: 0;
-  font-size: 1rem;
+  font-family: var(--font-family-display, inherit);
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--hr-text);
 }
 
 .hr-me-clock-history-head p {
-  margin: 0.2rem 0 0;
+  margin: 0.25rem 0 0;
   color: var(--hr-text-muted);
   font-size: var(--font-size-small);
+  line-height: 1.4;
+}
+
+/* Inner frame */
+.hr-me-clock-history-inner {
+  padding: 0.65rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--hr-border) 88%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--hr-surface, #fff) 94%, #fff);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.hr-me-clock-history-inner > .empty,
+.hr-me-clock-history-inner > .muted {
+  margin: 0.15rem 0;
+}
+
+.hr-me-clock-history-table-wrap {
+  border: 1px solid color-mix(in srgb, var(--hr-border) 75%, transparent);
+  border-radius: 0.65rem;
+  background: #fff;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hr-root table.hr-me-clock-history-table {
+  min-width: 36rem;
+  width: 100%;
+  table-layout: auto;
+  font-size: 0.8125rem;
+  border-collapse: collapse;
+}
+
+.hr-root table.hr-me-clock-history-table th,
+.hr-root table.hr-me-clock-history-table td {
+  padding: 0.55rem 0.6rem;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.hr-root table.hr-me-clock-history-table th {
+  background: color-mix(in srgb, var(--hr-surface-muted, #f8fafc) 90%, #fff);
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--hr-text-muted);
+}
+
+.hr-root table.hr-me-clock-history-table td.hr-me-clock-history-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.hr-root table.hr-me-clock-history-table th.col-actions,
+.hr-root table.hr-me-clock-history-table td.col-actions {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.hr-root table.hr-me-clock-history-table tr.hr-me-clock-history-row--today td {
+  background: color-mix(in srgb, var(--hr-accent-soft) 55%, #fff);
+}
+
+.hr-root table.hr-me-clock-history-table .hr-me-clock-day-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  max-width: 14rem;
+  white-space: normal;
 }
 
 .hr-me-clock-day-list {
@@ -6857,6 +6942,24 @@ button.hr-schedule-empty-icon:disabled {
   .hr-root table.attendance-day-table th,
   .hr-root table.attendance-day-table td {
     padding: 0.4rem 0.3rem;
+  }
+
+  .hr-root table.hr-me-clock-history-table {
+    min-width: 34rem;
+    font-size: 0.75rem;
+  }
+
+  .hr-root table.hr-me-clock-history-table th,
+  .hr-root table.hr-me-clock-history-table td {
+    padding: 0.45rem 0.4rem;
+  }
+
+  .hr-me-clock-history-card {
+    padding: 0.7rem 0.7rem 0.8rem;
+  }
+
+  .hr-me-clock-history-inner {
+    padding: 0.5rem;
   }
 }
 

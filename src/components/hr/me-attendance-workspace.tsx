@@ -1019,100 +1019,130 @@ export default function MeAttendanceWorkspace() {
       </section>
 
       <section className="hr-me-clock-history" aria-label="ประวัติลงเวลา">
-        <div className="hr-me-clock-history-head">
-          <h2>ประวัติ</h2>
-          {schedulePeriod ? (
-            <p>
-              {formatThaiDateRangeCompact(
-                schedulePeriod.periodStart,
-                schedulePeriod.periodEnd,
-              )}
-            </p>
-          ) : (
-            <p>ยังไม่มีตารางงานที่เผยแพร่</p>
-          )}
-        </div>
+        <div className="hr-me-clock-history-card">
+          <div className="hr-me-clock-history-head">
+            <h2>ประวัติ</h2>
+            {schedulePeriod ? (
+              <p>
+                {formatThaiDateRangeCompact(
+                  schedulePeriod.periodStart,
+                  schedulePeriod.periodEnd,
+                )}
+              </p>
+            ) : (
+              <p>ยังไม่มีตารางงานที่เผยแพร่</p>
+            )}
+          </div>
 
-        {loading ? (
-          <p className="muted">กำลังโหลด…</p>
-        ) : historyDays.length === 0 ? (
-          <p className="empty">ยังไม่มีวันในตารางงานปัจจุบัน</p>
-        ) : (
-          <ul className="hr-me-clock-day-list">
-            {historyDays.map((row) => {
-              const off = row.isRestDay || row.isLeaveDay;
-              const sameYearAsPeriod =
-                !!schedulePeriod &&
-                row.workDate.slice(0, 4) ===
-                  schedulePeriod.periodStart.slice(0, 4) &&
-                schedulePeriod.periodStart.slice(0, 4) ===
-                  schedulePeriod.periodEnd.slice(0, 4);
-              return (
-                <li
-                  key={row.id}
-                  className={
-                    row.workDate === todayIso
-                      ? "hr-me-clock-day hr-me-clock-day--today"
-                      : "hr-me-clock-day"
-                  }
-                >
-                  <div className="hr-me-clock-day-main">
-                    <strong>
-                      {formatThaiDateCompact(row.workDate, "—", {
-                        omitYear: sameYearAsPeriod,
-                      })}
-                    </strong>
-                    <span>{row.dutyLabel ?? (off ? "หยุด" : "—")}</span>
-                  </div>
-                  <div className="hr-me-clock-day-times">
-                    <span>
-                      เข้า {off ? "—" : formatClockTime(row.clockInAt)}
-                    </span>
-                    <span>
-                      ออก {off ? "—" : formatClockTime(row.clockOutAt)}
-                    </span>
-                  </div>
-                  {!off &&
-                  (row.lateLabel !== "—" ||
-                    row.earlyLeaveLabel !== "—" ||
-                    row.shiftMismatchStatus) ? (
-                    <div className="hr-me-clock-day-flags">
-                      {row.shiftMismatchStatus === "PENDING" ? (
-                        <span className="badge">รออนุมัติย้ายกะ</span>
-                      ) : null}
-                      {row.shiftMismatchStatus === "REJECTED" ? (
-                        <span className="badge badge-inactive">ลงผิดกะ</span>
-                      ) : null}
-                      {row.shiftMismatchStatus === "APPROVED" ? (
-                        <span className="badge badge-active">ย้ายกะแล้ว</span>
-                      ) : null}
-                      {row.lateLabel !== "—" ? (
-                        <span className="badge badge-inactive">
-                          สาย {row.lateLabel}
-                        </span>
-                      ) : null}
-                      {row.earlyLeaveLabel !== "—" ? (
-                        <span className="badge badge-inactive">
-                          ออกก่อน {row.earlyLeaveLabel}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {!off ? (
-                    <HrButton
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => openAdjust(row)}
-                      disabled={!isOnline || adjustSubmitting}
-                    >
-                      ขอแก้เวลา
-                    </HrButton>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+          <div className="hr-me-clock-history-inner">
+            {loading ? (
+              <p className="muted">กำลังโหลด…</p>
+            ) : historyDays.length === 0 ? (
+              <p className="empty">ยังไม่มีวันในตารางงานปัจจุบัน</p>
+            ) : (
+              <div className="table-wrap table-wrap--fit hr-me-clock-history-table-wrap">
+                <table className="data-table hr-me-clock-history-table">
+                  <thead>
+                    <tr>
+                      <th>วันที่</th>
+                      <th>กะ</th>
+                      <th>เข้า</th>
+                      <th>ออก</th>
+                      <th>สถานะ</th>
+                      <th className="col-actions">แก้ไข</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyDays.map((row) => {
+                      const off = row.isRestDay || row.isLeaveDay;
+                      const sameYearAsPeriod =
+                        !!schedulePeriod &&
+                        row.workDate.slice(0, 4) ===
+                          schedulePeriod.periodStart.slice(0, 4) &&
+                        schedulePeriod.periodStart.slice(0, 4) ===
+                          schedulePeriod.periodEnd.slice(0, 4);
+                      const hasFlags =
+                        !off &&
+                        (row.lateLabel !== "—" ||
+                          row.earlyLeaveLabel !== "—" ||
+                          row.shiftMismatchStatus);
+                      return (
+                        <tr
+                          key={row.id}
+                          className={
+                            row.workDate === todayIso
+                              ? "hr-me-clock-history-row--today"
+                              : undefined
+                          }
+                        >
+                          <td>
+                            <strong>
+                              {formatThaiDateCompact(row.workDate, "—", {
+                                omitYear: sameYearAsPeriod,
+                              })}
+                            </strong>
+                          </td>
+                          <td>{row.dutyLabel ?? (off ? "หยุด" : "—")}</td>
+                          <td className="hr-me-clock-history-time">
+                            {off ? "—" : formatClockTime(row.clockInAt)}
+                          </td>
+                          <td className="hr-me-clock-history-time">
+                            {off ? "—" : formatClockTime(row.clockOutAt)}
+                          </td>
+                          <td>
+                            {hasFlags ? (
+                              <div className="hr-me-clock-day-flags">
+                                {row.shiftMismatchStatus === "PENDING" ? (
+                                  <span className="badge">รออนุมัติย้ายกะ</span>
+                                ) : null}
+                                {row.shiftMismatchStatus === "REJECTED" ? (
+                                  <span className="badge badge-inactive">
+                                    ลงผิดกะ
+                                  </span>
+                                ) : null}
+                                {row.shiftMismatchStatus === "APPROVED" ? (
+                                  <span className="badge badge-active">
+                                    ย้ายกะแล้ว
+                                  </span>
+                                ) : null}
+                                {row.lateLabel !== "—" ? (
+                                  <span className="badge badge-inactive">
+                                    สาย {row.lateLabel}
+                                  </span>
+                                ) : null}
+                                {row.earlyLeaveLabel !== "—" ? (
+                                  <span className="badge badge-inactive">
+                                    ออกก่อน {row.earlyLeaveLabel}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                          <td className="col-actions">
+                            {!off ? (
+                              <HrButton
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => openAdjust(row)}
+                                disabled={!isOnline || adjustSubmitting}
+                              >
+                                ขอแก้เวลา
+                              </HrButton>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {adjustDay ? (
