@@ -1,3 +1,5 @@
+"use client";
+
 /** Circular employee photo / initials icon used in every employee list. */
 
 import { useState } from "react";
