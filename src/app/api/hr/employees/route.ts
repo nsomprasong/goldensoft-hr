@@ -46,6 +46,10 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     const created = await createEmployee(repository, service, body);
+    if (body.roleId) {
+      const { recordEmployeeRoleAssignment } = await import("@/lib/hr/services/employee-role-assignments");
+      await recordEmployeeRoleAssignment(repository, service, { employeeId: created.id, roleId: body.roleId, source: body.roleAssignmentSource ?? "MANUAL_ASSIGNMENT", positionId: body.positionId });
+    }
     return jsonResponse({ employee: created }, 201);
   });
 }

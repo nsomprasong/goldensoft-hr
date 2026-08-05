@@ -10,6 +10,7 @@ import {
   normalizePagination,
   optionalText,
   requireText,
+  resolveBranchScope,
   resolveDisplayNamePair,
   toPagedResponse,
   type HrServiceContext,
@@ -29,11 +30,33 @@ export type PositionCreateData = {
   nameEn?: string | null;
   departmentId?: string | null;
   description?: string | null;
+  scope?: "ORGANIZATION" | "BRANCH";
+  branchId?: string | null;
+  defaultRoleId?: string | null;
 };
 
 export type PositionUpdateData = Partial<Omit<PositionCreateData, "code">> & {
   isActive?: boolean;
 };
+
+export function assertPositionVisibleInContext(
+  ctx: HrServiceContext,
+  position: PositionRecord,
+): void {
+  if (position.isSystemStandard && position.organizationId === null && !position.branchId) {
+    return;
+  }
+  if (position.organizationId !== ctx.organizationId) {
+    throw new HrError("NOT_FOUND");
+  }
+  if (!position.branchId) return;
+  if (ctx.branchId && position.branchId !== ctx.branchId) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE");
+  }
+  if (ctx.allowedBranchIds != null && !ctx.allowedBranchIds.includes(position.branchId)) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE");
+  }
+}
 
 async function assertDepartmentUsable(
   repository: HrRepository,
@@ -62,11 +85,14 @@ export async function listPositions(
     HR_PERMISSIONS.employeeRead,
   ]);
   const pagination = normalizePagination(input);
+  const scope = resolveBranchScope(ctx, ctx.branchId);
   const result = await repository.positions.list({
     organizationId: ctx.organizationId,
     departmentId: input.departmentId ?? null,
     isActive: input.isActive ?? null,
     search: input.search ?? null,
+    branchId: scope.branchId,
+    branchIds: scope.branchIds,
     skip: pagination.skip,
     take: pagination.take,
   });
@@ -84,6 +110,7 @@ export async function getPosition(
   ]);
   const row = await repository.positions.findById(ctx.organizationId, id);
   if (!row) throw new HrError("NOT_FOUND", { details: { positionId: id } });
+  assertPositionVisibleInContext(ctx, row);
   return row;
 }
 
@@ -108,6 +135,20 @@ export async function createPosition(
   }
 
   const names = resolveDisplayNamePair(data.nameTh, data.nameEn, "ชื่อตำแหน่ง");
+  const branchId = data.scope === "BRANCH" ? (data.branchId ?? ctx.branchId) : null;
+  if (data.scope === "BRANCH" && !branchId) {
+    throw new HrError("VALIDATION_ERROR", { message: "กรุณาเลือกสาขาสำหรับตำแหน่งระดับสาขา", details: { branchId } });
+  }
+  if (branchId && ctx.branchId && branchId !== ctx.branchId) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE", { details: { branchId } });
+  }
+  if (branchId && ctx.allowedBranchIds != null && !ctx.allowedBranchIds.includes(branchId)) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE", { details: { branchId } });
+  }
+  const sameName = await repository.positions.list({ organizationId: ctx.organizationId, branchId, search: names.nameTh, skip: 0, take: 50 });
+  if (sameName.rows.some((row) => !row.isSystemStandard && row.nameTh.trim().toLocaleLowerCase("th") === names.nameTh.trim().toLocaleLowerCase("th") && (row.branchId ?? null) === branchId)) {
+    throw new HrError("DUPLICATE_CODE", { message: "มีชื่อตำแหน่งนี้แล้วในขอบเขตที่เลือก" });
+  }
   const created = await repository.positions.create({
     organizationId: ctx.organizationId,
     departmentId: data.departmentId ?? null,
@@ -115,6 +156,10 @@ export async function createPosition(
     nameTh: names.nameTh,
     nameEn: names.nameEn,
     description: optionalText(data.description),
+    branchId,
+    immutableCode: null,
+    isSystemStandard: false,
+    defaultRoleId: data.defaultRoleId ?? null,
     isActive: true,
   });
 
@@ -141,9 +186,21 @@ export async function updatePosition(
 
   const before = await repository.positions.findById(ctx.organizationId, id);
   if (!before) throw new HrError("NOT_FOUND", { details: { positionId: id } });
+  assertPositionVisibleInContext(ctx, before);
+  if (before.isSystemStandard) throw new HrError("FORBIDDEN", { details: { reason: "ตำแหน่งมาตรฐานแก้ไขได้จากส่วนกลางเท่านั้น" } });
 
   if (data.departmentId) {
     await assertDepartmentUsable(repository, ctx, data.departmentId);
+  }
+  const requestedBranchId = data.scope === "BRANCH" ? (data.branchId ?? ctx.branchId) : null;
+  if (data.scope === "BRANCH" && !requestedBranchId) {
+    throw new HrError("VALIDATION_ERROR", { message: "กรุณาเลือกสาขาสำหรับตำแหน่งระดับสาขา" });
+  }
+  if (requestedBranchId && ctx.branchId && requestedBranchId !== ctx.branchId) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE", { details: { branchId: requestedBranchId } });
+  }
+  if (requestedBranchId && ctx.allowedBranchIds != null && !ctx.allowedBranchIds.includes(requestedBranchId)) {
+    throw new HrError("BRANCH_OUT_OF_SCOPE", { details: { branchId: requestedBranchId } });
   }
 
   const after = await repository.positions.update(id, {
@@ -161,6 +218,8 @@ export async function updatePosition(
       ? {}
       : { description: optionalText(data.description) }),
     ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
+    ...(data.scope === undefined ? {} : { branchId: requestedBranchId }),
+    ...(data.defaultRoleId === undefined ? {} : { defaultRoleId: data.defaultRoleId ?? null }),
   });
 
   await writeHrAudit(repository, {
@@ -186,6 +245,8 @@ export async function deactivatePosition(
 
   const before = await repository.positions.findById(ctx.organizationId, id);
   if (!before) throw new HrError("NOT_FOUND", { details: { positionId: id } });
+  assertPositionVisibleInContext(ctx, before);
+  if (before.isSystemStandard) throw new HrError("FORBIDDEN", { details: { reason: "ตำแหน่งมาตรฐานไม่สามารถปิดใช้งานโดยองค์กรได้" } });
 
   const after = await repository.positions.update(id, { isActive: false });
 

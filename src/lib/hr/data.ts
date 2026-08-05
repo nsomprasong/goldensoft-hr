@@ -50,6 +50,7 @@ import {
 } from "@/lib/hr/services/payroll-runs";
 import { listPayrollSchedules as listPayrollSchedulesService } from "@/lib/hr/services/payroll-schedules";
 import { listPositions as listPositionsService } from "@/lib/hr/services/positions";
+import { listOrganizationRoleOptions, type OrganizationRoleOption } from "@/lib/hr/services/organization-role-options";
 import {
   listSalaryAdvances as listSalaryAdvancesService,
   type SalaryAdvanceRow,
@@ -768,6 +769,12 @@ export type DepartmentRow = {
 export type PositionRow = DepartmentRow & {
   departmentId: string | null;
   departmentNameTh: string | null;
+  branchId: string | null;
+  isSystemStandard: boolean;
+  defaultRoleId: string | null;
+  defaultRoleName: string | null;
+  defaultRoleType: string | null;
+  employeeCount: number;
 };
 
 export async function listDepartments(
@@ -793,15 +800,20 @@ export async function listPositions(
 ): Promise<HrDataResult<PositionRow[]>> {
   return safeRead<PositionRow[]>([], async (repository) => {
     const service = serviceContext(ctx);
-    const [positions, departments] = await Promise.all([
+    const [positions, departments, roles, employeeCounts] = await Promise.all([
       listPositionsService(repository, service, { pageSize: ALL }),
       repository.departments.list({
         organizationId: ctx.organizationId,
         skip: 0,
         take: ALL,
       }),
+      listOrganizationRoleOptions(service),
+      repository.employees.list({ organizationId: ctx.organizationId, branchId: ctx.branchId, skip: 0, take: ALL }),
     ]);
     const byId = new Map(departments.rows.map((d) => [d.id, d.nameTh]));
+    const roleById = new Map(roles.map((role) => [role.id, role]));
+    const countByPosition = new Map<string, number>();
+    for (const employee of employeeCounts.rows) if (employee.positionId) countByPosition.set(employee.positionId, (countByPosition.get(employee.positionId) ?? 0) + 1);
 
     return positions.rows.map((row) => ({
       id: row.id,
@@ -811,11 +823,21 @@ export async function listPositions(
       description: row.description,
       isActive: row.isActive,
       departmentId: row.departmentId,
+      branchId: row.branchId ?? null,
+      isSystemStandard: row.isSystemStandard ?? false,
+      defaultRoleId: row.defaultRoleId ?? null,
+      defaultRoleName: row.defaultRoleId ? (roleById.get(row.defaultRoleId)?.name ?? null) : null,
+      defaultRoleType: row.defaultRoleId ? (roleById.get(row.defaultRoleId)?.typeLabel ?? null) : null,
+      employeeCount: countByPosition.get(row.id) ?? 0,
       departmentNameTh: row.departmentId
         ? (byId.get(row.departmentId) ?? null)
         : null,
     }));
   });
+}
+
+export async function loadOrganizationRoleOptions(ctx: HrRequestContext): Promise<HrDataResult<OrganizationRoleOption[]>> {
+  return safeRead<OrganizationRoleOption[]>([], async () => listOrganizationRoleOptions(serviceContext(ctx)));
 }
 
 // ─── Shifts ───────────────────────────────────────────────────────────────
@@ -2140,4 +2162,3 @@ export async function listAttendanceAdjustments(
     );
   });
 }
-

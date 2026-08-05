@@ -39,6 +39,8 @@ export const HR_AUDIT_ACTIONS = {
   positionCreate: "position.create",
   positionUpdate: "position.update",
   positionDeactivate: "position.deactivate",
+  positionRoleChange: "position.role_change",
+  employeeRoleChoice: "employee.role_choice",
   shiftCreate: "shift.create",
   shiftUpdate: "shift.update",
   shiftDeactivate: "shift.deactivate",

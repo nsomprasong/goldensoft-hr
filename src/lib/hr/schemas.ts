@@ -55,6 +55,8 @@ export const employeeCreateSchema = z.object({
   departmentId: uuid.nullable().optional(),
   positionId: uuid.nullable().optional(),
   notes: nullableText,
+  roleId: uuid.nullable().optional(),
+  roleAssignmentSource: z.enum(["POSITION_RECOMMENDATION", "MANUAL_ASSIGNMENT"]).optional(),
 });
 
 export const employeeUpdateSchema = z.object({
@@ -78,6 +80,8 @@ export const employeeUpdateSchema = z.object({
   departmentId: uuid.nullable().optional(),
   positionId: uuid.nullable().optional(),
   notes: nullableText,
+  roleId: uuid.nullable().optional(),
+  roleAssignmentSource: z.enum(["POSITION_RECOMMENDATION", "MANUAL_ASSIGNMENT", "KEEP_EXISTING"]).optional(),
 });
 
 export const employeeDeactivateSchema = z.object({
@@ -125,10 +129,16 @@ export const positionCreateSchema = z.object({
   nameEn: optionalCode,
   description: nullableText,
   departmentId: uuid.nullable().optional(),
+  scope: z.enum(["ORGANIZATION", "BRANCH"]).optional(),
+  branchId: uuid.nullable().optional(),
+  defaultRoleId: uuid.nullable().optional(),
 });
 
 export const positionUpdateSchema = departmentUpdateSchema.extend({
   departmentId: uuid.nullable().optional(),
+  scope: z.enum(["ORGANIZATION", "BRANCH"]).optional(),
+  branchId: uuid.nullable().optional(),
+  defaultRoleId: uuid.nullable().optional(),
 });
 
 export const shiftCreateSchema = z.object({

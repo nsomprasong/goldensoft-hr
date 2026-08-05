@@ -259,7 +259,30 @@ export function createPrismaHrRepository(
     positions: {
       async list(input) {
         const where: Prisma.PositionWhereInput = {
-          organizationId: input.organizationId,
+          OR: [
+            {
+              organizationId: null,
+              branchId: null,
+              isSystemStandard: true,
+            },
+            ...(input.branchId
+              ? [
+                  { organizationId: input.organizationId, branchId: null },
+                  {
+                    organizationId: input.organizationId,
+                    branchId: input.branchId,
+                  },
+                ]
+              : input.branchIds != null
+                ? [
+                    { organizationId: input.organizationId, branchId: null },
+                    {
+                      organizationId: input.organizationId,
+                      branchId: { in: [...input.branchIds] },
+                    },
+                  ]
+                : [{ organizationId: input.organizationId }]),
+          ],
           ...(input.departmentId == null
             ? {}
             : { departmentId: input.departmentId }),
@@ -286,7 +309,15 @@ export function createPrismaHrRepository(
         return { rows, total };
       },
       findById: async (organizationId, id) =>
-        client.position.findFirst({ where: { id, organizationId } }),
+        client.position.findFirst({
+          where: {
+            id,
+            OR: [
+              { organizationId },
+              { organizationId: null, branchId: null, isSystemStandard: true },
+            ],
+          },
+        }),
       findByCode: async (organizationId, code) =>
         client.position.findUnique({
           where: { organizationId_code: { organizationId, code } },

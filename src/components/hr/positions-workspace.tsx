@@ -19,12 +19,14 @@ const BASE = "/hr/settings/positions";
 export default function PositionsWorkspace({
   positions,
   departments,
+  roles,
   editing,
   available,
   canManage,
 }: {
   positions: PositionRow[];
   departments: Array<{ id: string; label: string }>;
+  roles: Array<{ id: string; name: string; description: string | null; typeLabel: string; permissionCount: number }>;
   editing: PositionRow | null;
   available: boolean;
   canManage: boolean;
@@ -32,12 +34,21 @@ export default function PositionsWorkspace({
   const router = useRouter();
   const titleId = useId();
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState("ALL");
   const [viewMode, setViewMode] = useSettingsViewMode(
     "hr.settings.positions.viewMode",
   );
 
   const open = creating || editing != null;
   const mode = editing ? "edit" : "create";
+  const visiblePositions = positions.filter((row) => {
+    if (filter === "STANDARD") return row.isSystemStandard;
+    if (filter === "ORGANIZATION") return !row.isSystemStandard && !row.branchId;
+    if (filter === "BRANCH") return Boolean(row.branchId);
+    if (filter === "WITH_ROLE") return Boolean(row.defaultRoleId);
+    if (filter === "WITHOUT_ROLE") return !row.defaultRoleId;
+    return true;
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -81,11 +92,13 @@ export default function PositionsWorkspace({
         nameTh: editing.nameTh,
         departmentId: editing.departmentId ?? "",
         description: editing.description ?? "",
+        scope: editing.branchId ? "BRANCH" : "ORGANIZATION",
+        defaultRoleId: editing.defaultRoleId ?? "",
       }
     : undefined;
 
   function renderActions(row: PositionRow) {
-    if (!canManage) return null;
+    if (!canManage || row.isSystemStandard) return null;
     return (
       <div className="hr-settings-item-actions">
         <Link
@@ -116,6 +129,17 @@ export default function PositionsWorkspace({
             onChange={setViewMode}
             count={positions.length}
           />
+          <label className="field">
+            <span>ตัวกรองตำแหน่ง</span>
+            <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+              <option value="ALL">ทุกขอบเขต</option>
+              <option value="STANDARD">ตำแหน่งมาตรฐาน</option>
+              <option value="ORGANIZATION">ใช้ทุกสาขาในองค์กร</option>
+              <option value="BRANCH">ใช้เฉพาะสาขา</option>
+              <option value="WITH_ROLE">มีบทบาทแล้ว</option>
+              <option value="WITHOUT_ROLE">ยังไม่มีบทบาท</option>
+            </select>
+          </label>
           <div
             className={
               viewMode === "cards"
@@ -123,8 +147,11 @@ export default function PositionsWorkspace({
                 : "hr-settings-list"
             }
           >
-            {positions.map((row) => {
+            {visiblePositions.map((row) => {
               const meta = [
+                row.isSystemStandard ? "ตำแหน่งมาตรฐาน" : row.branchId ? "ใช้เฉพาะสาขา" : "ใช้ทุกสาขาในองค์กร",
+                row.defaultRoleName ? `บทบาทหลัก: ${row.defaultRoleName} (${row.defaultRoleType})` : "ยังไม่ได้กำหนดบทบาท",
+                `พนักงาน ${row.employeeCount} คน`,
                 row.departmentNameTh ?? "ไม่ระบุแผนก",
                 row.description || null,
               ]
@@ -208,6 +235,7 @@ export default function PositionsWorkspace({
                 mode={mode}
                 positionId={editing?.id}
                 departments={departments}
+                roles={roles}
                 disabled={!available}
                 initialValues={editInitial}
                 embedded

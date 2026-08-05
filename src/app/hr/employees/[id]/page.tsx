@@ -159,6 +159,7 @@ export default async function EmployeeDetailPage({
           positions={positions.data.map((p) => ({
             id: p.id,
             label: p.nameTh,
+            defaultRoleId: p.defaultRoleId,
           }))}
           employmentTypes={master.data.employmentTypes.map((t) => ({
             id: t.id,

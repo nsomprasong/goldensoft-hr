@@ -34,6 +34,10 @@ export async function POST(request: Request): Promise<Response> {
       permission: HR_PERMISSIONS.positionManage,
     });
     const position = await createPosition(repository, service, body);
+    if (body.defaultRoleId) {
+      const { setPositionPrimaryRole } = await import("@/lib/hr/services/position-roles");
+      await setPositionPrimaryRole(repository, service, position.id, body.defaultRoleId);
+    }
     return jsonResponse({ position }, 201);
   });
 }

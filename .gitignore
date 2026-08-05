@@ -20,3 +20,6 @@ docs/phase8b-runtime-acceptance.results.json
 # Public Supabase CA bundle is committed on purpose (no secret material)
 !certs/
 !certs/*.crt
+
+# Never commit per-account Auth reset evidence.
+/docs/reset-evidence/*preserved-auth.json

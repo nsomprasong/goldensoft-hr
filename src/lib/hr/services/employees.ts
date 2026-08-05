@@ -34,6 +34,7 @@ import {
   type PagedResponse,
   type PageRequest,
 } from "@/lib/hr/services/shared";
+import { assertPositionVisibleInContext } from "@/lib/hr/services/positions";
 
 /** True when the linked Platform membership has an active OWNER role. */
 export async function employeeHasOrganizationOwnerRole(
@@ -192,6 +193,7 @@ async function requireActivePosition(
     positionId,
   );
   if (!row) throw new HrError("NOT_FOUND", { details: { positionId } });
+  assertPositionVisibleInContext(ctx, row);
   if (!row.isActive) {
     throw new HrError("INACTIVE_ENTITY", { details: { positionId } });
   }

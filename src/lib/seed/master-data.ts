@@ -308,6 +308,8 @@ export const AUDIT_ACTION_TYPES: MasterRow[] = [
   { code: "face.revoked", nameTh: "ยกเลิกใบหน้า", nameEn: "Face revoked", sortOrder: 54 },
   { code: "employee.employment_terminated", nameTh: "สิ้นสุดการจ้างงาน", nameEn: "Employment terminated", sortOrder: 55 },
   { code: "employee.employment_reactivated", nameTh: "เปิดการจ้างงานใหม่", nameEn: "Employment reactivated", sortOrder: 56 },
+  { code: "position.role_change", nameTh: "เปลี่ยนบทบาทของตำแหน่ง", nameEn: "Position role changed", sortOrder: 57 },
+  { code: "employee.role_choice", nameTh: "เลือกบทบาทพนักงาน", nameEn: "Employee role choice", sortOrder: 58 },
 ];
 
 export const HR_MASTER_CATALOG = {
@@ -322,7 +324,41 @@ export const HR_MASTER_CATALOG = {
   overtimeRateType: OVERTIME_RATE_TYPES,
   payrollPeriodStatus: PAYROLL_PERIOD_STATUSES,
   auditActionType: AUDIT_ACTION_TYPES,
+  positionType: [
+    { code: "SYSTEM_STANDARD", nameTh: "ตำแหน่งมาตรฐาน", nameEn: "System standard position", sortOrder: 1 },
+    { code: "ORGANIZATION_CUSTOM", nameTh: "ตำแหน่งที่องค์กรสร้าง", nameEn: "Organization position", sortOrder: 2 },
+  ],
+  positionScopeType: [
+    { code: "SYSTEM_STANDARD", nameTh: "ตำแหน่งมาตรฐาน", nameEn: "System standard", sortOrder: 0 },
+    { code: "ORGANIZATION", nameTh: "ใช้ทุกสาขาในองค์กร", nameEn: "Organization level", sortOrder: 1 },
+    { code: "BRANCH", nameTh: "ใช้เฉพาะสาขา", nameEn: "Branch level", sortOrder: 2 },
+  ],
+  employeeRoleAssignmentSource: [
+    { code: "POSITION_RECOMMENDATION", nameTh: "ใช้บทบาทที่แนะนำจากตำแหน่ง", nameEn: "Position recommendation", sortOrder: 1 },
+    { code: "MANUAL_ASSIGNMENT", nameTh: "เลือกบทบาทอื่น", nameEn: "Manual assignment", sortOrder: 2 },
+    { code: "KEEP_EXISTING", nameTh: "ใช้บทบาทเดิม", nameEn: "Keep existing role", sortOrder: 3 },
+  ],
 } as const;
+
+export const STANDARD_POSITIONS = [
+  ["OWNER", "เจ้าของกิจการ"], ["ADMIN", "ผู้ดูแลระบบ"], ["ACCOUNTANT", "พนักงานบัญชี"],
+  ["HR_OFFICER", "พนักงานบุคคล"], ["EMPLOYEE", "พนักงานทั่วไป"], ["HOUSEKEEPER", "แม่บ้าน"],
+  ["COOK", "แม่ครัว"], ["DRIVER", "คนขับรถ"],
+] as const;
+
+/** Copies immutable standard position templates into one tenant without touching existing rows. */
+export async function seedStandardPositions(prisma: PrismaClient) {
+  const type = await prisma.positionType.findUniqueOrThrow({ where: { code: "SYSTEM_STANDARD" } });
+  const scope = await prisma.positionScopeType.findUniqueOrThrow({ where: { code: "SYSTEM_STANDARD" } });
+  for (const [code, nameTh] of STANDARD_POSITIONS) {
+    const existing = await prisma.position.findFirst({ where: { organizationId: null, immutableCode: code, isSystemStandard: true } });
+    if (existing) {
+      await prisma.position.update({ where: { id: existing.id }, data: { nameTh, nameEn: code, positionTypeId: type.id, scopeTypeId: scope.id, isActive: true } });
+    } else {
+      await prisma.position.create({ data: { organizationId: null, code, immutableCode: code, nameTh, nameEn: code, isSystemStandard: true, positionTypeId: type.id, scopeTypeId: scope.id, isActive: true } });
+    }
+  }
+}
 
 export type OperationMasterRow = {
   code: string;

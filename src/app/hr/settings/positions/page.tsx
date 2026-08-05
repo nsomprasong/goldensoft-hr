@@ -3,7 +3,7 @@ import DepartmentPositionTabs from "@/components/hr/department-position-tabs";
 import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import PositionsWorkspace from "@/components/hr/positions-workspace";
 import HrShell from "@/components/hr-shell";
-import { combineAvailability, listDepartments, listPositions } from "@/lib/hr/data";
+import { combineAvailability, listDepartments, listPositions, loadOrganizationRoleOptions } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
 
@@ -17,11 +17,12 @@ export default async function PositionsPage({
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.positionRead });
   const { edit } = await searchParams;
 
-  const [positions, departments] = await Promise.all([
+  const [positions, departments, roles] = await Promise.all([
     listPositions(ctx),
     listDepartments(ctx),
+    loadOrganizationRoleOptions(ctx),
   ]);
-  const availability = combineAvailability(positions, departments);
+  const availability = combineAvailability(positions, departments, roles);
   const canManage = canHr(ctx, HR_PERMISSIONS.positionManage);
   const editing = edit
     ? (positions.data.find((row) => row.id === edit) ?? null)
@@ -49,6 +50,7 @@ export default async function PositionsPage({
       <PositionsWorkspace
         positions={positions.data}
         departments={departmentOptions}
+        roles={roles.data}
         editing={editing}
         available={availability.available}
         canManage={canManage}

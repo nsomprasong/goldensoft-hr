@@ -33,6 +33,8 @@ export type EmployeeFormValues = {
   branchId: string;
   departmentId: string;
   positionId: string;
+  roleId: string;
+  roleAssignmentSource: "POSITION_RECOMMENDATION" | "MANUAL_ASSIGNMENT" | "KEEP_EXISTING";
   employmentTypeId: string;
   employeeStatusId: string;
   hireDate: string;
@@ -52,6 +54,8 @@ const EMPTY_VALUES: EmployeeFormValues = {
   branchId: "",
   departmentId: "",
   positionId: "",
+  roleId: "",
+  roleAssignmentSource: "POSITION_RECOMMENDATION",
   employmentTypeId: "",
   employeeStatusId: "",
   hireDate: "",
@@ -113,6 +117,7 @@ export default function EmployeeForm({
   initialValues,
   departments,
   positions,
+  roles,
   employmentTypes,
   employeeStatuses,
   branches,
@@ -124,7 +129,8 @@ export default function EmployeeForm({
   employeeId?: string;
   initialValues?: Partial<EmployeeFormValues>;
   departments: EmployeeFormOption[];
-  positions: EmployeeFormOption[];
+  positions: Array<EmployeeFormOption & { defaultRoleId: string | null }>;
+  roles: Array<{ id: string; name: string; description: string | null; typeLabel: string; permissionCount: number }>;
   employmentTypes: EmployeeFormOption[];
   employeeStatuses: EmployeeFormOption[];
   branches: EmployeeFormOption[];
@@ -206,6 +212,8 @@ export default function EmployeeForm({
       branchId: values.branchId.trim(),
       departmentId: values.departmentId || null,
       positionId: values.positionId || null,
+      roleId: values.roleId || null,
+      roleAssignmentSource: values.roleAssignmentSource,
       employmentTypeId: values.employmentTypeId,
       employeeStatusId: values.employeeStatusId,
       hireDate: values.hireDate,
@@ -440,7 +448,11 @@ export default function EmployeeForm({
           <select
             {...fieldProps("positionId")}
             value={values.positionId}
-            onChange={(e) => set("positionId", e.target.value)}
+            onChange={(e) => {
+              const positionId = e.target.value;
+              const recommended = positions.find((item) => item.id === positionId)?.defaultRoleId ?? "";
+              setValues((previous) => ({ ...previous, positionId, roleId: mode === "create" ? recommended : previous.roleId, roleAssignmentSource: mode === "create" && recommended ? "POSITION_RECOMMENDATION" : previous.roleAssignmentSource }));
+            }}
           >
             <option value="">— ไม่ระบุ —</option>
             {positions.map((item) => (
@@ -449,6 +461,20 @@ export default function EmployeeForm({
               </option>
             ))}
           </select>
+        </Field>
+
+        <Field id="roleId" label="บทบาทที่แนะนำ" full hint="ระบบแนะนำบทบาทตามตำแหน่งที่เลือก คุณสามารถเปลี่ยนได้หากพนักงานต้องใช้สิทธิ์แตกต่างจากตำแหน่งทั่วไป">
+          {values.positionId && !positions.find((item) => item.id === values.positionId)?.defaultRoleId ? <p className="field-hint">ตำแหน่งนี้ยังไม่ได้กำหนดบทบาทหลัก กรุณาเลือกบทบาทให้พนักงาน</p> : null}
+          <select
+            {...fieldProps("roleId")}
+            value={values.roleId}
+            onChange={(event) => setValues((previous) => ({ ...previous, roleId: event.target.value, roleAssignmentSource: "MANUAL_ASSIGNMENT" }))}
+            disabled={saving || disabled}
+          >
+            <option value="">— เลือกบทบาท —</option>
+            {roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.typeLabel}</option>)}
+          </select>
+          {values.roleId ? <span className="field-hint">{roles.find((role) => role.id === values.roleId)?.description || `${roles.find((role) => role.id === values.roleId)?.permissionCount ?? 0} สิทธิ์การใช้งาน`}</span> : null}
         </Field>
 
         <Field

@@ -33,11 +33,23 @@ export async function PATCH(
   return withHrApi(async () => {
     const { id } = await context.params;
     const body = await parseJsonBody(request, employeeUpdateSchema);
-    const { service, repository } = await requireHrApi(request, {
+    const { ctx, service, repository } = await requireHrApi(request, {
       permission: HR_PERMISSIONS.employeeUpdate,
       branchId: body.branchId ?? null,
     });
     const employee = await updateEmployee(repository, service, id, body);
+    if (body.roleId && body.roleAssignmentSource !== "KEEP_EXISTING") {
+      const { assignEmployeeRole, getEmployeeRoleState, revokeEmployeeRole } = await import("@/lib/hr/services/employee-roles");
+      const roleState = await getEmployeeRoleState(ctx, service, id);
+      if (roleState.membershipId) {
+        for (const assigned of roleState.assigned) {
+          if (assigned.roleId !== body.roleId) await revokeEmployeeRole(ctx, service, id, assigned.membershipRoleId);
+        }
+        if (!roleState.assigned.some((assigned) => assigned.roleId === body.roleId)) await assignEmployeeRole(ctx, service, id, body.roleId);
+      }
+      const { recordEmployeeRoleAssignment } = await import("@/lib/hr/services/employee-role-assignments");
+      await recordEmployeeRoleAssignment(repository, service, { employeeId: id, roleId: body.roleId, source: body.roleAssignmentSource ?? "MANUAL_ASSIGNMENT", positionId: body.positionId ?? employee.positionId });
+    }
     return jsonResponse({ employee });
   });
 }

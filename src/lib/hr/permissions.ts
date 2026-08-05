@@ -11,6 +11,8 @@ export const HR_PERMISSIONS = {
   employeeManage: "hr.employee.manage",
   /** Linking an employee row to a Platform user account. */
   employeeLinkUser: "hr.employee.link_user",
+  employeeRoleAssign: "hr.employee.role.assign",
+  employeeRoleAssignPrivileged: "hr.employee.role.assign_privileged",
   scheduleRead: "hr.schedule.read",
   scheduleManage: "hr.schedule.manage",
   schedulePublish: "hr.schedule.publish",

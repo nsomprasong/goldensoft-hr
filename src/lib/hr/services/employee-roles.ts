@@ -33,20 +33,15 @@ export type EmployeeRoleState = {
 
 const PRIVILEGED_ROLE_CODES = new Set(["OWNER", "ADMIN"]);
 
-function actorRoleCodes(ctx: HrRequestContext): Set<string> {
-  return new Set(ctx.membershipRoles.map((role) => role.toUpperCase()));
-}
-
 /** Who may assign/revoke non-privileged roles (needs employee.update). */
 function canAssignRoles(service: HrServiceContext): boolean {
-  return hrCan(service, HR_PERMISSIONS.employeeUpdate);
+  return hrCan(service, HR_PERMISSIONS.employeeRoleAssign) || hrCan(service, HR_PERMISSIONS.employeeUpdate);
 }
 
 /** OWNER/ADMIN (and platform admin) may assign privileged org roles. */
 function canAssignPrivilegedRoles(ctx: HrRequestContext): boolean {
   if (ctx.contextMode === "platform_admin") return true;
-  const roles = actorRoleCodes(ctx);
-  return roles.has("OWNER") || roles.has("ADMIN");
+  return ctx.permissions.includes(HR_PERMISSIONS.employeeRoleAssignPrivileged);
 }
 
 async function requireEmployee(
@@ -201,7 +196,7 @@ export async function assignEmployeeRole(
   employeeId: string,
   roleId: string,
 ): Promise<{ ok: true }> {
-  assertHrPermission(service, HR_PERMISSIONS.employeeUpdate);
+  assertHrPermission(service, [HR_PERMISSIONS.employeeRoleAssign, HR_PERMISSIONS.employeeUpdate]);
   if (!canAssignRoles(service)) {
     throw new HrError("FORBIDDEN", { message: "ไม่มีสิทธิ์กำหนดบทบาท" });
   }
@@ -275,7 +270,7 @@ export async function revokeEmployeeRole(
   employeeId: string,
   membershipRoleId: string,
 ): Promise<{ ok: true }> {
-  assertHrPermission(service, HR_PERMISSIONS.employeeUpdate);
+  assertHrPermission(service, [HR_PERMISSIONS.employeeRoleAssign, HR_PERMISSIONS.employeeUpdate]);
   if (!canAssignRoles(service)) {
     throw new HrError("FORBIDDEN", { message: "ไม่มีสิทธิ์ถอดบทบาท" });
   }

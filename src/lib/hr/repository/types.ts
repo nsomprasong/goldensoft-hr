@@ -67,8 +67,13 @@ export type DepartmentPatch = Partial<
   Pick<DepartmentRecord, "nameTh" | "nameEn" | "description" | "isActive">
 >;
 
-export type PositionRecord = DepartmentRecord & {
+export type PositionRecord = Omit<DepartmentRecord, "organizationId"> & {
+  organizationId: string | null;
   departmentId: string | null;
+  branchId?: string | null;
+  immutableCode?: string | null;
+  isSystemStandard?: boolean;
+  defaultRoleId?: string | null;
 };
 
 export type PositionCreateInput = Omit<
@@ -78,6 +83,8 @@ export type PositionCreateInput = Omit<
 
 export type PositionPatch = DepartmentPatch & {
   departmentId?: string | null;
+  branchId?: string | null;
+  defaultRoleId?: string | null;
 };
 
 // ─── Employee ─────────────────────────────────────────────────────────────
@@ -361,6 +368,8 @@ export type PositionRepository = {
     departmentId?: string | null;
     isActive?: boolean | null;
     search?: string | null;
+    branchId?: string | null;
+    branchIds?: readonly string[] | null;
   } & Pagination): Promise<ListResult<PositionRecord>>;
   findById(organizationId: string, id: string): Promise<PositionRecord | null>;
   findByCode(

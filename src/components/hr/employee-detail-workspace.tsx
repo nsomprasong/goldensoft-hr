@@ -76,7 +76,7 @@ export default function EmployeeDetailWorkspace({
   branches: EmployeeOption[];
   branchName: string;
   departments: EmployeeOption[];
-  positions: EmployeeOption[];
+  positions: Array<EmployeeOption & { defaultRoleId: string | null }>;
   employmentTypes: EmployeeOption[];
   employeeStatuses: EmployeeOption[];
   wageTypes: EmployeeOption[];
@@ -227,7 +227,7 @@ export default function EmployeeDetailWorkspace({
   }, [tab, employeeId, documents]);
 
   useEffect(() => {
-    if (tab !== "roles") return;
+    if (tab !== "roles" && tab !== "employment") return;
     if (roleState !== null) return;
 
     const controller = new AbortController();
@@ -311,6 +311,7 @@ export default function EmployeeDetailWorkspace({
             employee={employee}
             departments={departments}
             positions={positions}
+            roleState={roleState}
             employmentTypes={employmentTypes}
             employeeStatuses={employeeStatuses}
             compensations={compensations ?? []}

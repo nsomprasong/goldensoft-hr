@@ -9,6 +9,7 @@ import {
   listOrganizationBranches,
   listPositions,
   loadHrMasterData,
+  loadOrganizationRoleOptions,
 } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
 import { canHr, HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -18,17 +19,19 @@ export const dynamic = "force-dynamic";
 export default async function NewEmployeePage() {
   const ctx = await requireHrPage({ permission: HR_PERMISSIONS.employeeCreate });
 
-  const [master, departments, positions, branches] = await Promise.all([
+  const [master, departments, positions, branches, roles] = await Promise.all([
     loadHrMasterData(),
     listDepartments(ctx),
     listPositions(ctx),
     listOrganizationBranches(ctx),
+    loadOrganizationRoleOptions(ctx),
   ]);
   const availability = combineAvailability(
     master,
     departments,
     positions,
     branches,
+    roles,
   );
   const includeCompensation =
     canHr(ctx, HR_PERMISSIONS.compensationManage) ||
@@ -60,7 +63,8 @@ export default async function NewEmployeePage() {
           .map((d) => ({ id: d.id, label: d.nameTh }))}
         positions={positions.data
           .filter((p) => p.isActive)
-          .map((p) => ({ id: p.id, label: p.nameTh }))}
+          .map((p) => ({ id: p.id, label: p.nameTh, defaultRoleId: p.defaultRoleId }))}
+        roles={roles.data}
         employmentTypes={master.data.employmentTypes.map((t) => ({
           id: t.id,
           label: t.nameTh,

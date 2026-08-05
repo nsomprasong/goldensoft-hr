@@ -181,11 +181,22 @@ export function createMemoryHrRepository(
       departmentId?: string | null;
       isActive?: boolean | null;
       search?: string | null;
+      branchId?: string | null;
+      branchIds?: readonly string[] | null;
       skip: number;
       take: number;
     }) {
       const rows = store.positions
-        .filter((row) => row.organizationId === input.organizationId)
+        .filter((row) => {
+          if (row.organizationId === null) {
+            return row.isSystemStandard === true && row.branchId == null;
+          }
+          if (row.organizationId !== input.organizationId) return false;
+          if (row.branchId == null) return true;
+          if (input.branchId) return row.branchId === input.branchId;
+          if (input.branchIds != null) return input.branchIds.includes(row.branchId);
+          return true;
+        })
         .filter((row) =>
           input.departmentId == null
             ? true
@@ -204,7 +215,12 @@ export function createMemoryHrRepository(
     },
     async findById(organizationId: string, id: string) {
       const hit = store.positions.find(
-        (row) => row.id === id && row.organizationId === organizationId,
+        (row) =>
+          row.id === id &&
+          (row.organizationId === organizationId ||
+            (row.organizationId === null &&
+              row.branchId == null &&
+              row.isSystemStandard === true)),
       );
       return hit ? clone(hit) : null;
     },

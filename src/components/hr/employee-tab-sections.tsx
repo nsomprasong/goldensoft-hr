@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import Alert from "@/components/hr/alert";
 import CompensationForm from "@/components/hr/compensation-form";
@@ -22,6 +22,7 @@ import {
   type FieldErrors,
 } from "@/components/hr/form-utils";
 import { formatThaiDate } from "@/lib/hr/thai-date";
+import type { EmployeeRoleState } from "@/lib/hr/services/employee-roles";
 
 export type EmployeeOption = { id: string; label: string };
 
@@ -472,6 +473,7 @@ export function EmployeeEmploymentTab({
   employee,
   departments,
   positions,
+  roleState,
   employmentTypes,
   employeeStatuses,
   compensations,
@@ -483,7 +485,8 @@ export function EmployeeEmploymentTab({
 }: {
   employee: EmployeeTabEmployee;
   departments: EmployeeOption[];
-  positions: EmployeeOption[];
+  positions: Array<EmployeeOption & { defaultRoleId: string | null }>;
+  roleState: EmployeeRoleState | null;
   employmentTypes: EmployeeOption[];
   employeeStatuses: EmployeeOption[];
   compensations: CompensationRowView[];
@@ -494,6 +497,7 @@ export function EmployeeEmploymentTab({
   disabled?: boolean;
 }) {
   const router = useRouter();
+  const employmentFormRef = useRef<HTMLFormElement>(null);
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState({
     departmentId: employee.departmentId ?? "",
@@ -505,6 +509,9 @@ export function EmployeeEmploymentTab({
   });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const [roleChoice, setRoleChoice] = useState<"KEEP_EXISTING" | "POSITION_RECOMMENDATION" | "MANUAL_ASSIGNMENT">("KEEP_EXISTING");
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
     text: string;
@@ -548,6 +555,9 @@ export function EmployeeEmploymentTab({
     }
 
     setSaving(true);
+    const recommendedRoleId = positions.find((position) => position.id === values.positionId)?.defaultRoleId ?? "";
+    const nextRoleId = roleChoice === "KEEP_EXISTING" ? "" : roleChoice === "POSITION_RECOMMENDATION" ? recommendedRoleId : selectedRoleId;
+    if (nextRoleId && !confirmRoleChange) { setSaving(false); setConfirmRoleChange(true); return; }
     const result = await submitHrJson(
       `/api/hr/employees/${employee.id}`,
       "PATCH",
@@ -558,6 +568,8 @@ export function EmployeeEmploymentTab({
         employeeStatusId: values.employeeStatusId,
         hireDate: values.hireDate,
         probationEndDate: values.probationEndDate || null,
+        roleId: nextRoleId || null,
+        roleAssignmentSource: roleChoice,
       },
       "บันทึกการจ้างเรียบร้อยแล้ว",
     );
@@ -611,7 +623,7 @@ export function EmployeeEmploymentTab({
             </dd>
           </dl>
         ) : (
-          <form onSubmit={save} noValidate>
+          <form ref={employmentFormRef} onSubmit={save} noValidate>
             <div className="form-grid">
               <Field
                 id="e-employmentTypeId"
@@ -693,6 +705,18 @@ export function EmployeeEmploymentTab({
                   ))}
                 </select>
               </Field>
+              {values.positionId !== (employee.positionId ?? "") ? (
+                <Field id="e-roleChoice" label="บทบาทหลังเปลี่ยนตำแหน่ง" full hint="ค่าเริ่มต้นคือใช้บทบาทเดิม ระบบจะไม่เปลี่ยนบทบาทโดยอัตโนมัติ">
+                  <select value={roleChoice} onChange={(event) => setRoleChoice(event.target.value as typeof roleChoice)}>
+                    <option value="KEEP_EXISTING">ใช้บทบาทเดิม</option>
+                    <option value="POSITION_RECOMMENDATION" disabled={!positions.find((position) => position.id === values.positionId)?.defaultRoleId}>เปลี่ยนเป็นบทบาทที่แนะนำ</option>
+                    <option value="MANUAL_ASSIGNMENT">เลือกบทบาทอื่น</option>
+                  </select>
+                  <p className="field-hint">บทบาทปัจจุบัน: {roleState?.assigned.map((role) => role.label).join(", ") || "ยังไม่มีบทบาท"}</p>
+                  <p className="field-hint">บทบาทที่ตำแหน่งใหม่แนะนำ: {roleState?.available.find((role) => role.id === positions.find((position) => position.id === values.positionId)?.defaultRoleId)?.label ?? "ยังไม่ได้กำหนดบทบาทหลัก"}</p>
+                  {roleChoice === "MANUAL_ASSIGNMENT" ? <select value={selectedRoleId} onChange={(event) => setSelectedRoleId(event.target.value)}><option value="">— เลือกบทบาทอื่น —</option>{(roleState?.assigned ?? []).map((role) => <option key={role.roleId} value={role.roleId}>{role.label}</option>)}{(roleState?.available ?? []).map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}</select> : null}
+                </Field>
+              ) : null}
               <Field
                 id="e-hireDate"
                 label="วันเริ่มงาน"
@@ -735,6 +759,7 @@ export function EmployeeEmploymentTab({
             </div>
           </form>
         )}
+        {confirmRoleChange ? <div className="hr-overlay" role="dialog" aria-modal="true"><div className="hr-overlay-backdrop" /><div className="hr-overlay-panel"><div className="hr-overlay-body"><h3>ยืนยันการเปลี่ยนบทบาทพนักงาน</h3><p>สิทธิ์การใช้งานของพนักงานจะเปลี่ยนทันทีหลังบันทึก</p><div className="form-actions"><button className="btn btn-primary" type="button" onClick={() => requestAnimationFrame(() => employmentFormRef.current?.requestSubmit())}>ยืนยันการเปลี่ยนบทบาท</button><button className="btn" type="button" onClick={() => setConfirmRoleChange(false)}>ยกเลิก</button></div></div></div></div> : null}
       </SectionChrome>
 
       {canReadCompensation || canManageCompensation ? (

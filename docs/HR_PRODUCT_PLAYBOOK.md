@@ -6,6 +6,8 @@
 Last updated: 2026-08-02 (Phase 8 Track B tax/SSO legal-depth IN_PROGRESS)  
 Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft-platform` (auth/permissions)
 
+Preflight update 2026-08-05: position reader รองรับ global standard rows ร่วมกับ organization/authorized-branch rows แล้ว โดย tenant/branch guards ยังคง fail closed; audited test-data remediation batch `HR-REMEDIATE-20260805-391cafbf-257b-4f05-bd04-31a1e88996bb` ปิด duplicate/orphan blockers และ Gate C rerun ผ่าน จึงพร้อมขออนุมัติ schema `0018` ตามลำดับใน suite preflight report
+
 ---
 
 ## 1. Product goals (locked)
@@ -249,6 +251,15 @@ Do **not** re-read whole repo if this map answers the question — update the ma
 ---
 
 ## 8. Changelog
+
+### 2026-08-05 — Role / permission / position foundation (migration draft)
+- Reused Platform roles/permissions/memberships and HR positions/employees; no parallel auth system
+- Draft migrations: Platform `0015_role_permission_registry`, HR `0018_role_position_foundation` (not applied)
+- Added master-backed role/action/position scope types, DB-backed permission registry, position-role and employee-role-assignment foundation
+- Position service now respects header branch for branch-scoped positions and audits primary-role changes
+- Verification intentionally not run per task instruction; migration/production seed remain approval-gated
+- Integration follow-up: position role picker/list filters/impact confirmation, role-page position transaction, employee position recommendation and assignment-source master
+- Position-role changes and employee role choices are explicit; neither changing a position default nor moving an existing employee silently changes existing employee roles
 
 ### 2026-08-02 — Phase 8 Track B started (tax / SSO depth)
 - Status Track B → **IN_PROGRESS**
