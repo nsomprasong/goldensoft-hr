@@ -1,7 +1,7 @@
 /** @type {import("eslint").Linter.Config[]} */
 const eslintConfig = [
   {
-    ignores: [".next/**", "node_modules/**"],
+    ignores: [".next/**", ".next-dev/**", "node_modules/**"],
   },
 ];
 

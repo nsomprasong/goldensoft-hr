@@ -8,6 +8,8 @@ Repos: `goldensoft-hr` (product), `goldensoft-app` (shell + tokens), `goldensoft
 
 Preflight update 2026-08-05: position reader รองรับ global standard rows ร่วมกับ organization/authorized-branch rows แล้ว โดย tenant/branch guards ยังคง fail closed; audited test-data remediation batch `HR-REMEDIATE-20260805-391cafbf-257b-4f05-bd04-31a1e88996bb` ปิด duplicate/orphan blockers และ Gate C rerun ผ่าน จึงพร้อมขออนุมัติ schema `0018` ตามลำดับใน suite preflight report
 
+Role workflow update 2026-08-06: การสร้างพนักงานกำหนด Organization Role จาก `Position.defaultRoleId` ฝั่ง server โดยอัตโนมัติ; ตำแหน่งระดับองค์กรเป็นค่าเริ่มต้นร่วม และตำแหน่งระดับสาขาสามารถกำหนดบทบาทต่างกันได้ โดย Employee Role Assignment เก็บ `organizationId + branchId` และยังผ่าน tenant/branch guards เดิม
+
 ---
 
 ## 1. Product goals (locked)

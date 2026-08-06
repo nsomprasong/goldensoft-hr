@@ -463,17 +463,31 @@ export default function EmployeeForm({
           </select>
         </Field>
 
-        <Field id="roleId" label="บทบาทที่แนะนำ" full hint="ระบบแนะนำบทบาทตามตำแหน่งที่เลือก คุณสามารถเปลี่ยนได้หากพนักงานต้องใช้สิทธิ์แตกต่างจากตำแหน่งทั่วไป">
-          {values.positionId && !positions.find((item) => item.id === values.positionId)?.defaultRoleId ? <p className="field-hint">ตำแหน่งนี้ยังไม่ได้กำหนดบทบาทหลัก กรุณาเลือกบทบาทให้พนักงาน</p> : null}
-          <select
-            {...fieldProps("roleId")}
-            value={values.roleId}
-            onChange={(event) => setValues((previous) => ({ ...previous, roleId: event.target.value, roleAssignmentSource: "MANUAL_ASSIGNMENT" }))}
-            disabled={saving || disabled}
-          >
-            <option value="">— เลือกบทบาท —</option>
-            {roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.typeLabel}</option>)}
-          </select>
+        <Field
+          id="roleId"
+          label={mode === "create" ? "บทบาทจากตำแหน่ง" : "บทบาทที่แนะนำ"}
+          full
+          hint={mode === "create" ? "ระบบกำหนดบทบาทกลางขององค์กรตามตำแหน่งและสาขาที่เลือกโดยอัตโนมัติ" : "เลือกบทบาทที่เหมาะกับหน้าที่ของพนักงาน"}
+        >
+          {mode === "create" ? (
+            <div className="hr-form-readonly-value" id="roleId">
+              {values.roleId
+                ? `${roles.find((role) => role.id === values.roleId)?.name ?? "บทบาทตามตำแหน่ง"} · ${roles.find((role) => role.id === values.roleId)?.typeLabel ?? "องค์กร"}`
+                : values.positionId
+                  ? "ตำแหน่งนี้ยังไม่ได้กำหนดบทบาทหลัก"
+                  : "เลือกตำแหน่งเพื่อกำหนดบทบาทอัตโนมัติ"}
+            </div>
+          ) : (
+            <select
+              {...fieldProps("roleId")}
+              value={values.roleId}
+              onChange={(event) => setValues((previous) => ({ ...previous, roleId: event.target.value, roleAssignmentSource: "MANUAL_ASSIGNMENT" }))}
+              disabled={saving || disabled}
+            >
+              <option value="">— เลือกบทบาท —</option>
+              {roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.typeLabel}</option>)}
+            </select>
+          )}
           {values.roleId ? <span className="field-hint">{roles.find((role) => role.id === values.roleId)?.description || `${roles.find((role) => role.id === values.roleId)?.permissionCount ?? 0} สิทธิ์การใช้งาน`}</span> : null}
         </Field>
 

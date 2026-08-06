@@ -32,7 +32,7 @@ after(() => {
 function cookieHeader(
   organizationId: string,
   branchId: string | null,
-  mode?: "membership" | "platform_admin",
+  mode?: "membership" | "platform_admin" | "managed_org",
 ): string {
   const value = encodePlatformContextCookie({
     organizationId,
@@ -233,5 +233,25 @@ describe("Phase 8A HR platform integration", () => {
     });
     assert.equal(ctx.contextMode, "platform_admin");
     assert.ok(ctx.platformRoles.includes("SUPER_ADMIN"));
+  });
+
+  it("allows SALES through a Platform-verified managed organization context", async () => {
+    const { state, organizationId, branchId } = mockEntitledHrUser();
+    state.me!.memberships = [];
+    state.me!.platformRoles = ["SALES"];
+    state.me!.contextMode = "managed_org";
+    state.me!.permissions = ["hr.employee.read"];
+    const client = createMockPlatformClient(state);
+
+    const ctx = await resolveHrRequestContext({
+      cookieHeader: cookieHeader(organizationId, branchId, "managed_org"),
+      platformClient: client,
+    });
+
+    assert.equal(ctx.contextMode, "managed_org");
+    assert.equal(ctx.organizationId, organizationId);
+    assert.deepEqual(ctx.membershipRoles, []);
+    assert.ok(ctx.permissions.includes("hr.employee.read"));
+    assert.ok(ctx.entitlements[HR_ENTITLEMENTS.access]?.allowed);
   });
 });

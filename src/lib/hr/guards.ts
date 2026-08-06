@@ -70,7 +70,13 @@ export const requireHrPage = cache(async function requireHrPage(options?: {
     });
 
     if (options?.permission && !hrCan(ctx, options.permission)) {
-      redirect("/forbidden");
+      const required =
+        typeof options.permission === "string"
+          ? options.permission
+          : options.permission.join(",");
+      redirect(
+        `/forbidden?reason=HR_PERMISSION_MISSING&required=${encodeURIComponent(required)}`,
+      );
     }
 
     return ctx;

@@ -89,6 +89,7 @@ export function mockEntitledHrUser(options?: {
       statusCode: "ACTIVE",
     },
     platformRoles: options?.platformAdmin ? ["SUPER_ADMIN"] : [],
+    contextMode: options?.platformAdmin ? "platform_admin" : "membership",
     memberships: options?.platformAdmin
       ? []
       : [

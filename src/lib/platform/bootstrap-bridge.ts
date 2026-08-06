@@ -21,7 +21,7 @@ const bridgeSchema = z.object({
     statusCode: z.string(),
   }),
   platformRoles: z.array(z.string()),
-  contextMode: z.enum(["membership", "platform_admin"]),
+  contextMode: z.enum(["membership", "platform_admin", "managed_org"]),
   organizationId: z.string().nullable(),
   organizationName: z.string().nullable(),
   branchId: z.string().nullable(),
@@ -145,6 +145,7 @@ export function platformClientFromBridge(raw: string): PlatformClient | null {
         user: bridge.user,
         profile: bridge.profile,
         platformRoles: bridge.platformRoles,
+        contextMode: bridge.contextMode,
         memberships: bridge.membership
           ? [
               {

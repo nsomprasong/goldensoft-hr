@@ -12,7 +12,7 @@ export type HrAccessContext = {
   branchId: string | null;
   permissions: readonly string[];
   platformRoles: readonly string[];
-  contextMode: "membership" | "platform_admin";
+  contextMode: "membership" | "platform_admin" | "managed_org";
   /** Null means every branch of the organization is in scope. */
   allowedBranchIds?: readonly string[] | null;
 };

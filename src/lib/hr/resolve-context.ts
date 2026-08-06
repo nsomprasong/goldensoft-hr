@@ -70,10 +70,15 @@ export async function resolveHrRequestContext(
   const cookieMembership = cookie?.organizationId
     ? me.memberships.find((m) => m.organizationId === cookie.organizationId)
     : null;
+  const managedContext =
+    cookie?.mode === "managed_org" &&
+    me.contextMode === "managed_org" &&
+    me.activeOrganization?.id === cookie.organizationId;
   const cookieUsable =
     !cookie ||
     Boolean(cookieMembership) ||
-    (isSuper && cookie.mode === "platform_admin");
+    (isSuper && cookie.mode === "platform_admin") ||
+    managedContext;
 
   // Prefer bridge/Platform active org when gs_platform_ctx is from another user.
   const organizationId = cookieUsable
@@ -96,9 +101,15 @@ export async function resolveHrRequestContext(
   const contextMode =
     cookieUsable && cookie?.mode === "platform_admin" && isSuper
       ? ("platform_admin" as const)
+      : cookieUsable && managedContext
+        ? ("managed_org" as const)
       : ("membership" as const);
 
-  if (!membership && contextMode !== "platform_admin") {
+  if (
+    !membership &&
+    contextMode !== "platform_admin" &&
+    contextMode !== "managed_org"
+  ) {
     throw new PlatformIntegrationError("FORBIDDEN");
   }
 
@@ -106,7 +117,11 @@ export async function resolveHrRequestContext(
     ? (cookie?.branchId ?? me.activeBranch?.id ?? null)
     : (me.activeBranch?.id ?? null);
   const activeEmployeeId = cookieUsable ? (cookie?.employeeId ?? null) : null;
-  if (input.requiredBranchId && contextMode !== "platform_admin") {
+  if (
+    input.requiredBranchId &&
+    contextMode !== "platform_admin" &&
+    contextMode !== "managed_org"
+  ) {
     const allowed = input.allowedBranchIds;
     if (allowed != null) {
       if (!allowed.includes(input.requiredBranchId)) {

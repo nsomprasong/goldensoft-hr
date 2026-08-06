@@ -4770,6 +4770,19 @@ button.hr-schedule-empty-icon:disabled {
   line-height: var(--line-height-normal);
 }
 
+.hr-form-readonly-value {
+  display: flex;
+  min-height: var(--control-height);
+  align-items: center;
+  padding: var(--space-2) 0.625rem;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius);
+  background: var(--hr-surface-muted);
+  color: var(--hr-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

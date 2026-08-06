@@ -13,7 +13,7 @@ export type PlatformErrorCode =
   | "PROFILE_SUSPENDED"
   | "PLATFORM_UNAVAILABLE";
 
-export type PlatformContextMode = "membership" | "platform_admin";
+export type PlatformContextMode = "membership" | "platform_admin" | "managed_org";
 
 export type PlatformMeResponse = {
   user: { id: string; email: string | null };
@@ -24,6 +24,7 @@ export type PlatformMeResponse = {
     statusCode: string;
   } | null;
   platformRoles: string[];
+  contextMode: PlatformContextMode;
   memberships: Array<{
     organizationId: string;
     organizationName: string;
