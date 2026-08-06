@@ -141,12 +141,11 @@ export function hasAnyHrPermission(
   return required.some((code) => granted.includes(code));
 }
 
-/** UI helper: SUPER_ADMIN bypasses product-local codes, mirroring the guards. */
+/** Permission-code check shared by HR UI and server guards. */
 export function canHr(
   ctx: { permissions: readonly string[]; platformRoles: readonly string[] },
   required: HrPermission | readonly HrPermission[],
 ): boolean {
-  if (ctx.platformRoles.includes("SUPER_ADMIN")) return true;
   const codes = Array.isArray(required)
     ? (required as readonly HrPermission[])
     : [required as HrPermission];
