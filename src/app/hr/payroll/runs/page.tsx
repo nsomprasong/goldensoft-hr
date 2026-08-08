@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayrollRunsWorkspace from "@/components/hr/payroll-runs-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -33,6 +34,7 @@ export default async function PayrollRunsPage() {
           <h1>ประมวลผลเงินเดือน</h1>
           <p>รอบการคำนวณเงินเดือนแยกตามงวด</p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

@@ -1,4 +1,5 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import SalaryAdvancesWorkspace from "@/components/hr/salary-advances-workspace";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
@@ -55,6 +56,7 @@ export default async function SalaryAdvancesPage() {
             คำขอ → อนุมัติ (เงินสด / โอนพร้อมเงินเดือน) → หักคืนตามงวดที่เลือก
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

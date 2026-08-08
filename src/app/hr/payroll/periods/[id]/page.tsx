@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import Alert, { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayrollPeriodStatusForm from "@/components/hr/payroll-period-status-form";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -53,6 +54,7 @@ export default async function PayrollPeriodDetailPage({
           <h1>รายละเอียดงวดเงินเดือน</h1>
           <p>{row?.scheduleName ?? "—"}</p>
         </div>
+        <HrPageBackButton href="/hr/payroll/periods" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

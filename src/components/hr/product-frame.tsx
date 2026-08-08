@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import NotificationBell from "@/components/hr/notification-bell";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import ShellUserAvatar from "@/components/hr/shell-user-avatar";
 import { HrNavIcon, hrNavIconForPath } from "@/components/ui/icons";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
@@ -111,7 +112,7 @@ export default function HrProductFrame({
       data-hr-shell="product"
       data-hr-product-nav={showProductNav ? "1" : "0"}
     >
-      <ShellUserAvatar />
+      <ShellUserAvatar employeeId={ctx.activeEmployeeId ?? null} />
       <NotificationBell
         showBranchLabel={showEmployeeBranchLabel(ctx)}
         permissions={{
@@ -135,7 +136,12 @@ export default function HrProductFrame({
           </details>
         </div>
       ) : null}
-      <div className="hr-product-body">{children}</div>
+      <div className="hr-product-body">
+        <div className="hr-global-page-back">
+          <HrPageBackButton href="/hr/welcome" />
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

@@ -6,7 +6,11 @@ import { useEffect } from "react";
  * Replaces Customer App / embed header initials with the linked employee photo
  * when available. Falls back to initials if no photo or load fails.
  */
-export default function ShellUserAvatar() {
+export default function ShellUserAvatar({
+  employeeId,
+}: {
+  employeeId: string | null;
+}) {
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
@@ -17,25 +21,11 @@ export default function ShellUserAvatar() {
           ".gs-embed-user-avatar, .customer-user-avatar, .hr-debug-user-avatar",
         ),
       );
-      if (hosts.length === 0) return;
+      if (hosts.length === 0 || !employeeId) return;
 
       try {
-        const profileRes = await fetch("/api/hr/me/profile", {
-          headers: { accept: "application/json" },
-          cache: "no-store",
-          credentials: "same-origin",
-        });
-        if (!profileRes.ok || cancelled) return;
-        const profile = (await profileRes.json()) as {
-          id?: string;
-          photoUrl?: string | null;
-        };
-        const photoUrl = profile.photoUrl?.trim();
-        if (!photoUrl || !profile.id) return;
-
-        // Prefer authenticated employee photo API (works even if photoUrl is stale).
         const photoRes = await fetch(
-          `/api/hr/employees/${encodeURIComponent(profile.id)}/photo`,
+          `/api/hr/employees/${encodeURIComponent(employeeId)}/photo`,
           { cache: "no-store", credentials: "same-origin" },
         );
         if (!photoRes.ok || cancelled) return;
@@ -85,7 +75,7 @@ export default function ShellUserAvatar() {
       observer?.disconnect();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, []);
+  }, [employeeId]);
 
   return null;
 }

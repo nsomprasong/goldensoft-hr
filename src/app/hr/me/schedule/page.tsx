@@ -1,4 +1,5 @@
 import MyScheduleWorkspace from "@/components/hr/my-schedule-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { requireHrPage } from "@/lib/hr/guards";
 import { HR_PERMISSIONS } from "@/lib/hr/permissions";
@@ -19,6 +20,7 @@ export default async function MySchedulePage() {
           <h1>ตารางงานของฉัน</h1>
           <p>กะงาน วันหยุด และวันทำงานแทนที่ได้รับมอบหมาย</p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
       <MyScheduleWorkspace
         assignments={schedule.assignments}

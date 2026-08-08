@@ -1,4 +1,5 @@
 import AttendanceDayWorkspace from "@/components/hr/attendance-day-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listEmployees, listOrganizationBranches } from "@/lib/hr/data";
@@ -39,6 +40,7 @@ export default async function AttendancePage() {
             ดูและแก้ไขเวลาเข้า–ออกตามสาขาที่เลือก เลือกพนักงานและช่วงวันที่ได้
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
       <AttendanceDayWorkspace
         showBranchLabel={showBranchLabel}

@@ -12,6 +12,7 @@ import { HR_PERMISSIONS, type HrPermission } from "@/lib/hr/permissions";
 export const HR_ROUTE_PREFIX = "/hr" as const;
 
 export type HrRouteKey =
+  | "welcome"
   | "dashboard"
   | "employees"
   | "employeesNew"
@@ -78,6 +79,14 @@ export type HrRouteDefinition = {
 };
 
 export const HR_ROUTE_REGISTRY: readonly HrRouteDefinition[] = [
+  {
+    key: "welcome",
+    path: `${HR_ROUTE_PREFIX}/welcome`,
+    labelTh: "ยินดีต้อนรับ",
+    nav: false,
+    requiredPermissions: [],
+    requiredEntitlements: [HR_ENTITLEMENTS.access],
+  },
   {
     key: "dashboard",
     path: HR_ROUTE_PREFIX,

@@ -6,6 +6,7 @@ import EmployeeAvatar from "@/components/hr/employee-avatar";
 import EmployeeDetailWorkspace from "@/components/hr/employee-detail-workspace";
 import EmployeeNameLabel from "@/components/hr/employee-name-label";
 import ToggleActiveButton from "@/components/hr/toggle-active-button";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
@@ -117,6 +118,7 @@ export default async function EmployeeDetailPage({
             เจ้าขององค์กร — ปิดใช้งานได้เฉพาะพนักงาน GoldenSoft Platform
           </p>
         ) : null}
+        <HrPageBackButton href="/hr/employees" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

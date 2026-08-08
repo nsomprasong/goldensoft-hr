@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeForm from "@/components/hr/employee-form";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -50,6 +51,7 @@ export default async function NewEmployeePage() {
             {includeCompensation ? " และค่าตอบแทนเริ่มต้น" : ""}
           </p>
         </div>
+        <HrPageBackButton href="/hr/employees" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

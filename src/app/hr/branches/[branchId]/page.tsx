@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { listEmployees } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -26,6 +27,7 @@ export default async function BranchPage({
         <Link className="btn" href="/hr/employees">
           ดูพนักงานทั้งหมด
         </Link>
+        <HrPageBackButton href="/hr/employees" />
       </div>
 
       <DatabaseUnavailableNotice message={employees.message} />

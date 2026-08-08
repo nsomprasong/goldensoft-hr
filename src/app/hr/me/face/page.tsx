@@ -1,4 +1,5 @@
 import MeFaceEnrollWorkspace from "@/components/hr/me-face-enroll-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { getSelfFaceMatchStatus } from "@/lib/hr/data";
 import { requireHrPage } from "@/lib/hr/guards";
@@ -29,6 +30,7 @@ export default async function MeFacePage() {
           <h1>ลงทะเบียนใบหน้า</h1>
           <p>ใช้จับคู่ตอนลงเวลาเข้า–ออกงาน</p>
         </div>
+        <HrPageBackButton href="/hr/me/attendance" />
       </div>
       <MeFaceEnrollWorkspace initial={status.data ?? FALLBACK} />
     </HrShell>

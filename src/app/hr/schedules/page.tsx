@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import SchedulesWorkspace from "@/components/hr/schedules-workspace";
 import HrShell from "@/components/hr-shell";
 import { schedulesHrefForBranch } from "@/lib/hr/branch-nav";
@@ -85,6 +86,7 @@ export default async function SchedulesPage({
               : "เลือกสาขาที่หัวเว็บก่อน แล้วค่อยสร้างช่วงตารางและจัดพนักงาน"}
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

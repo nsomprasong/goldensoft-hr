@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import MePayslipsWorkspace from "@/components/hr/me-payslips-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   listPayslipPeriodOptions,
@@ -38,6 +39,7 @@ export default async function MyPayslipsPage({
             <h1>สลิปเงินเดือนของฉัน</h1>
             <p>ยังไม่พบบัญชีพนักงานที่ผูกกับผู้ใช้นี้</p>
           </div>
+          <HrPageBackButton href="/hr" />
         </div>
       </HrShell>
     );
@@ -61,6 +63,7 @@ export default async function MyPayslipsPage({
           <h1>สลิปเงินเดือนของฉัน</h1>
           <p>เลือกงวดจ่ายเพื่อดูสลิป — ค่าเริ่มต้นเป็นงวดปัจจุบัน</p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice

@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import MeAdvancesWorkspace from "@/components/hr/me-advances-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import {
   combineAvailability,
@@ -42,6 +43,7 @@ export default async function MeAdvancesPage({
             <h1>เบิกล่วงหน้าของฉัน</h1>
             <p>ยังไม่พบบัญชีพนักงานที่ผูกกับผู้ใช้นี้</p>
           </div>
+          <HrPageBackButton href="/hr" />
         </div>
       </HrShell>
     );
@@ -60,6 +62,7 @@ export default async function MeAdvancesPage({
           <h1>เบิกล่วงหน้าของฉัน</h1>
           <p>ส่งคำขอ → รออนุมัติ → รับเงินตามวิธีจ่าย → หักคืนตามงวด</p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
       <DatabaseUnavailableNotice message={availability.message} />
       <MeAdvancesWorkspace

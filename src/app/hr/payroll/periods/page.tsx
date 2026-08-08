@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import PayrollPeriodForm from "@/components/hr/payroll-period-form";
 import HrShell from "@/components/hr-shell";
 import { IconOpen } from "@/components/ui/action-icons";
@@ -126,6 +127,7 @@ export default async function PayrollPeriodsPage({
             องค์กร {ctx.organizationName} — {filterLabel} ({filtered.length} งวด)
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

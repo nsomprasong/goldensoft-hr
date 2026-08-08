@@ -4,6 +4,7 @@ import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import AutoSubmitSelect from "@/components/hr/auto-submit-select";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
 import EmployeeNameLabel from "@/components/hr/employee-name-label";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
@@ -83,6 +84,7 @@ export default async function ApprovalHistoryPage({
             ทั้งหมด {result.total} รายการ · หน้าละ 10
           </p>
         </div>
+        <HrPageBackButton href="/hr/approvals" />
       </div>
 
       <form className="hr-history-filters" method="get" action="/hr/approvals/history">

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import AdjustmentApprovalList from "@/components/hr/adjustment-approval-list";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import AdvanceApprovalList from "@/components/hr/advance-approval-list";
 import ApprovalFocus from "@/components/hr/approval-focus";
 import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
@@ -231,6 +232,7 @@ export default async function ApprovalsPage({
       <DatabaseUnavailableNotice message={inbox.message} />
 
       <header className="hr-schedule-hero hr-leave-hero">
+        <HrPageBackButton href="/hr" />
         <h1 className="hr-schedule-hero-title">รายการอนุมัติ</h1>
         <p className="hr-leave-hero-lead">
           ยังไม่อนุมัติ {pendingTotal} / คำขอทั้งหมด {requestTotal}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import OvertimeApprovalList from "@/components/hr/overtime-approval-list";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
@@ -28,9 +29,12 @@ export default async function OvertimePage() {
         showBranchLabel={showBranchLabel}
         heroLead={`รออนุมัติ ${pendingCount} รายการ · แสดงผลจนถึงวันทำงาน OT`}
         heroAction={
-          <Link className="btn btn-sm" href="/hr/overtime/history">
-            ดูประวัติย้อนหลัง
-          </Link>
+          <div className="inline-actions">
+            <Link className="btn btn-sm" href="/hr/overtime/history">
+              ดูประวัติย้อนหลัง
+            </Link>
+            <HrPageBackButton href="/hr" />
+          </div>
         }
         emptyMessage="ไม่มีคำขอรออนุมัติ หรือผลอนุมัติที่วัน OT ยังไม่ผ่าน"
       />

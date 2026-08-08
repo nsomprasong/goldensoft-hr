@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
 import EmployeeNameLabel from "@/components/hr/employee-name-label";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
@@ -79,6 +80,7 @@ export default async function EmployeesPage({
             {" — กด + เพื่อเพิ่มพนักงาน"}
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={availability.message} />

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import LeaveApprovalCards from "@/components/hr/leave-approval-cards";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
@@ -24,6 +25,7 @@ export default async function LeavePage() {
       <DatabaseUnavailableNotice message={list.message} />
 
       <header className="hr-schedule-hero hr-leave-hero">
+        <HrPageBackButton href="/hr" />
         <h1 className="hr-schedule-hero-title">การลา</h1>
         <p className="hr-leave-hero-lead">
           รออนุมัติ {pendingCount} รายการ · แสดงผลจนถึงวันลา

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { requireHrPage } from "@/lib/hr/guards";
 import { formatThb } from "@/lib/hr/money";
@@ -37,6 +38,7 @@ export default async function ReportsPage() {
             {summary ? ` · ${summary.periodLabel}` : ""}
           </p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice message={message} />

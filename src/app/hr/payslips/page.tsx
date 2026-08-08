@@ -1,5 +1,6 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import PayslipsWorkspace from "@/components/hr/payslips-workspace";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import {
@@ -46,6 +47,7 @@ export default async function PayslipsPage({
           <h1>สลิปเงินเดือน</h1>
           <p>เลือกงวดจ่ายเพื่อดูสลิป — ค่าเริ่มต้นเป็นงวดปัจจุบัน</p>
         </div>
+        <HrPageBackButton href="/hr" />
       </div>
 
       <DatabaseUnavailableNotice

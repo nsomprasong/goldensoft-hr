@@ -10,6 +10,8 @@ Preflight update 2026-08-05: position reader รองรับ global standard 
 
 Role workflow update 2026-08-06: การสร้างพนักงานกำหนด Organization Role จาก `Position.defaultRoleId` ฝั่ง server โดยอัตโนมัติ; ตำแหน่งระดับองค์กรเป็นค่าเริ่มต้นร่วม และตำแหน่งระดับสาขาสามารถกำหนดบทบาทต่างกันได้ โดย Employee Role Assignment เก็บ `organizationId + branchId` และยังผ่าน tenant/branch guards เดิม
 
+Role permission UX update 2026-08-08: Role Editor ที่ Platform และหน้าที่ HR ฝังใช้ permission registry เดิม แต่จัด presentation ตาม Main Menu HR (`ภาพรวม → พนักงาน → บัญชีและการเงิน → ตั้งค่า`) พร้อม submenu/action, search และ select-all รายระดับ โดยไม่เปลี่ยน permission code, effective permission หรือ authorization dependency เดิม
+
 ---
 
 ## 1. Product goals (locked)

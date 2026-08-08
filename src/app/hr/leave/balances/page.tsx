@@ -1,6 +1,7 @@
 import { DatabaseUnavailableNotice } from "@/components/hr/alert";
 import EmployeeAvatar from "@/components/hr/employee-avatar";
 import EmployeeNameLabel from "@/components/hr/employee-name-label";
+import HrPageBackButton from "@/components/hr/hr-page-back-button";
 import HrShell from "@/components/hr-shell";
 import { showEmployeeBranchLabel } from "@/lib/hr/api";
 import { listLeaveBalances } from "@/lib/hr/data";
@@ -21,6 +22,7 @@ export default async function LeaveBalancesPage() {
           <h1>ยอดคงเหลือการลา</h1>
           <p>ยอดสิทธิและรายการเคลื่อนไหวของพนักงาน — {list.data.length} รายการ</p>
         </div>
+        <HrPageBackButton href="/hr/leave" />
       </div>
 
       <DatabaseUnavailableNotice message={list.message} />
